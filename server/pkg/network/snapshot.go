@@ -2,7 +2,6 @@ package network
 
 import (
 	"encoding/binary"
-	"math"
 )
 
 const (

@@ -202,3 +202,67 @@ func (s *OrderSystem) Name() string    { return "OrderSystem" }
 func (s *OrderSystem) Priority() int   { return s.ordinal }
 func (s *OrderSystem) Init(w *World)   {}
 func (s *OrderSystem) Tick(_ *World, _ uint32) { *s.record = append(*s.record, s.ordinal) }
+
+// --- Integration: full ECS pipeline ---
+
+type MoveSystem struct {
+	pool *ComponentPool[PosComponent]
+	vel  *ComponentPool[VelComponent]
+}
+
+func (s *MoveSystem) Name() string    { return "MoveSystem" }
+func (s *MoveSystem) Priority() int   { return 10 }
+func (s *MoveSystem) Init(w *World) {
+	s.pool = w.Pool(PosComponent{}).(*ComponentPool[PosComponent])
+	s.vel = w.Pool(VelComponent{}).(*ComponentPool[VelComponent])
+}
+func (s *MoveSystem) Tick(w *World, tick uint32) {
+	s.pool.Each(func(e Entity, pos *PosComponent) {
+		vel, ok := s.vel.Get(e)
+		if !ok {
+			return
+		}
+		pos.X += vel.Vx
+		pos.Y += vel.Vy
+	})
+}
+
+func TestIntegrationMoveSystem(t *testing.T) {
+	em := NewEntityManager()
+	w := NewWorld(em)
+
+	posPool := NewComponentPool[PosComponent]()
+	velPool := NewComponentPool[VelComponent]()
+	w.RegisterPool(PosComponent{}, posPool)
+	w.RegisterPool(VelComponent{}, velPool)
+
+	w.AddSystem(&MoveSystem{})
+
+	e1 := em.Create()
+	posPool.Add(e1, PosComponent{X: 100, Y: 100})
+	velPool.Add(e1, VelComponent{Vx: 10, Vy: 5})
+
+	e2 := em.Create()
+	posPool.Add(e2, PosComponent{X: 0, Y: 0})
+	velPool.Add(e2, VelComponent{Vx: -5, Vy: 3})
+
+	w.Init()
+
+	// Tick 1
+	w.Tick(1)
+	p1, _ := posPool.Get(e1)
+	if p1.X != 110 || p1.Y != 105 {
+		t.Errorf("e1 after tick 1: {%d, %d}, want {110, 105}", p1.X, p1.Y)
+	}
+	p2, _ := posPool.Get(e2)
+	if p2.X != -5 || p2.Y != 3 {
+		t.Errorf("e2 after tick 1: {%d, %d}, want {-5, 3}", p2.X, p2.Y)
+	}
+
+	// Tick 2
+	w.Tick(2)
+	p1, _ = posPool.Get(e1)
+	if p1.X != 120 || p1.Y != 110 {
+		t.Errorf("e1 after tick 2: {%d, %d}, want {120, 110}", p1.X, p1.Y)
+	}
+}

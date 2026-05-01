@@ -144,3 +144,61 @@ func TestComponentPoolAbsent(t *testing.T) {
 		t.Error("non-existent component should return false")
 	}
 }
+
+// --- System tests ---
+
+type TestSystem struct {
+	executed bool
+	ordinal  int
+}
+
+func (s *TestSystem) Name() string    { return "TestSystem" }
+func (s *TestSystem) Priority() int   { return s.ordinal }
+func (s *TestSystem) Init(w *World)   {}
+func (s *TestSystem) Tick(w *World, tick uint32) {
+	s.executed = true
+}
+
+func TestSchedulerExecutesSystems(t *testing.T) {
+	em := NewEntityManager()
+	w := NewWorld(em)
+
+	sys := &TestSystem{ordinal: 10}
+	w.AddSystem(sys)
+
+	w.Tick(1)
+	if !sys.executed {
+		t.Error("system should have been executed")
+	}
+}
+
+func TestSchedulerOrderByPriority(t *testing.T) {
+	em := NewEntityManager()
+	w := NewWorld(em)
+
+	var order []int
+	for i := 0; i < 3; i++ {
+		prio := i
+		w.AddSystem(&OrderSystem{ordinal: prio, record: &order})
+	}
+
+	w.Tick(1)
+	if len(order) != 3 {
+		t.Fatalf("expected 3 executions, got %d", len(order))
+	}
+	for i, got := range order {
+		if got != i {
+			t.Errorf("order[%d] = %d, want %d", i, got, i)
+		}
+	}
+}
+
+type OrderSystem struct {
+	ordinal int
+	record  *[]int
+}
+
+func (s *OrderSystem) Name() string    { return "OrderSystem" }
+func (s *OrderSystem) Priority() int   { return s.ordinal }
+func (s *OrderSystem) Init(w *World)   {}
+func (s *OrderSystem) Tick(_ *World, _ uint32) { *s.record = append(*s.record, s.ordinal) }

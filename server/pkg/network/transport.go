@@ -1,6 +1,7 @@
 package network
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
@@ -13,27 +14,48 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// outgoing wraps data with its WebSocket message type for the send channel.
+type outgoing struct {
+	data   []byte
+	isText bool
+}
+
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[uint32]*ClientSession
 	nextID  uint32
 	onCmd   func(clientID uint32, cmd *Command)
+	onText  func(clientID uint32, msg map[string]interface{})
 }
 
-func NewHub(onCmd func(clientID uint32, cmd *Command)) *Hub {
+func NewHub(onCmd func(clientID uint32, cmd *Command), onText func(clientID uint32, msg map[string]interface{})) *Hub {
 	return &Hub{
 		clients: make(map[uint32]*ClientSession),
 		onCmd:   onCmd,
+		onText:  onText,
 	}
 }
 
 type ClientSession struct {
-	ID         uint32
-	PlayerID   uint32
-	conn       *websocket.Conn
-	mu         sync.Mutex
-	sendCh     chan []byte
-	closeCh    chan struct{}
+	ID       uint32
+	PlayerID uint32
+	Name     string
+	conn     *websocket.Conn
+	mu       sync.Mutex
+	sendCh   chan outgoing
+	closeCh  chan struct{}
+}
+
+func (s *ClientSession) SetName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Name = name
+}
+
+func (s *ClientSession) GetName() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Name
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,9 +69,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.nextID++
 	clientID := h.nextID
 	session := &ClientSession{
-		ID:      clientID,
-		conn:    conn,
-		sendCh:  make(chan []byte, 256),
+		ID:     clientID,
+		conn:   conn,
+		sendCh: make(chan outgoing, 256),
 		closeCh: make(chan struct{}),
 	}
 	h.clients[clientID] = session
@@ -79,10 +101,23 @@ func (s *ClientSession) readPump(h *Hub) {
 	})
 
 	for {
-		_, msg, err := s.conn.ReadMessage()
+		msgType, msg, err := s.conn.ReadMessage()
 		if err != nil {
 			return
 		}
+
+		if msgType == websocket.TextMessage {
+			// Parse as JSON
+			var data map[string]interface{}
+			if err := json.Unmarshal(msg, &data); err == nil {
+				if h.onText != nil {
+					h.onText(s.ID, data)
+				}
+			}
+			continue
+		}
+
+		// Binary: existing decode path
 		cmd, err := DecodeCommand(msg)
 		if err != nil {
 			log.Printf("client %d: decode error: %v", s.ID, err)
@@ -103,13 +138,17 @@ func (s *ClientSession) writePump() {
 
 	for {
 		select {
-		case data, ok := <-s.sendCh:
+		case out, ok := <-s.sendCh:
 			s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
 				s.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := s.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			msgType := websocket.BinaryMessage
+			if out.isText {
+				msgType = websocket.TextMessage
+			}
+			if err := s.conn.WriteMessage(msgType, out.data); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -131,10 +170,50 @@ func (h *Hub) SendToClient(clientID uint32, data []byte) {
 		return
 	}
 	select {
-	case session.sendCh <- data:
+	case session.sendCh <- outgoing{data: data, isText: false}:
 	default:
 		log.Printf("client %d: send buffer full, dropping message", clientID)
 	}
+}
+
+// SendJSON marshals v as JSON and sends it as a text message to the client.
+func (h *Hub) SendJSON(clientID uint32, v interface{}) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if !ok {
+		return
+	}
+	select {
+	case session.sendCh <- outgoing{data: data, isText: true}:
+	default:
+		log.Printf("client %d: send buffer full, dropping JSON message", clientID)
+	}
+}
+
+// SetClientName sets the display name for a connected client.
+func (h *Hub) SetClientName(clientID uint32, name string) {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		session.SetName(name)
+	}
+}
+
+// GetClientName returns the display name for a connected client.
+func (h *Hub) GetClientName(clientID uint32) string {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		return session.GetName()
+	}
+	return ""
 }
 
 func (h *Hub) Broadcast(data []byte) {
@@ -142,7 +221,7 @@ func (h *Hub) Broadcast(data []byte) {
 	defer h.mu.RUnlock()
 	for _, session := range h.clients {
 		select {
-		case session.sendCh <- data:
+		case session.sendCh <- outgoing{data: data, isText: false}:
 		default:
 		}
 	}

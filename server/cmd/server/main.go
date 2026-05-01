@@ -15,8 +15,8 @@ import (
 // resolveClientDir tries several paths to find the client directory.
 func resolveClientDir() string {
 	candidates := []string{
-		"../client",                       // running from server/cmd/server/
-		"../../client",                    // running from server/
+		"../client",                         // running from server/cmd/server/
+		"../../client",                      // running from server/
 		filepath.Join("..", "..", "client"), // fallback
 	}
 	// Also try relative to executable (for `go run`)
@@ -39,22 +39,60 @@ func main() {
 	// 1. Initialize game session (64x64 map, ECS world, all systems)
 	gs := game.NewGameSession()
 
-	// 2. Spawn test squads: 2 players, 2 squads each
-	// Player 1: squads near (10,10) and (15,10)
-	gs.SpawnSquad(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 8)
-	gs.SpawnSquad(1, 2, fixed.FromFloat(15), fixed.FromFloat(10), 8)
-	// Player 2: squads near (50,50) and (45,50)
-	gs.SpawnSquad(2, 3, fixed.FromFloat(50), fixed.FromFloat(50), 8)
-	gs.SpawnSquad(2, 4, fixed.FromFloat(45), fixed.FromFloat(50), 8)
+	// 2. Declare hub early so callbacks can reference it
+	var hub *network.Hub
 
-	log.Println("Spawned 4 test squads (2 per player)")
+	// 3. Create matchmaker — on match, spawn squads for each player
+	mm := game.NewMatchmaker(func(players []game.QueuePlayer) {
+		log.Printf("Match found with %d players!", len(players))
+		for i, p := range players {
+			playerID := uint32(i + 1)
+			// Spawn 2 squads per player
+			gs.SpawnSquad(playerID, uint32(2*i+1),
+				fixed.FromFloat(float64(10+40*i)), fixed.FromFloat(10), 8)
+			gs.SpawnSquad(playerID, uint32(2*i+2),
+				fixed.FromFloat(float64(15+40*i)), fixed.FromFloat(10), 8)
 
-	// 3. Create WebSocket Hub with command dispatch
-	hub := network.NewHub(func(clientID uint32, cmd *network.Command) {
-		gs.HandleCommand(clientID, cmd)
+			// Send match_found to this player
+			hub.SendJSON(p.ClientID, map[string]interface{}{
+				"type":      "match_found",
+				"player_id": playerID,
+				"players":   len(players),
+			})
+		}
 	})
 
-	// 4. Start 15Hz game loop
+	// 4. Create WebSocket Hub with command dispatch and text message handler
+	hub = network.NewHub(
+		func(clientID uint32, cmd *network.Command) {
+			gs.HandleCommand(clientID, cmd)
+		},
+		func(clientID uint32, msg map[string]interface{}) {
+			msgType, _ := msg["type"].(string)
+			switch msgType {
+			case "login":
+				name, _ := msg["name"].(string)
+				hub.SetClientName(clientID, name)
+				hub.SendJSON(clientID, map[string]string{"type": "login_ok"})
+				log.Printf("client %d logged in as %q", clientID, name)
+			case "join_queue":
+				name := hub.GetClientName(clientID)
+				if mm.Join(clientID, name) {
+					hub.SendJSON(clientID, map[string]interface{}{
+						"type":  "queue_joined",
+						"count": mm.QueueLen(),
+					})
+					log.Printf("client %d (%s) joined queue (count=%d)", clientID, name, mm.QueueLen())
+				}
+			case "leave_queue":
+				mm.Leave(clientID)
+				hub.SendJSON(clientID, map[string]string{"type": "queue_left"})
+				log.Printf("client %d left queue", clientID)
+			}
+		},
+	)
+
+	// 5. Start 15Hz game loop
 	go func() {
 		ticker := time.NewTicker(time.Second / 15)
 		defer ticker.Stop()
@@ -67,6 +105,9 @@ func main() {
 		}
 
 		for range ticker.C {
+			// Tick the matchmaker to check for matches
+			mm.Tick(2)
+
 			gs.Tick()
 
 			data := gs.GenerateSnapshot(0, fullView)
@@ -76,7 +117,7 @@ func main() {
 		}
 	}()
 
-	// 5. Serve static client files on "/"
+	// 6. Serve static client files on "/"
 	clientDir := resolveClientDir()
 	if clientDir != "" {
 		fs := http.FileServer(http.Dir(clientDir))
@@ -84,7 +125,7 @@ func main() {
 		log.Printf("Client files served from: %s", clientDir)
 	}
 
-	// 6. Start server — Serve() registers /ws and calls http.ListenAndServe
+	// 7. Start server — Serve() registers /ws and calls http.ListenAndServe
 	addr := ":8090"
 	log.Printf("Paper War server starting on %s", addr)
 	log.Printf("WebSocket endpoint: ws://localhost%s/ws", addr)

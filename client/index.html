@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper War</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top info bar -->
+  <header id="top-bar">
+    <div class="top-bar-left">
+      <span class="player-info">
+        <span class="player-avatar">P</span>
+        <span class="player-name">Commander</span>
+      </span>
+    </div>
+    <div class="top-bar-center">
+      <span class="resource" id="gold">
+        <span class="resource-icon">&#9733;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Gold</span>
+      </span>
+      <span class="resource" id="unit-count">
+        <span class="resource-icon">&#9876;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Units</span>
+      </span>
+      <span class="resource" id="score">
+        <span class="resource-icon">&#9650;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Score</span>
+      </span>
+    </div>
+    <div class="top-bar-right">
+      <span class="timer" id="timer">00:00</span>
+      <button class="icon-btn" id="settings-btn" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- Main game viewport -->
+  <main id="game-viewport">
+    <canvas id="game-canvas"></canvas>
+  </main>
+
+  <!-- Bottom control bar -->
+  <footer id="bottom-bar">
+
+    <!-- Selection panel -->
+    <section class="panel" id="selection-panel">
+      <h3 class="panel-title">Selection</h3>
+      <div class="selection-info">
+        <div class="selection-row">
+          <span class="selection-label">Commander:</span>
+          <span class="selection-value" id="sel-commander">--</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Units:</span>
+          <span class="selection-value" id="sel-units">0</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Morale:</span>
+          <div class="morale-bar-container">
+            <div class="morale-bar" id="morale-bar" style="width: 75%"></div>
+          </div>
+          <span class="selection-value" id="sel-morale">75%</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Status:</span>
+          <span class="selection-value" id="sel-status">Idle</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Minimap -->
+    <section class="panel" id="minimap-panel">
+      <canvas id="minimap-canvas" width="160" height="160"></canvas>
+    </section>
+
+    <!-- Action panel -->
+    <section class="panel" id="action-panel">
+      <h3 class="panel-title">Actions</h3>
+
+      <div class="action-group">
+        <span class="action-group-label">Formation</span>
+        <div class="action-buttons">
+          <button class="action-btn" data-formation="line" title="Line formation [1]">
+            <span class="action-key">1</span>
+            <span class="action-name">Line</span>
+          </button>
+          <button class="action-btn" data-formation="wedge" title="Wedge formation [2]">
+            <span class="action-key">2</span>
+            <span class="action-name">Wedge</span>
+          </button>
+          <button class="action-btn" data-formation="ring" title="Ring formation [3]">
+            <span class="action-key">3</span>
+            <span class="action-name">Ring</span>
+          </button>
+          <button class="action-btn" data-formation="scatter" title="Scatter formation [4]">
+            <span class="action-key">4</span>
+            <span class="action-name">Scatter</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <span class="action-group-label">Tactics</span>
+        <div class="action-buttons">
+          <button class="action-btn tactic-charge" data-tactic="charge" title="Charge [Q]">
+            <span class="action-key">Q</span>
+            <span class="action-name">Charge</span>
+          </button>
+          <button class="action-btn tactic-retreat" data-tactic="retreat" title="Retreat [W]">
+            <span class="action-key">W</span>
+            <span class="action-name">Retreat</span>
+          </button>
+          <button class="action-btn tactic-defend" data-tactic="defend" title="Defend [E]">
+            <span class="action-key">E</span>
+            <span class="action-name">Defend</span>
+          </button>
+          <button class="action-btn tactic-rally" data-tactic="rally" title="Rally [R]">
+            <span class="action-key">R</span>
+            <span class="action-name">Rally</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </footer>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

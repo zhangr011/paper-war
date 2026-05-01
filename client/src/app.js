@@ -22,6 +22,7 @@ export class App {
 
     // Lobby elements
     this.lobbyPlayerName = document.getElementById('lobby-player-name');
+    this.soloBtn = document.getElementById('solo-btn');
     this.findMatchBtn = document.getElementById('find-match-btn');
     this.cancelQueueBtn = document.getElementById('cancel-queue-btn');
     this.lobbyStatus = document.getElementById('lobby-status');
@@ -42,6 +43,12 @@ export class App {
       if (!name) return;
       this.username = name;
       this.handleLogin(name);
+    });
+
+    // Solo game button
+    this.soloBtn.addEventListener('click', () => {
+      this.connection.sendJSON({ type: 'start_solo' });
+      this.lobbyStatus.textContent = 'Starting game...';
     });
 
     // Find match button

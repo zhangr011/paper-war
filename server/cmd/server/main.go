@@ -93,6 +93,22 @@ func main() {
 				mm.Leave(clientID)
 				hub.SendJSON(clientID, map[string]string{"type": "queue_left"})
 				log.Printf("client %d left queue", clientID)
+			case "start_solo":
+				name := hub.GetClientName(clientID)
+				log.Printf("client %d (%s) starting solo game", clientID, name)
+				gs.SpawnSquad(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 8)
+				gs.SpawnSquad(1, 2, fixed.FromFloat(15), fixed.FromFloat(10), 8)
+				gs.SpawnSquad(2, 3, fixed.FromFloat(50), fixed.FromFloat(50), 8)
+				gs.SpawnSquad(2, 4, fixed.FromFloat(45), fixed.FromFloat(50), 8)
+				mw, mh := gs.MapSize()
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":      "match_found",
+					"player_id": uint32(1),
+					"players":   1,
+					"map_w":     mw,
+					"map_h":     mh,
+				})
+				hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
 			}
 		},
 	)

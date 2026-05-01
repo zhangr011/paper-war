@@ -511,6 +511,13 @@ body {
 .lobby-btn:hover {
   background: #3a8a3a;
 }
+.lobby-btn-solo {
+  background: #2a4a6a;
+  margin-bottom: 4px;
+}
+.lobby-btn-solo:hover {
+  background: #3a5a8a;
+}
 .lobby-btn-cancel {
   background: #6a2a2a;
 }

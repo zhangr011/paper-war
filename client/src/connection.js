@@ -50,6 +50,7 @@ export class Connection {
     this.onSnapshot = null;   // (snapshot) => void
     this.onConnect = null;    // () => void
     this.onDisconnect = null; // () => void
+    this.onTextMessage = null; // (msg: object) => void — JSON text messages
 
     // Reconnection state (exponential back-off)
     this.reconnectDelay = 1000;
@@ -88,7 +89,20 @@ export class Connection {
     };
 
     this.ws.onmessage = (event) => {
-      this.handleMessage(event.data);
+      if (typeof event.data === 'string') {
+        // JSON text message
+        try {
+          const msg = JSON.parse(event.data);
+          if (this.onTextMessage) {
+            this.onTextMessage(msg);
+          }
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+        }
+      } else {
+        // Binary message — existing snapshot decode
+        this.handleMessage(event.data);
+      }
     };
   }
 
@@ -123,6 +137,13 @@ export class Connection {
   send(buf) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(buf);
+    }
+  }
+
+  /** Send a JSON-encoded object as a text message. */
+  sendJSON(obj) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(obj));
     }
   }
 

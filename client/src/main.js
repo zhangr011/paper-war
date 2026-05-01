@@ -39,8 +39,8 @@ const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 // Game class
 // ---------------------------------------------------------------------------
 
-class Game {
-  constructor() {
+export class Game {
+  constructor(existingConnection) {
     // Canvas elements
     this.canvas = document.getElementById('game-canvas');
     this.minimapCanvas = document.getElementById('minimap-canvas');
@@ -57,7 +57,14 @@ class Game {
     this.camera.centerOnMap();
 
     this.state = new StateManager();
-    this.connection = new Connection();
+
+    // Use provided connection or create a new one
+    if (existingConnection) {
+      this.connection = existingConnection;
+    } else {
+      this.connection = new Connection();
+    }
+
     this.input = new InputHandler(this.canvas, this.camera, this.connection);
 
     // Timing
@@ -229,8 +236,11 @@ class Game {
 
   start() {
     this.running = true;
-    this.connection.connect();
+    if (!this.connection.connected) {
+      this.connection.connect();
+    }
     this.lastTime = performance.now();
+    this.handleResize();
     requestAnimationFrame((t) => this.loop(t));
   }
 
@@ -651,8 +661,5 @@ class Game {
 }
 
 // ---------------------------------------------------------------------------
-// Bootstrap
+// Bootstrap is handled by app.js — Game is instantiated after match is found.
 // ---------------------------------------------------------------------------
-
-const game = new Game();
-game.start();

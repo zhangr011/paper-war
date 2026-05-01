@@ -110,7 +110,9 @@ func (p *ComponentPool[T]) Each(fn func(Entity, *T)) {
 	defer p.mu.RUnlock()
 
 	for i := range p.data {
-		fn(makeEntity(p.dense[i], 0), &p.data[i])
+		// dense stores raw indices; callers that need generation should
+		// look up via EntityManager.Alive() before acting on the entity.
+		fn(Entity(p.dense[i]), &p.data[i])
 	}
 }
 

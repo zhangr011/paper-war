@@ -19,6 +19,9 @@ func Mul(a, b int64) int64 {
 }
 
 func Div(a, b int64) int64 {
+	if b == 0 {
+		return 0
+	}
 	return (a << FractionBits) / b
 }
 

@@ -57,3 +57,49 @@ func testInfantryProfile() *component.MovementProfile {
 	p.TerrainCosts[component.TerrainBridge] = 1
 	return p
 }
+
+func TestFlowFieldCache(t *testing.T) {
+	gm := tilemap.NewGameMap(5, 5)
+	profile := testInfantryProfile()
+	cache := NewCache(gm, 10)
+
+	ff1 := cache.Get(2, 2, profile)
+	if ff1 == nil {
+		t.Fatal("Get should return a flow field")
+	}
+	ff2 := cache.Get(2, 2, profile)
+	if ff2 != ff1 {
+		t.Error("second Get should return same cached flow field")
+	}
+	ff3 := cache.Get(0, 0, profile)
+	if ff3 == ff1 {
+		t.Error("different target should return different flow field")
+	}
+}
+
+func TestFlowFieldCacheEviction(t *testing.T) {
+	gm := tilemap.NewGameMap(5, 5)
+	profile := testInfantryProfile()
+	cache := NewCache(gm, 2)
+
+	cache.Get(0, 0, profile)
+	cache.Get(1, 1, profile)
+	cache.Get(2, 2, profile)
+
+	if cache.Size() > 2 {
+		t.Errorf("cache size = %d, want <= 2", cache.Size())
+	}
+}
+
+func TestFlowFieldCacheInvalidate(t *testing.T) {
+	gm := tilemap.NewGameMap(5, 5)
+	profile := testInfantryProfile()
+	cache := NewCache(gm, 10)
+
+	ff1 := cache.Get(2, 2, profile)
+	cache.Invalidate(2, 2, profile)
+	ff2 := cache.Get(2, 2, profile)
+	if ff2 == ff1 {
+		t.Error("after Invalidate, should recompute")
+	}
+}

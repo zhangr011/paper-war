@@ -38,8 +38,8 @@ func NewGameSession() *GameSession {
 	em := ecs.NewEntityManager()
 	gs.World = ecs.NewWorld(em)
 
-	// 2. Create GameMap (64x64 test map)
-	gs.Map = tilemap.NewGameMap(64, 64)
+	// 2. Create GameMap (64x64 generated terrain)
+	gs.Map = tilemap.GenerateMap(64, 64, 42)
 
 	// 3. Create Spatial Hash (cell size = 2 world units in fixed-point)
 	gs.Sh = spatial.NewHash(fixed.FromFloat(2.0))
@@ -402,7 +402,20 @@ func (gs *GameSession) handleTacticalOrder(squadID uint32, orderType uint8) {
 	})
 }
 
-// addComponent is a helper to add a component from a typed pool looked up from the world.
+// MapData returns the terrain types as a flat byte array for client download.
+func (gs *GameSession) MapData() []byte {
+	size := gs.Map.Width * gs.Map.Height
+	data := make([]byte, size)
+	for i, tile := range gs.Map.Tiles {
+		data[i] = byte(tile.TerrainType)
+	}
+	return data
+}
+
+// MapSize returns the map dimensions.
+func (gs *GameSession) MapSize() (int32, int32) {
+	return gs.Map.Width, gs.Map.Height
+}
 func addComponent[T any](w *ecs.World, e ecs.Entity, comp T) {
 	pool := w.Pool(comp).(*ecs.ComponentPool[T])
 	pool.Add(e, comp)

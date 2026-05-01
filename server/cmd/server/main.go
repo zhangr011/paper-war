@@ -54,11 +54,16 @@ func main() {
 				fixed.FromFloat(float64(15+40*i)), fixed.FromFloat(10), 8)
 
 			// Send match_found to this player
+			mw, mh := gs.MapSize()
 			hub.SendJSON(p.ClientID, map[string]interface{}{
 				"type":      "match_found",
 				"player_id": playerID,
 				"players":   len(players),
+				"map_w":     mw,
+				"map_h":     mh,
 			})
+			// Send map terrain data as binary
+			hub.SendToClient(p.ClientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
 		}
 	})
 

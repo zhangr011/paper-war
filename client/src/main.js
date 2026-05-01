@@ -13,8 +13,8 @@ import { TILE_WIDTH, TILE_HEIGHT, HALF_W, HALF_H } from './iso.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAP_WIDTH = 256;
-const MAP_HEIGHT = 256;
+const MAP_WIDTH = 64;
+const MAP_HEIGHT = 64;
 
 // Fixed-point conversion (server uses int64 with 12-bit fraction)
 const FRAC_BITS = 12;
@@ -34,6 +34,21 @@ const SELECTION_BORDER_COLOR = { r: 0.3, g: 0.9, b: 1.0, a: 0.7 };
 
 // Cleanup dead units every N frames
 const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
+
+// Terrain type colors (matching server component.TerrainType)
+const TERRAIN_COLORS = [
+  { r: 0.18, g: 0.38, b: 0.14 }, // 0 Plain (grass)
+  { r: 0.35, g: 0.30, b: 0.22 }, // 1 Road (brown)
+  { r: 0.20, g: 0.38, b: 0.50 }, // 2 Shallow (light blue)
+  { r: 0.10, g: 0.20, b: 0.40 }, // 3 Deep (dark blue)
+  { r: 0.10, g: 0.28, b: 0.10 }, // 4 Forest (dark green)
+  { r: 0.40, g: 0.36, b: 0.28 }, // 5 Hill (tan)
+  { r: 0.25, g: 0.30, b: 0.18 }, // 6 Swamp (murky green)
+  { r: 0.45, g: 0.35, b: 0.20 }, // 7 Bridge (wood brown)
+  { r: 0.45, g: 0.45, b: 0.42 }, // 8 Wall (stone gray)
+  { r: 0.80, g: 0.85, b: 0.90 }, // 9 Snow (white)
+  { r: 0.70, g: 0.60, b: 0.35 }, // 10 Desert (sand)
+];
 
 // ---------------------------------------------------------------------------
 // Game class
@@ -73,6 +88,11 @@ export class Game {
     this.running = false;
     this.frameCount = 0;
 
+    // Map data
+    this.mapWidth = MAP_WIDTH;
+    this.mapHeight = MAP_HEIGHT;
+    this.terrainData = null; // Uint8Array from server
+
     // Game time for timer display
     this.gameStartTime = 0;
     this.gameTimeSeconds = 0;
@@ -97,6 +117,14 @@ export class Game {
 
     // Clean up dead units periodically
     this.framesSinceCleanup = 0;
+  }
+
+  // Set terrain data received from server
+  setMapTerrain(data) {
+    this.terrainData = data;
+    this.camera.mapWidth = this.mapWidth;
+    this.camera.mapHeight = this.mapHeight;
+    this.camera.centerOnMap();
   }
 
   // -----------------------------------------------------------------------
@@ -344,11 +372,14 @@ export class Game {
     const tiles = [];
     const { minTX, maxTX, minTY, maxTY } = visible;
 
+    const mw = this.mapWidth;
+    const mh = this.mapHeight;
+
     // Clamp to map bounds
     const startX = Math.max(0, minTX);
-    const endX = Math.min(MAP_WIDTH, maxTX);
+    const endX = Math.min(mw, maxTX);
     const startY = Math.max(0, minTY);
-    const endY = Math.min(MAP_HEIGHT, maxTY);
+    const endY = Math.min(mh, maxTY);
 
     const zoom = this.camera.zoom;
 
@@ -361,8 +392,15 @@ export class Game {
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
 
-        // Checkerboard pattern
-        const color = (tx + ty) % 2 === 0 ? GRASS_A : GRASS_B;
+        // Get terrain color from map data
+        let color;
+        if (this.terrainData) {
+          const idx = ty * mw + tx;
+          const terrainType = this.terrainData[idx] || 0;
+          color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
+        } else {
+          color = (tx + ty) % 2 === 0 ? GRASS_A : GRASS_B;
+        }
 
         tiles.push({
           x: sx,
@@ -530,8 +568,8 @@ export class Game {
       if (!unit.alive) continue;
 
       // Normalize world position to [0..1]
-      const nx = unit.renderX / MAP_WIDTH;
-      const ny = unit.renderY / MAP_HEIGHT;
+      const nx = unit.renderX / this.mapWidth;
+      const ny = unit.renderY / this.mapHeight;
 
       // Project to minimap diamond coordinates
       // The isometric diamond in minimap space:
@@ -568,8 +606,8 @@ export class Game {
     ctx.beginPath();
     for (let i = 0; i < corners.length; i++) {
       const [wx, wy] = corners[i];
-      const nx = wx / MAP_WIDTH;
-      const ny = wy / MAP_HEIGHT;
+      const nx = wx / this.mapWidth;
+      const ny = wy / this.mapHeight;
       const px = mw * (0.5 + (nx - ny) * 0.5);
       const py = mh * ((nx + ny) * 0.5);
       if (i === 0) ctx.moveTo(px, py);

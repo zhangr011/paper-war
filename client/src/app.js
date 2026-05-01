@@ -158,6 +158,14 @@ export class App {
     // Create Game with the existing connection
     this.game = new Game(this.connection);
     this.game.playerID = matchInfo.player_id;
+    this.game.mapWidth = matchInfo.map_w || 64;
+    this.game.mapHeight = matchInfo.map_h || 64;
+
+    // Set up map data handler
+    this.connection.onMapData = (terrainData) => {
+      this.game.setMapTerrain(terrainData);
+    };
+
     this.game.start();
   }
 }

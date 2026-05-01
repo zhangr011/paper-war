@@ -51,6 +51,7 @@ export class Connection {
     this.onConnect = null;    // () => void
     this.onDisconnect = null; // () => void
     this.onTextMessage = null; // (msg: object) => void — JSON text messages
+    this.onMapData = null;    // (terrainData: Uint8Array) => void
 
     // Reconnection state (exponential back-off)
     this.reconnectDelay = 1000;
@@ -100,8 +101,18 @@ export class Connection {
           console.error('Failed to parse JSON:', e);
         }
       } else {
-        // Binary message — existing snapshot decode
-        this.handleMessage(event.data);
+        // Binary message — check for map data vs snapshot
+        const view = new DataView(event.data);
+        if (view.byteLength >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xFE) {
+          // Map terrain data
+          const terrainData = new Uint8Array(event.data, 2);
+          if (this.onMapData) {
+            this.onMapData(terrainData);
+          }
+        } else {
+          // Snapshot data
+          this.handleMessage(event.data);
+        }
       }
     };
   }

@@ -29,8 +29,8 @@ export class Camera {
     this.maxZoom = 3.0;
 
     // Map bounds (tile count)
-    this.mapWidth = 256;
-    this.mapHeight = 256;
+    this.mapWidth = 64;
+    this.mapHeight = 64;
 
     // Center camera on map by default
     this.centerOnMap();

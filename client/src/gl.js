@@ -481,10 +481,10 @@ export class Renderer {
 
   /** Resize canvas to match its CSS layout size at the current DPR. */
   resize() {
-    const dpr = window.devicePixelRatio || 1;
+    this.dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
-    this.canvas.width = Math.floor(rect.width * dpr);
-    this.canvas.height = Math.floor(rect.height * dpr);
+    this.canvas.width = Math.floor(rect.width * this.dpr);
+    this.canvas.height = Math.floor(rect.height * this.dpr);
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
   }
 
@@ -597,7 +597,10 @@ export class Renderer {
 
   /** Flush all batches in the correct render order. */
   endFrame() {
-    const proj = ortho(this.canvas.width, this.canvas.height);
+    // Use CSS pixel dimensions so all game coords are in CSS pixels
+    const cssW = this.canvas.width / (this.dpr || 1);
+    const cssH = this.canvas.height / (this.dpr || 1);
+    const proj = ortho(cssW, cssH);
     const tex = this.whiteTexture;
     const aw = this.atlasWidth;
     const ah = this.atlasHeight;

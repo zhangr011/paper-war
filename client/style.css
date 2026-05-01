@@ -23,8 +23,23 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* --- 3-Row Grid Layout --- */
+/* --- Screen Management --- */
+.screen {
+  display: none;
+}
+.screen.active {
+  display: flex;  /* default for login/lobby; game-screen overrides to grid */
+}
+
+/* Override body layout — screens manage their own layout */
 body {
+  display: block;
+  height: 100vh;
+  min-width: 1280px;
+}
+
+/* Game screen restores the 3-row grid */
+#game-screen.active {
   display: grid;
   grid-template-rows: 60px 1fr 140px;
   grid-template-areas:
@@ -32,7 +47,6 @@ body {
     "viewport"
     "bottombar";
   height: 100vh;
-  min-width: 1280px;
 }
 
 /* --- Top Info Bar --- */
@@ -353,4 +367,169 @@ body {
 
 .action-btn.tactic-rally:hover {
   border-color: #27ae60;
+}
+
+/* ============================================
+   Login Screen
+   ============================================ */
+#login-screen {
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(ellipse at center, #1a2a1a 0%, #0a0a0a 100%);
+  height: 100vh;
+}
+.login-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  min-width: 320px;
+}
+.login-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #c8a832;
+  margin-bottom: 4px;
+  letter-spacing: 2px;
+}
+.login-subtitle {
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-bottom: 32px;
+}
+#login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#login-username {
+  padding: 10px 14px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #ddd;
+  font-size: 14px;
+  outline: none;
+  text-align: center;
+}
+#login-username:focus {
+  border-color: #c8a832;
+}
+#login-username::placeholder {
+  color: #555;
+}
+.login-btn {
+  padding: 10px;
+  background: #c8a832;
+  color: #1a1a1a;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.login-btn:hover {
+  background: #d4b83a;
+}
+
+/* ============================================
+   Lobby Screen
+   ============================================ */
+#lobby-screen {
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(ellipse at center, #1a2a1a 0%, #0a0a0a 100%);
+  height: 100vh;
+}
+.lobby-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  min-width: 360px;
+}
+.lobby-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ddd;
+  margin-bottom: 20px;
+}
+.lobby-player {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 12px;
+  background: #222;
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+.lobby-player-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  background: #444;
+  color: #c8a832;
+  font-weight: 700;
+  font-size: 16px;
+}
+.lobby-player-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ddd;
+}
+.lobby-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lobby-status {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 8px;
+}
+.lobby-btn {
+  padding: 10px;
+  background: #2a6a2a;
+  color: #ddd;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.lobby-btn:hover {
+  background: #3a8a3a;
+}
+.lobby-btn-cancel {
+  background: #6a2a2a;
+}
+.lobby-btn-cancel:hover {
+  background: #8a3a3a;
+}
+.lobby-spinner {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #333;
+  border-top-color: #c8a832;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

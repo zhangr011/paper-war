@@ -8,12 +8,46 @@
 </head>
 <body>
 
+  <!-- Login screen -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <h1 class="login-title">Paper War</h1>
+      <p class="login-subtitle">Real-Time Strategy</p>
+      <form id="login-form" autocomplete="off">
+        <input type="text" id="login-username" placeholder="Enter your name" maxlength="20" required>
+        <button type="submit" class="login-btn">Join</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Lobby screen -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">War Room</h2>
+      <div class="lobby-player">
+        <span class="lobby-player-avatar">P</span>
+        <span class="lobby-player-name" id="lobby-player-name">Player</span>
+      </div>
+      <div class="lobby-queue" id="lobby-queue">
+        <p class="lobby-status" id="lobby-status">Ready for battle</p>
+        <button class="lobby-btn" id="find-match-btn">Find Match</button>
+        <button class="lobby-btn lobby-btn-cancel" id="cancel-queue-btn" style="display:none">Cancel</button>
+      </div>
+      <div class="lobby-spinner" id="lobby-spinner" style="display:none">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game screen -->
+  <div id="game-screen" class="screen">
+
   <!-- Top info bar -->
   <header id="top-bar">
     <div class="top-bar-left">
       <span class="player-info">
-        <span class="player-avatar">P</span>
-        <span class="player-name">Commander</span>
+        <span class="player-avatar" id="player-avatar">P</span>
+        <span class="player-name" id="player-name">Commander</span>
       </span>
     </div>
     <div class="top-bar-center">
@@ -128,6 +162,8 @@
     </section>
 
   </footer>
+
+  </div><!-- /game-screen -->
 
   <script type="module" src="src/main.js"></script>
 </body>

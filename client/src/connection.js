@@ -1,0 +1,332 @@
+// client/src/connection.js — WebSocket client with binary protocol matching the server.
+// Binary encoding: little-endian throughout.
+
+// ---------------------------------------------------------------------------
+// Command types (client -> server)
+// ---------------------------------------------------------------------------
+export const CMD_MOVE_SQUAD = 0x01;
+export const CMD_ATTACK_TARGET = 0x02;
+export const CMD_ATTACK_GROUND = 0x03;
+export const CMD_CHANGE_FORMATION = 0x04;
+export const CMD_TACTICAL_ORDER = 0x05;
+
+// ---------------------------------------------------------------------------
+// ChangedMask bits (server -> client unit deltas)
+// ---------------------------------------------------------------------------
+export const CHANGED_POSITION = 1 << 0;
+export const CHANGED_VELOCITY = 1 << 1;
+export const CHANGED_ANGLE = 1 << 2;
+export const CHANGED_HP = 1 << 3;
+export const CHANGED_TARGET_ID = 1 << 4;
+export const CHANGED_MORALE = 1 << 5;
+export const CHANGED_STATE = 1 << 6;
+
+// ---------------------------------------------------------------------------
+// Event types (server -> client)
+// ---------------------------------------------------------------------------
+export const EVENT_DAMAGE = 0;
+export const EVENT_DEATH = 1;
+export const EVENT_TERRAIN_CHANGE = 2;
+export const EVENT_COMMANDER_DOWN = 3;
+export const EVENT_PROJECTILE = 4;
+
+// ---------------------------------------------------------------------------
+// Command header size: Type(uint8) + ClientSeq(uint32) + PredictedTick(uint32) + SquadID(uint32) = 13
+// ---------------------------------------------------------------------------
+const CMD_HEADER_SIZE = 1 + 4 + 4 + 4;
+
+export class Connection {
+  /**
+   * @param {string} [url] — WebSocket endpoint. Defaults to ws://{host}/ws.
+   */
+  constructor(url) {
+    this.url = url || `ws://${window.location.host}/ws`;
+    this.ws = null;
+    this.connected = false;
+    this.seq = 0;
+    this.playerID = 0;
+
+    // Public callbacks
+    this.onSnapshot = null;   // (snapshot) => void
+    this.onConnect = null;    // () => void
+    this.onDisconnect = null; // () => void
+
+    // Reconnection state (exponential back-off)
+    this.reconnectDelay = 1000;
+    this.maxReconnectDelay = 30000;
+    this.reconnectTimer = null;
+
+    // Heartbeat
+    this.pingInterval = null;
+    this.lastPong = 0;
+  }
+
+  // -----------------------------------------------------------------------
+  // Connection lifecycle
+  // -----------------------------------------------------------------------
+
+  connect() {
+    this.ws = new WebSocket(this.url);
+    this.ws.binaryType = 'arraybuffer';
+
+    this.ws.onopen = () => {
+      this.connected = true;
+      this.reconnectDelay = 1000;
+      this.startHeartbeat();
+      if (this.onConnect) this.onConnect();
+    };
+
+    this.ws.onclose = () => {
+      this.connected = false;
+      this.stopHeartbeat();
+      if (this.onDisconnect) this.onDisconnect();
+      this.scheduleReconnect();
+    };
+
+    this.ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+    };
+
+    this.ws.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.stopHeartbeat();
+    clearTimeout(this.reconnectTimer);
+  }
+
+  // -----------------------------------------------------------------------
+  // Send helpers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Write the common command header into buf starting at offset 0.
+   * @returns {number} offset past the header (always CMD_HEADER_SIZE).
+   */
+  _writeHeader(buf, type, squadID, predictedTick) {
+    const view = new DataView(buf);
+    let off = 0;
+    view.setUint8(off, type); off += 1;
+    view.setUint32(off, this.seq++, true); off += 4;
+    view.setUint32(off, predictedTick || 0, true); off += 4;
+    view.setUint32(off, squadID, true); off += 4;
+    return off;
+  }
+
+  /** Send a raw ArrayBuffer if the socket is open. */
+  send(buf) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(buf);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Command senders
+  // -----------------------------------------------------------------------
+
+  /**
+   * CmdMoveSquad (0x01): header + TargetX(int32) + TargetY(int32) = 21 bytes.
+   */
+  sendMoveSquad(squadID, targetX, targetY, predictedTick) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 4 + 4);
+    const view = new DataView(buf);
+    let off = this._writeHeader(buf, CMD_MOVE_SQUAD, squadID, predictedTick);
+    view.setInt32(off, targetX, true); off += 4;
+    view.setInt32(off, targetY, true); off += 4;
+    this.send(buf);
+  }
+
+  /**
+   * CmdAttackTarget (0x02): header + TargetID(uint32) = 17 bytes.
+   */
+  sendAttackTarget(squadID, targetID, predictedTick) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 4);
+    const view = new DataView(buf);
+    let off = this._writeHeader(buf, CMD_ATTACK_TARGET, squadID, predictedTick);
+    view.setUint32(off, targetID, true); off += 4;
+    this.send(buf);
+  }
+
+  /**
+   * CmdAttackGround (0x03): header + TargetX(int32) + TargetY(int32) = 21 bytes.
+   */
+  sendAttackGround(squadID, targetX, targetY, predictedTick) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 4 + 4);
+    const view = new DataView(buf);
+    let off = this._writeHeader(buf, CMD_ATTACK_GROUND, squadID, predictedTick);
+    view.setInt32(off, targetX, true); off += 4;
+    view.setInt32(off, targetY, true); off += 4;
+    this.send(buf);
+  }
+
+  /**
+   * CmdChangeFormation (0x04): header + FormationType(uint8) = 14 bytes.
+   */
+  sendChangeFormation(squadID, formationType) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 1);
+    const view = new DataView(buf);
+    const off = this._writeHeader(buf, CMD_CHANGE_FORMATION, squadID, 0);
+    view.setUint8(off, formationType);
+    this.send(buf);
+  }
+
+  /**
+   * CmdTacticalOrder (0x05): header + OrderType(uint8) = 14 bytes.
+   */
+  sendTacticalOrder(squadID, orderType) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 1);
+    const view = new DataView(buf);
+    const off = this._writeHeader(buf, CMD_TACTICAL_ORDER, squadID, 0);
+    view.setUint8(off, orderType);
+    this.send(buf);
+  }
+
+  // -----------------------------------------------------------------------
+  // Snapshot & event decoding (server -> client)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Parse an incoming binary snapshot message.
+   *
+   * Wire format (all little-endian):
+   *   Tick(uint32) PrevTick(uint32) UnitCount(uint16) EventCount(uint8)
+   *   [UnitCount x unit deltas]
+   *   [EventCount x events]
+   */
+  handleMessage(data) {
+    const view = new DataView(data);
+    let off = 0;
+
+    // --- Snapshot header ---
+    const tick = view.getUint32(off, true); off += 4;
+    const prevTick = view.getUint32(off, true); off += 4;
+    const unitCount = view.getUint16(off, true); off += 2;
+    const eventCount = view.getUint8(off); off += 1;
+
+    // --- Unit deltas ---
+    const units = [];
+    for (let i = 0; i < unitCount; i++) {
+      const entityID = view.getUint32(off, true); off += 4;
+      const mask = view.getUint8(off); off += 1;
+
+      const unit = { entityID, changedMask: mask };
+
+      if (mask & CHANGED_POSITION) {
+        unit.x = Number(view.getBigInt64(off, true)); off += 8;
+        unit.y = Number(view.getBigInt64(off, true)); off += 8;
+      }
+      if (mask & CHANGED_VELOCITY) {
+        unit.vx = Number(view.getBigInt64(off, true)); off += 8;
+        unit.vy = Number(view.getBigInt64(off, true)); off += 8;
+      }
+      if (mask & CHANGED_ANGLE) {
+        unit.angle = view.getInt16(off, true); off += 2;
+      }
+      if (mask & CHANGED_HP) {
+        unit.hp = view.getInt32(off, true); off += 4;
+      }
+      if (mask & CHANGED_TARGET_ID) {
+        unit.targetID = view.getUint32(off, true); off += 4;
+      }
+      if (mask & CHANGED_MORALE) {
+        unit.morale = view.getInt32(off, true); off += 4;
+      }
+      if (mask & CHANGED_STATE) {
+        unit.state = view.getUint8(off); off += 1;
+      }
+
+      units.push(unit);
+    }
+
+    // --- Events ---
+    const events = [];
+    for (let i = 0; i < eventCount; i++) {
+      const eventType = view.getUint8(off); off += 1;
+      const evt = { type: eventType };
+
+      switch (eventType) {
+        case EVENT_DAMAGE: {
+          // targetID(uint32) + damage(int32) + sourceX(int32) + sourceY(int32) = 16
+          evt.targetID = view.getUint32(off, true); off += 4;
+          evt.damage = view.getInt32(off, true); off += 4;
+          evt.sourceX = view.getInt32(off, true); off += 4;
+          evt.sourceY = view.getInt32(off, true); off += 4;
+          break;
+        }
+        case EVENT_DEATH: {
+          // entityID(uint32) = 4
+          evt.entityID = view.getUint32(off, true); off += 4;
+          break;
+        }
+        case EVENT_TERRAIN_CHANGE: {
+          // tileX(int32) + tileY(int32) + newType(uint8) = 9
+          evt.tileX = view.getInt32(off, true); off += 4;
+          evt.tileY = view.getInt32(off, true); off += 4;
+          evt.newType = view.getUint8(off); off += 1;
+          break;
+        }
+        case EVENT_COMMANDER_DOWN: {
+          // commanderID(uint32) = 4
+          evt.commanderID = view.getUint32(off, true); off += 4;
+          break;
+        }
+        case EVENT_PROJECTILE: {
+          // x(int64) + y(int64) + targetX(int64) + targetY(int64) + impactTick(uint32) = 36
+          evt.x = Number(view.getBigInt64(off, true)); off += 8;
+          evt.y = Number(view.getBigInt64(off, true)); off += 8;
+          evt.targetX = Number(view.getBigInt64(off, true)); off += 8;
+          evt.targetY = Number(view.getBigInt64(off, true)); off += 8;
+          evt.impactTick = view.getUint32(off, true); off += 4;
+          break;
+        }
+        default:
+          console.warn(`Unknown event type ${eventType} at offset ${off - 1}, stopping event decode`);
+          // Cannot continue safely — remaining layout is unknown.
+          i = eventCount; // break outer loop
+          break;
+      }
+
+      events.push(evt);
+    }
+
+    if (this.onSnapshot) {
+      this.onSnapshot({ tick, prevTick, units, events });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Heartbeat
+  // -----------------------------------------------------------------------
+
+  startHeartbeat() {
+    this.lastPong = Date.now();
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.ping();
+      }
+    }, 15000);
+  }
+
+  stopHeartbeat() {
+    clearInterval(this.pingInterval);
+    this.pingInterval = null;
+  }
+
+  // -----------------------------------------------------------------------
+  // Reconnection (exponential back-off)
+  // -----------------------------------------------------------------------
+
+  scheduleReconnect() {
+    this.reconnectTimer = setTimeout(() => {
+      console.log('Reconnecting...');
+      this.connect();
+    }, this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+  }
+}

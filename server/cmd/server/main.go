@@ -12,6 +12,29 @@ import (
 	"github.com/user/paper-war/server/pkg/network"
 )
 
+// resolveClientDir tries several paths to find the client directory.
+func resolveClientDir() string {
+	candidates := []string{
+		"../client",                       // running from server/cmd/server/
+		"../../client",                    // running from server/
+		filepath.Join("..", "..", "client"), // fallback
+	}
+	// Also try relative to executable (for `go run`)
+	if execPath, err := os.Executable(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(filepath.Dir(execPath), "..", "..", "client"),
+		)
+	}
+	for _, dir := range candidates {
+		abs, _ := filepath.Abs(dir)
+		if info, err := os.Stat(abs); err == nil && info.IsDir() {
+			return abs
+		}
+	}
+	log.Println("Warning: client directory not found (static file serving disabled)")
+	return ""
+}
+
 func main() {
 	// 1. Initialize game session (64x64 map, ECS world, all systems)
 	gs := game.NewGameSession()
@@ -54,21 +77,15 @@ func main() {
 	}()
 
 	// 5. Serve static client files on "/"
-	// Resolve client directory relative to this binary's source location.
-	execPath, _ := os.Executable()
-	clientDir := filepath.Join(filepath.Dir(execPath), "..", "..", "client")
-	if info, err := os.Stat(clientDir); err != nil || !info.IsDir() {
-		// Fallback: try relative to working directory
-		clientDir = filepath.Join("..", "..", "client")
-		if info, err := os.Stat(clientDir); err != nil || !info.IsDir() {
-			log.Printf("Warning: client directory not found at %s (static file serving disabled)", clientDir)
-		}
+	clientDir := resolveClientDir()
+	if clientDir != "" {
+		fs := http.FileServer(http.Dir(clientDir))
+		http.Handle("/", fs)
+		log.Printf("Client files served from: %s", clientDir)
 	}
-	fs := http.FileServer(http.Dir(clientDir))
-	http.Handle("/", fs)
 
 	// 6. Start server — Serve() registers /ws and calls http.ListenAndServe
-	addr := ":8080"
+	addr := ":8090"
 	log.Printf("Paper War server starting on %s", addr)
 	log.Printf("WebSocket endpoint: ws://localhost%s/ws", addr)
 	log.Printf("Client files served from: %s", clientDir)

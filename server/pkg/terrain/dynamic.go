@@ -2,6 +2,7 @@ package terrain
 
 import (
 	"github.com/user/paper-war/server/pkg/component"
+	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/pathfinding"
 	"github.com/user/paper-war/server/pkg/tilemap"
 )
@@ -29,9 +30,9 @@ func NewTerrainSystem(gm *tilemap.GameMap, cache *pathfinding.Cache, profiles []
 
 func (s *TerrainSystem) Name() string  { return "TerrainSystem" }
 func (s *TerrainSystem) Priority() int { return 30 }
-func (s *TerrainSystem) Init(w interface{}) {}
+func (s *TerrainSystem) Init(w *ecs.World) {}
 
-func (s *TerrainSystem) Tick(w interface{}, tick uint32) {
+func (s *TerrainSystem) Tick(w *ecs.World, tick uint32) {
 	if len(s.events) == 0 {
 		return
 	}

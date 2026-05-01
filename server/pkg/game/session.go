@@ -1,6 +1,9 @@
 package game
 
 import (
+	"math/rand"
+	"time"
+
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/combat"
@@ -119,6 +122,35 @@ func NewGameSession() *GameSession {
 func (gs *GameSession) Tick() {
 	gs.tickCount++
 	gs.World.Tick(gs.tickCount)
+}
+
+// Reset clears all entities, generates a new random map, and resets state.
+func (gs *GameSession) Reset() {
+	// Destroy all entities
+	em := gs.World.Entities()
+	// Collect all entity IDs first
+	var ids []ecs.Entity
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	posPool.Each(func(e ecs.Entity, _ *component.PositionComponent) {
+		ids = append(ids, e)
+	})
+	for _, e := range ids {
+		em.Destroy(e)
+	}
+
+	// Generate new map with random seed
+	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	gs.Map = tilemap.GenerateMap(64, 64, seed)
+	gs.Cache = pathfinding.NewCache(gs.Map, 64)
+
+	// Update system references
+	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, nil)
+	gs.movementSys.Gm = gs.Map
+	gs.movementSys.Cache = gs.Cache
+
+	// Reset tick counter and snapshot generator
+	gs.tickCount = 0
+	gs.SnapGen = network.NewSnapshotGenerator()
 }
 
 // SpawnSquad creates a commander + N units for a given player.

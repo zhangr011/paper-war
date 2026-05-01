@@ -45,6 +45,7 @@ func main() {
 	// 3. Create matchmaker — on match, spawn squads for each player
 	mm := game.NewMatchmaker(func(players []game.QueuePlayer) {
 		log.Printf("Match found with %d players!", len(players))
+		gs.Reset()
 		for i, p := range players {
 			playerID := uint32(i + 1)
 			// Spawn 2 squads per player
@@ -96,6 +97,7 @@ func main() {
 			case "start_solo":
 				name := hub.GetClientName(clientID)
 				log.Printf("client %d (%s) starting solo game", clientID, name)
+				gs.Reset()
 				gs.SpawnSquad(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 8)
 				gs.SpawnSquad(1, 2, fixed.FromFloat(15), fixed.FromFloat(10), 8)
 				gs.SpawnSquad(2, 3, fixed.FromFloat(50), fixed.FromFloat(50), 8)

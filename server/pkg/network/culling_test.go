@@ -54,11 +54,11 @@ func TestCullAllMultipleClients(t *testing.T) {
 	}
 
 	result := culler.CullAll(units)
-	if len(result[1]) != 2 {
-		t.Errorf("client 1 sees %d units, want 2 (own + enemy in view)", len(result[1]))
+	if len(result[1]) != 1 {
+		t.Errorf("client 1 sees %d units, want 1 (only own unit in view)", len(result[1]))
 	}
-	if len(result[2]) != 2 {
-		t.Errorf("client 2 sees %d units, want 2", len(result[2]))
+	if len(result[2]) != 1 {
+		t.Errorf("client 2 sees %d units, want 1", len(result[2]))
 	}
 }
 

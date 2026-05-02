@@ -198,19 +198,19 @@ export class InputHandler {
     const speed = 500 * dt; // pixels per second
 
     // WASD panning
-    if (this.keys.has('w') || this.keys.has('arrowup')) panY += speed;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) panY -= speed;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) panX += speed;
-    if (this.keys.has('d') || this.keys.has('arrowright')) panX -= speed;
+    if (this.keys.has('w') || this.keys.has('arrowup')) panY -= speed;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) panY += speed;
+    if (this.keys.has('a') || this.keys.has('arrowleft')) panX -= speed;
+    if (this.keys.has('d') || this.keys.has('arrowright')) panX += speed;
 
     // Edge scrolling (only if mouse is over the canvas area)
     if (this.mouseX >= 0 && this.mouseY >= 0) {
       const z = this.edgeScrollZone;
       const es = this.edgeScrollSpeed * dt;
-      if (this.mouseX < z) panX += es;
-      if (this.mouseX > this.canvas.clientWidth - z) panX -= es;
-      if (this.mouseY < z) panY += es;
-      if (this.mouseY > this.canvas.clientHeight - z) panY -= es;
+      if (this.mouseX < z) panX -= es;
+      if (this.mouseX > this.canvas.clientWidth - z) panX += es;
+      if (this.mouseY < z) panY -= es;
+      if (this.mouseY > this.canvas.clientHeight - z) panY += es;
     }
 
     if (panX !== 0 || panY !== 0) {

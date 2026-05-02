@@ -419,7 +419,8 @@ export class Game {
 
   /**
    * Build unit descriptors for rendering from the state's render units.
-   * Each unit is converted to screen coordinates and Y-sorted.
+   * Each unit is converted to raw world-pixel coordinates and Y-sorted.
+   * Camera offset is applied by the renderer (same as terrain tiles).
    */
   buildUnitDescriptors(units) {
     const descs = [];
@@ -428,8 +429,9 @@ export class Game {
     for (const unit of units) {
       if (!unit.alive) continue;
 
-      // Convert world position to screen position via camera
-      const [sx, sy] = this.camera.worldToScreen(unit.renderX, unit.renderY);
+      // Raw world-pixel position (same formula as terrain tiles in buildTerrainTiles)
+      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
+      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
 
       // Scale sprite size by zoom
       const w = UNIT_SPRITE_W * zoom;
@@ -489,7 +491,9 @@ export class Game {
     for (const unit of this.selectedUnits) {
       if (!unit.alive) continue;
 
-      const [sx, sy] = this.camera.worldToScreen(unit.renderX, unit.renderY);
+      // Raw world-pixel position (same formula as terrain tiles)
+      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
+      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
       const w = UNIT_SPRITE_W * zoom;
       const h = UNIT_SPRITE_H * zoom;
 

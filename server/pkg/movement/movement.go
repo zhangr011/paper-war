@@ -104,8 +104,8 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			speed := vel.Speed
 			vel.Vx = fixed.Clamp(totalFX, -speed, speed)
 			vel.Vy = fixed.Clamp(totalFY, -speed, speed)
-			pos.X += vel.Vx
-			pos.Y += vel.Vy
+			pos.X += vel.Vx / 10
+			pos.Y += vel.Vy / 10
 		} else {
 			pos.X += totalFX
 			pos.Y += totalFY

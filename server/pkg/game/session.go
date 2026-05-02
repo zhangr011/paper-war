@@ -170,7 +170,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	gs.addComponent(cmdEntity, component.VelocityComponent{
 		Vx:    0,
 		Vy:    0,
-		Speed: 5, // ~1 hour to cross 64-tile map at 15Hz
+		Speed: fixed.FromFloat(0.5),
 	})
 
 	gs.addComponent(cmdEntity, component.BoidComponent{
@@ -234,7 +234,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.VelocityComponent{
 			Vx:    0,
 			Vy:    0,
-			Speed: 5, // ~1 hour to cross 64-tile map at 15Hz
+			Speed: fixed.FromFloat(0.5),
 		})
 
 		// Alternate melee and ranged roles

@@ -170,7 +170,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	gs.addComponent(cmdEntity, component.VelocityComponent{
 		Vx:    0,
 		Vy:    0,
-		Speed: fixed.FromFloat(3.0),
+		Speed: 91, // ~1 tile per 3 seconds at 15Hz
 	})
 
 	gs.addComponent(cmdEntity, component.BoidComponent{
@@ -234,7 +234,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.VelocityComponent{
 			Vx:    0,
 			Vy:    0,
-			Speed: fixed.FromFloat(3.0),
+			Speed: 91, // ~1 tile per 3 seconds at 15Hz
 		})
 
 		// Alternate melee and ranged roles

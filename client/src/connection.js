@@ -91,6 +91,7 @@ export class Connection {
 
     this.ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
+        console.log('WS text:', event.data.substring(0, 100));
         // JSON text message
         try {
           const msg = JSON.parse(event.data);

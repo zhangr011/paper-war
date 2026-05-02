@@ -47,8 +47,10 @@ export class App {
 
     // Solo game button
     this.soloBtn.addEventListener('click', () => {
-      this.connection.sendJSON({ type: 'start_solo' });
       this.lobbyStatus.textContent = 'Starting game...';
+      this.soloBtn.disabled = true;
+      this.findMatchBtn.disabled = true;
+      this.connection.sendJSON({ type: 'start_solo' });
     });
 
     // Find match button
@@ -153,6 +155,7 @@ export class App {
   // -----------------------------------------------------------------------
 
   startGame(matchInfo) {
+    console.log('Starting game:', matchInfo);
     // Update player name in top bar
     const nameEl = document.getElementById('player-name');
     if (nameEl) nameEl.textContent = this.username;

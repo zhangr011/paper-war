@@ -57,6 +57,19 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			}
 			tileX := int32(pos.X >> 12)
 			tileY := int32(pos.Y >> 12)
+			// Clamp tile coords to valid map range
+			if tileX < 0 {
+				tileX = 0
+			}
+			if tileY < 0 {
+				tileY = 0
+			}
+			if tileX >= s.Gm.Width {
+				tileX = s.Gm.Width - 1
+			}
+			if tileY >= s.Gm.Height {
+				tileY = s.Gm.Height - 1
+			}
 			ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
 			dir := ff.GetDirection(tileX, tileY)
 			flowW := fixed.FromFloat(2.5)
@@ -97,6 +110,12 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			pos.X += totalFX
 			pos.Y += totalFY
 		}
+
+		// Clamp to map bounds
+		mapMaxX := int64(s.Gm.Width) << fixed.FractionBits
+		mapMaxY := int64(s.Gm.Height) << fixed.FractionBits
+		pos.X = fixed.Clamp(pos.X, 0, mapMaxX)
+		pos.Y = fixed.Clamp(pos.Y, 0, mapMaxY)
 	})
 }
 

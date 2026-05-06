@@ -4,9 +4,9 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
-	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/movement"
@@ -32,6 +32,28 @@ type GameSession struct {
 	combatSys    *combat.CombatSystem
 
 	tickCount uint32
+}
+
+const (
+	ServerTicksPerSecond      = 5
+	combatUnitCrossMapSeconds = 60 * 60
+)
+
+func defaultCombatUnitSpeed(mapWidth int32) int64 {
+	ticks := int64(ServerTicksPerSecond * combatUnitCrossMapSeconds)
+	distance := int64(mapWidth) << fixed.FractionBits
+	speed := distance * movement.PositionDivisor / ticks
+
+	// Movement applies velocity with integer division by movement.PositionDivisor.
+	// Round up to the next divisor step so the effective speed remains near the
+	// one-hour side-to-side target after truncation.
+	if rem := speed % movement.PositionDivisor; rem != 0 {
+		speed += movement.PositionDivisor - rem
+	}
+	if speed < movement.PositionDivisor {
+		return movement.PositionDivisor
+	}
+	return speed
 }
 
 func NewGameSession() *GameSession {
@@ -156,6 +178,7 @@ func (gs *GameSession) Reset() {
 // SpawnSquad creates a commander + N units for a given player.
 func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64, unitCount int) {
 	em := gs.World.Entities()
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 
 	// --- Commander ---
 	cmdEntity := em.Create()
@@ -170,7 +193,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	gs.addComponent(cmdEntity, component.VelocityComponent{
 		Vx:    0,
 		Vy:    0,
-		Speed: fixed.FromFloat(0.5),
+		Speed: unitSpeed,
 	})
 
 	gs.addComponent(cmdEntity, component.BoidComponent{
@@ -234,7 +257,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.VelocityComponent{
 			Vx:    0,
 			Vy:    0,
-			Speed: fixed.FromFloat(0.5),
+			Speed: unitSpeed,
 		})
 
 		// Alternate melee and ranged roles

@@ -23,6 +23,8 @@ type MovementSystem struct {
 	pathPool *ecs.ComponentPool[component.PathfindingComponent]
 }
 
+const PositionDivisor = 10
+
 func (s *MovementSystem) Name() string  { return "MovementSystem" }
 func (s *MovementSystem) Priority() int { return 60 }
 
@@ -104,8 +106,8 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			speed := vel.Speed
 			vel.Vx = fixed.Clamp(totalFX, -speed, speed)
 			vel.Vy = fixed.Clamp(totalFY, -speed, speed)
-			pos.X += vel.Vx / 10
-			pos.Y += vel.Vy / 10
+			pos.X += vel.Vx / PositionDivisor
+			pos.Y += vel.Vy / PositionDivisor
 		} else {
 			pos.X += totalFX
 			pos.Y += totalFY

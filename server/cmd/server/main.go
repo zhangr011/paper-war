@@ -115,9 +115,9 @@ func main() {
 		},
 	)
 
-	// 5. Start 15Hz game loop
+	// 5. Start game loop
 	go func() {
-		ticker := time.NewTicker(time.Second / 5)
+		ticker := time.NewTicker(time.Second / game.ServerTicksPerSecond)
 		defer ticker.Stop()
 
 		// Full-map view rect for broadcast snapshots (no per-client culling yet)

@@ -7,7 +7,7 @@ import { Camera } from './camera.js';
 import { StateManager } from './state.js';
 import { Connection } from './connection.js';
 import { InputHandler } from './input.js';
-import { TILE_WIDTH, TILE_HEIGHT, HALF_W, HALF_H } from './iso.js';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -329,12 +329,8 @@ export class Game {
     // Build selection highlight descriptors
     const selectionHighlights = this.buildSelectionHighlights();
 
-    // Camera offset for the renderer: the screen-pixel offset that maps
-    // world-origin to the canvas. The camera stores (offsetX, offsetY)
-    // as the world-pixel at viewport center, so the screen offset is:
-    //   cameraOffset.x = offsetX * zoom - viewW/2
-    //   cameraOffset.y = offsetY * zoom - viewH/2
-    // This is exactly how worldToScreen computes positions.
+    // Camera offset for the renderer: world-pixel at viewport center converted
+    // into the raw projected coordinate space used by descriptors below.
     const cameraOffset = {
       x: this.camera.offsetX * this.camera.zoom - this.camera.viewW / 2,
       y: this.camera.offsetY * this.camera.zoom - this.camera.viewH / 2,
@@ -385,9 +381,9 @@ export class Game {
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
-        // Isometric diamond position in screen pixels
-        const sx = (tx - ty) * HALF_W * zoom;
-        const sy = (tx + ty) * HALF_H * zoom;
+        // Rectangular tile position in screen pixels.
+        const sx = tx * TILE_WIDTH * zoom;
+        const sy = ty * TILE_HEIGHT * zoom;
 
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
@@ -429,9 +425,9 @@ export class Game {
     for (const unit of units) {
       if (!unit.alive) continue;
 
-      // Raw world-pixel position (same formula as terrain tiles in buildTerrainTiles)
-      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
-      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
+      // Raw world-pixel position (same formula as terrain tiles).
+      const sx = unit.renderX * TILE_WIDTH * zoom;
+      const sy = unit.renderY * TILE_HEIGHT * zoom;
 
       // Scale sprite size by zoom
       const w = UNIT_SPRITE_W * zoom;
@@ -491,9 +487,9 @@ export class Game {
     for (const unit of this.selectedUnits) {
       if (!unit.alive) continue;
 
-      // Raw world-pixel position (same formula as terrain tiles)
-      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
-      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
+      // Raw world-pixel position (same formula as terrain tiles).
+      const sx = unit.renderX * TILE_WIDTH * zoom;
+      const sy = unit.renderY * TILE_HEIGHT * zoom;
       const w = UNIT_SPRITE_W * zoom;
       const h = UNIT_SPRITE_H * zoom;
 

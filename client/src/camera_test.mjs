@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 
 // ---- Minimal Camera simulation (mirrors camera.js logic) ----
 
-const HALF_W = 32;
-const HALF_H = 16;
+const TILE_WIDTH = 32;
+const TILE_HEIGHT = 32;
 
 class Camera {
   constructor(viewW, viewH) {
@@ -23,8 +23,8 @@ class Camera {
   }
 
   worldToScreen(wx, wy) {
-    const sx = (wx - wy) * HALF_W * this.zoom - this.offsetX * this.zoom + this.viewW / 2;
-    const sy = (wx + wy) * HALF_H * this.zoom - this.offsetY * this.zoom + this.viewH / 2;
+    const sx = wx * TILE_WIDTH * this.zoom - this.offsetX * this.zoom + this.viewW / 2;
+    const sy = wy * TILE_HEIGHT * this.zoom - this.offsetY * this.zoom + this.viewH / 2;
     return [sx, sy];
   }
 }

@@ -1,9 +1,9 @@
 // client/src/camera.js
-// Isometric camera with pan/zoom for the Paper War RTS client.
+// Rectangular map camera with pan/zoom for the Paper War RTS client.
 // The camera tracks (offsetX, offsetY) in screen-pixel space,
 // representing the world-origin point relative to the viewport center.
 
-import { HALF_W, HALF_H } from './iso.js';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js';
 
 export class Camera {
   /**
@@ -42,11 +42,8 @@ export class Camera {
   centerOnMap() {
     const cx = this.mapWidth / 2;
     const cy = this.mapHeight / 2;
-    // Tile (cx, cy) in pixel space:
-    //   px = (cx - cy) * HALF_W = 0
-    //   py = (cx + cy) * HALF_H = (mapWidth + mapHeight) * HALF_H / 2
-    this.offsetX = (cx - cy) * HALF_W;
-    this.offsetY = (cx + cy) * HALF_H;
+    this.offsetX = cx * TILE_WIDTH;
+    this.offsetY = cy * TILE_HEIGHT;
     this._clamp();
   }
 
@@ -95,10 +92,10 @@ export class Camera {
    * @returns {[number, number]} [screenX, screenY] relative to canvas
    */
   worldToScreen(wx, wy) {
-    const sx = (wx - wy) * HALF_W * this.zoom
+    const sx = wx * TILE_WIDTH * this.zoom
       - this.offsetX * this.zoom
       + this.viewW / 2;
-    const sy = (wx + wy) * HALF_H * this.zoom
+    const sy = wy * TILE_HEIGHT * this.zoom
       - this.offsetY * this.zoom
       + this.viewH / 2;
     return [sx, sy];
@@ -116,8 +113,8 @@ export class Camera {
     const wpx = (sx - this.viewW / 2) / this.zoom + this.offsetX;
     const wpy = (sy - this.viewH / 2) / this.zoom + this.offsetY;
     // Convert world-pixel to tile coordinates
-    const wx = (wpx / HALF_W + wpy / HALF_H) / 2;
-    const wy = (wpy / HALF_H - wpx / HALF_W) / 2;
+    const wx = wpx / TILE_WIDTH;
+    const wy = wpy / TILE_HEIGHT;
     return [wx, wy];
   }
 
@@ -134,34 +131,35 @@ export class Camera {
   }
 
   /**
-   * Clamp the camera so the viewport does not go past map boundaries.
-   * The map occupies a diamond in pixel space from (0,0) top to
-   * (mapWidth*HALF_W + mapHeight*HALF_W) wide and tall.
+   * Clamp the camera so the viewport does not go past rectangular map bounds.
    * @private
    */
   _clamp() {
-    // Calculate the world-pixel bounding box of the map
-    // Top of diamond: tile (0,0) -> pixel (0, 0)
-    // Right of diamond: tile (mapW, 0) -> pixel (mapW*HALF_W, mapW*HALF_H)
-    // Bottom of diamond: tile (mapW, mapH) -> pixel ((mapW-mapH)*HALF_W, (mapW+mapM)*HALF_H)
-    // Left of diamond: tile (0, mapH) -> pixel (-mapH*HALF_W, mapH*HALF_H)
     const mapW = this.mapWidth;
     const mapH = this.mapHeight;
 
-    // Pixel extents of the map diamond
-    const pxMin = -mapH * HALF_W;
-    const pxMax = mapW * HALF_W;
+    // Pixel extents of the rectangular map.
+    const pxMin = 0;
+    const pxMax = mapW * TILE_WIDTH;
     const pyMin = 0;
-    const pyMax = (mapW + mapH) * HALF_H;
+    const pyMax = mapH * TILE_HEIGHT;
 
     // The viewport center in world-pixel space is (offsetX, offsetY).
     // The visible range is +/- viewW/(2*zoom) horizontally and +/- viewH/(2*zoom) vertically.
     const halfVisW = this.viewW / (2 * this.zoom);
     const halfVisH = this.viewH / (2 * this.zoom);
 
-    // Clamp center so viewport stays within map bounds
-    this.offsetX = Math.max(pxMin + halfVisW, Math.min(pxMax - halfVisW, this.offsetX));
-    this.offsetY = Math.max(pyMin + halfVisH, Math.min(pyMax - halfVisH, this.offsetY));
+    // Clamp center so viewport stays within map bounds, centering small maps.
+    if (pxMax - pxMin <= halfVisW * 2) {
+      this.offsetX = (pxMin + pxMax) / 2;
+    } else {
+      this.offsetX = Math.max(pxMin + halfVisW, Math.min(pxMax - halfVisW, this.offsetX));
+    }
+    if (pyMax - pyMin <= halfVisH * 2) {
+      this.offsetY = (pyMin + pyMax) / 2;
+    } else {
+      this.offsetY = Math.max(pyMin + halfVisH, Math.min(pyMax - halfVisH, this.offsetY));
+    }
   }
 
   /**

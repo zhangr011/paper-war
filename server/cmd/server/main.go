@@ -140,7 +140,10 @@ func main() {
 	clientDir := resolveClientDir()
 	if clientDir != "" {
 		fs := http.FileServer(http.Dir(clientDir))
-		http.Handle("/", fs)
+		http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			fs.ServeHTTP(w, r)
+		}))
 		log.Printf("Client files served from: %s", clientDir)
 	}
 

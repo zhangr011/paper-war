@@ -2,8 +2,8 @@
 // Manages UI screens, server communication for login/matchmaking,
 // and delegates to Game when a match is found.
 
-import { Connection } from './connection.js';
-import { Game } from './main.js';
+import { Connection } from './connection.js?v=drag-pan-1';
+import { Game } from './main.js?v=drag-pan-1';
 
 const LAST_USERNAME_KEY = 'paper-war:last-username';
 
@@ -189,6 +189,7 @@ export class App {
 
     // Create Game with the existing connection
     this.game = new Game(this.connection);
+    window.__paperWarGame = this.game;
     this.game.playerID = matchInfo.player_id;
     this.game.mapWidth = matchInfo.map_w || 48;
     this.game.mapHeight = matchInfo.map_h || 96;

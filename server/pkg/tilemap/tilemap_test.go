@@ -2,6 +2,7 @@ package tilemap
 
 import (
 	"testing"
+
 	"github.com/user/paper-war/server/pkg/component"
 )
 
@@ -68,5 +69,52 @@ func TestNewTestMap(t *testing.T) {
 	}
 	if gm.CostAt(0, 0, p) != 1 {
 		t.Error("plain should be passable")
+	}
+}
+
+func TestGenerateMapCreatesHorizontalRiver(t *testing.T) {
+	gm := GenerateMap(48, 96, 42)
+	midY := gm.Height / 2
+
+	riverCells := 0
+	for y := midY - 5; y <= midY+6; y++ {
+		for x := int32(0); x < gm.Width; x++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil {
+				continue
+			}
+			if tile.TerrainType == component.TerrainDeep || tile.TerrainType == component.TerrainBridge {
+				riverCells++
+			}
+		}
+	}
+
+	if riverCells < int(gm.Width) {
+		t.Fatalf("horizontal river band has %d river cells, want at least %d", riverCells, gm.Width)
+	}
+}
+
+func TestGenerateMapCreatesVerticalRoads(t *testing.T) {
+	gm := GenerateMap(48, 96, 42)
+
+	verticalRoadColumns := 0
+	for x := int32(0); x < gm.Width; x++ {
+		roadCells := 0
+		for y := int32(0); y < gm.Height; y++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil {
+				continue
+			}
+			if tile.TerrainType == component.TerrainRoad || tile.TerrainType == component.TerrainBridge {
+				roadCells++
+			}
+		}
+		if roadCells >= int(gm.Height/2) {
+			verticalRoadColumns++
+		}
+	}
+
+	if verticalRoadColumns < 2 {
+		t.Fatalf("vertical road columns = %d, want at least 2", verticalRoadColumns)
 	}
 }

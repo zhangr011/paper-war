@@ -13,8 +13,8 @@ import { TILE_WIDTH, TILE_HEIGHT, HALF_W, HALF_H } from './iso.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAP_WIDTH = 64;
-const MAP_HEIGHT = 64;
+const MAP_WIDTH = 48;
+const MAP_HEIGHT = 96;
 
 // Fixed-point conversion (server uses int64 with 12-bit fraction)
 const FRAC_BITS = 12;
@@ -543,44 +543,34 @@ export class Game {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, mw, mh);
 
-    // Draw map outline (isometric diamond projected onto minimap)
+    // Draw map outline as a top-down rectangle so portrait maps read correctly
+    // on a phone-sized minimap.
+    const pad = 8;
+    const mapAspect = this.mapWidth / this.mapHeight;
+    let mapDrawH = mh - pad * 2;
+    let mapDrawW = mapDrawH * mapAspect;
+    if (mapDrawW > mw - pad * 2) {
+      mapDrawW = mw - pad * 2;
+      mapDrawH = mapDrawW / mapAspect;
+    }
+    const mapX = (mw - mapDrawW) / 2;
+    const mapY = (mh - mapDrawH) / 2;
+    const projectToMinimap = (wx, wy) => [
+      mapX + (wx / this.mapWidth) * mapDrawW,
+      mapY + (wy / this.mapHeight) * mapDrawH,
+    ];
+
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
-    ctx.beginPath();
-
-    // Map corners in normalized coordinates [0..1]
-    // Top: tile (0,0) -> (0.5, 0)
-    // Right: tile (MAP_WIDTH, 0) -> (1, 0.5)
-    // Bottom: tile (MAP_WIDTH, MAP_HEIGHT) -> (0.5, 1)
-    // Left: tile (0, MAP_HEIGHT) -> (0, 0.5)
-    const topX = mw * 0.5, topY = 0;
-    const rightX = mw, rightY = mh * 0.5;
-    const bottomX = mw * 0.5, bottomY = mh;
-    const leftX = 0, leftY = mh * 0.5;
-
-    ctx.moveTo(topX, topY);
-    ctx.lineTo(rightX, rightY);
-    ctx.lineTo(bottomX, bottomY);
-    ctx.lineTo(leftX, leftY);
-    ctx.closePath();
     ctx.fillStyle = '#1a2a1a';
-    ctx.fill();
-    ctx.stroke();
+    ctx.fillRect(mapX, mapY, mapDrawW, mapDrawH);
+    ctx.strokeRect(mapX, mapY, mapDrawW, mapDrawH);
 
     // Draw units as colored dots
     for (const unit of units) {
       if (!unit.alive) continue;
 
-      // Normalize world position to [0..1]
-      const nx = unit.renderX / this.mapWidth;
-      const ny = unit.renderY / this.mapHeight;
-
-      // Project to minimap diamond coordinates
-      // The isometric diamond in minimap space:
-      //   px = 0.5 + (nx - ny) * 0.5
-      //   py = (nx + ny) * 0.5
-      const px = mw * (0.5 + (nx - ny) * 0.5);
-      const py = mh * ((nx + ny) * 0.5);
+      const [px, py] = projectToMinimap(unit.renderX, unit.renderY);
 
       // Color based on state
       let color = '#4488cc';
@@ -597,7 +587,6 @@ export class Game {
     }
 
     // Draw viewport rectangle on the minimap
-    const vis = this.camera.getVisibleTiles();
     const corners = [
       this.camera.screenToWorld(0, 0),
       this.camera.screenToWorld(this.camera.viewW, 0),
@@ -610,10 +599,7 @@ export class Game {
     ctx.beginPath();
     for (let i = 0; i < corners.length; i++) {
       const [wx, wy] = corners[i];
-      const nx = wx / this.mapWidth;
-      const ny = wy / this.mapHeight;
-      const px = mw * (0.5 + (nx - ny) * 0.5);
-      const py = mh * ((nx + ny) * 0.5);
+      const [px, py] = projectToMinimap(wx, wy);
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }

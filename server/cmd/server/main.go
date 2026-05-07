@@ -36,7 +36,7 @@ func resolveClientDir() string {
 }
 
 func main() {
-	// 1. Initialize game session (64x64 map, ECS world, all systems)
+	// 1. Initialize game session (portrait map, ECS world, all systems)
 	gs := game.NewGameSession()
 
 	// 2. Declare hub early so callbacks can reference it
@@ -49,10 +49,7 @@ func main() {
 		for i, p := range players {
 			playerID := uint32(i + 1)
 			// Spawn 2 squads per player
-			gs.SpawnSquad(playerID, uint32(2*i+1),
-				fixed.FromFloat(float64(10+40*i)), fixed.FromFloat(10), 8)
-			gs.SpawnSquad(playerID, uint32(2*i+2),
-				fixed.FromFloat(float64(15+40*i)), fixed.FromFloat(10), 8)
+			spawnSquadsForPlayer(gs, playerID, i, len(players))
 
 			// Send match_found to this player
 			mw, mh := gs.MapSize()
@@ -98,10 +95,8 @@ func main() {
 				name := hub.GetClientName(clientID)
 				log.Printf("client %d (%s) starting solo game", clientID, name)
 				gs.Reset()
-				gs.SpawnSquad(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 8)
-				gs.SpawnSquad(1, 2, fixed.FromFloat(15), fixed.FromFloat(10), 8)
-				gs.SpawnSquad(2, 3, fixed.FromFloat(50), fixed.FromFloat(50), 8)
-				gs.SpawnSquad(2, 4, fixed.FromFloat(45), fixed.FromFloat(50), 8)
+				spawnSquadsForPlayer(gs, 1, 0, 2)
+				spawnSquadsForPlayer(gs, 2, 1, 2)
 				mw, mh := gs.MapSize()
 				hub.SendJSON(clientID, map[string]interface{}{
 					"type":      "match_found",
@@ -120,18 +115,19 @@ func main() {
 		ticker := time.NewTicker(time.Second / game.ServerTicksPerSecond)
 		defer ticker.Stop()
 
-		// Full-map view rect for broadcast snapshots (no per-client culling yet)
-		fullView := network.Rect{
-			X: 0, Y: 0,
-			W: fixed.FromFloat(64),
-			H: fixed.FromFloat(64),
-		}
-
 		for range ticker.C {
 			// Tick the matchmaker to check for matches
 			mm.Tick(2)
 
 			gs.Tick()
+
+			mw, mh := gs.MapSize()
+			// Full-map view rect for broadcast snapshots (no per-client culling yet)
+			fullView := network.Rect{
+				X: 0, Y: 0,
+				W: fixed.FromFloat(float64(mw)),
+				H: fixed.FromFloat(float64(mh)),
+			}
 
 			data := gs.GenerateSnapshot(0, fullView)
 			if data != nil {
@@ -156,4 +152,18 @@ func main() {
 	if err := network.Serve(addr, hub); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func spawnSquadsForPlayer(gs *game.GameSession, playerID uint32, playerIndex, playerCount int) {
+	mw, mh := gs.MapSize()
+	x1 := float64(mw) * 0.42
+	x2 := float64(mw) * 0.58
+	y := 10.0
+	if playerCount > 1 {
+		y = 10.0 + float64(mh-20)*float64(playerIndex)/float64(playerCount-1)
+	}
+
+	baseSquadID := uint32(playerIndex*2 + 1)
+	gs.SpawnSquad(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 8)
+	gs.SpawnSquad(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 8)
 }

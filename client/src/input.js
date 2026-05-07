@@ -1,10 +1,5 @@
 // client/src/input.js
 
-export const FORMATION_LINE = 0;
-export const FORMATION_WEDGE = 1;
-export const FORMATION_CIRCLE = 2;
-export const FORMATION_SCATTER = 3;
-
 export const TACTICAL_CHARGE = 0;
 export const TACTICAL_RETREAT = 1;
 export const TACTICAL_HOLD = 2;
@@ -144,14 +139,6 @@ export class InputHandler {
 
   _onKeyDown(e) {
     this.keys.add(e.key.toLowerCase());
-
-    // Formation hotkeys
-    if (e.key >= '1' && e.key <= '4' && this.selectedSquads.size > 0) {
-      const formation = parseInt(e.key) - 1;
-      for (const squadID of this.selectedSquads) {
-        this.connection.sendChangeFormation(squadID, formation);
-      }
-    }
 
     // Tactical hotkeys
     const tacticalMap = { q: 0, w: 1, e: 2, r: 3 };

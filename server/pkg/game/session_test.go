@@ -10,12 +10,24 @@ import (
 )
 
 func TestDefaultCombatUnitSpeedCrossesMapInAboutOneHour(t *testing.T) {
-	speed := defaultCombatUnitSpeed(64)
+	speed := defaultCombatUnitSpeed(DefaultMapWidth)
 	effectivePerSecond := fixed.ToFloat((speed / movement.PositionDivisor) * ServerTicksPerSecond)
-	actualSeconds := 64.0 / effectivePerSecond
+	actualSeconds := float64(DefaultMapWidth) / effectivePerSecond
 
 	if actualSeconds < 55*60 || actualSeconds > 65*60 {
 		t.Fatalf("cross-map time = %.1fs, want about one hour", actualSeconds)
+	}
+}
+
+func TestNewGameSessionUsesPortraitMap(t *testing.T) {
+	gs := NewGameSession()
+	w, h := gs.MapSize()
+
+	if w != DefaultMapWidth || h != DefaultMapHeight {
+		t.Fatalf("map size = %dx%d, want %dx%d", w, h, DefaultMapWidth, DefaultMapHeight)
+	}
+	if h != w*2 {
+		t.Fatalf("map ratio = %dx%d, want vertical 2:1", w, h)
 	}
 }
 

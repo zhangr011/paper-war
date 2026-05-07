@@ -36,6 +36,8 @@ type GameSession struct {
 
 const (
 	ServerTicksPerSecond      = 5
+	DefaultMapWidth           = 48
+	DefaultMapHeight          = 96
 	combatUnitCrossMapSeconds = 60 * 60
 )
 
@@ -63,8 +65,8 @@ func NewGameSession() *GameSession {
 	em := ecs.NewEntityManager()
 	gs.World = ecs.NewWorld(em)
 
-	// 2. Create GameMap (64x64 generated terrain)
-	gs.Map = tilemap.GenerateMap(64, 64, 42)
+	// 2. Create GameMap
+	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, 42)
 
 	// 3. Create Spatial Hash (cell size = 2 world units in fixed-point)
 	gs.Sh = spatial.NewHash(fixed.FromFloat(2.0))
@@ -162,7 +164,7 @@ func (gs *GameSession) Reset() {
 
 	// Generate new map with random seed
 	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
-	gs.Map = tilemap.GenerateMap(64, 64, seed)
+	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, seed)
 	gs.Cache = pathfinding.NewCache(gs.Map, 64)
 
 	// Update system references

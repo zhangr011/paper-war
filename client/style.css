@@ -35,18 +35,23 @@ html, body {
 body {
   display: block;
   height: 100vh;
-  min-width: 1280px;
+  height: 100dvh;
+  min-width: 0;
 }
 
-/* Game screen restores the 3-row grid */
+/* Game screen uses a portrait-first grid for phone play. */
 #game-screen.active {
   display: grid;
-  grid-template-rows: 60px 1fr 140px;
+  grid-template-rows: 52px minmax(0, 1fr) 118px;
   grid-template-areas:
     "topbar"
     "viewport"
     "bottombar";
+  width: min(100vw, 520px);
   height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  background: #111;
 }
 
 /* --- Top Info Bar --- */
@@ -55,10 +60,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  gap: 8px;
+  padding: 0 10px;
   background: #222;
   border-bottom: 1px solid #333;
   z-index: 10;
+  min-width: 0;
 }
 
 .top-bar-left,
@@ -76,6 +83,8 @@ body {
 .top-bar-center {
   flex: 1 1 auto;
   justify-content: center;
+  min-width: 0;
+  gap: 6px;
 }
 
 .top-bar-right {
@@ -103,15 +112,19 @@ body {
 
 .player-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: #ddd;
+  max-width: 78px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .resource {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 4px 6px;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
   border-radius: 4px;
@@ -131,6 +144,7 @@ body {
 }
 
 .resource-label {
+  display: none;
   font-size: 11px;
   color: #777;
   margin-left: 2px;
@@ -138,11 +152,11 @@ body {
 
 .timer {
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: #e0e0e0;
   letter-spacing: 1px;
-  padding: 4px 10px;
+  padding: 4px 6px;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
   border-radius: 4px;
@@ -186,16 +200,20 @@ body {
 #bottom-bar {
   grid-area: bottombar;
   display: grid;
-  grid-template-columns: 1fr 160px 1fr;
+  grid-template-columns: minmax(112px, 1fr) minmax(172px, auto) 72px;
+  grid-template-rows: 1fr;
+  grid-template-areas:
+    "selection actions minimap";
   gap: 0;
   background: #222;
   border-top: 1px solid #333;
   z-index: 10;
+  min-width: 0;
 }
 
 /* --- Panel (shared) --- */
 .panel {
-  padding: 8px 12px;
+  padding: 7px 8px;
   overflow: hidden;
 }
 
@@ -209,11 +227,12 @@ body {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: #666;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 /* --- Selection Panel --- */
 #selection-panel {
+  grid-area: selection;
   display: flex;
   flex-direction: column;
 }
@@ -221,32 +240,37 @@ body {
 .selection-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: 1;
 }
 
 .selection-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  line-height: 1.4;
+  gap: 5px;
+  line-height: 1.25;
+  min-width: 0;
 }
 
 .selection-label {
-  font-size: 11px;
+  font-size: 10px;
   color: #777;
-  min-width: 72px;
+  min-width: 42px;
 }
 
 .selection-value {
-  font-size: 13px;
+  font-size: 12px;
   color: #ccc;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .morale-bar-container {
   flex: 1;
-  max-width: 120px;
+  max-width: 74px;
   height: 8px;
   background: #333;
   border-radius: 4px;
@@ -262,16 +286,17 @@ body {
 
 /* --- Minimap Panel --- */
 #minimap-panel {
+  grid-area: minimap;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 6px;
 }
 
 #minimap-canvas {
   display: block;
-  width: 160px;
-  height: 160px;
+  width: 56px;
+  height: 84px;
   background: #0a0a0a;
   border: 1px solid #3a3a3a;
   border-radius: 2px;
@@ -279,15 +304,21 @@ body {
 
 /* --- Action Panel --- */
 #action-panel {
+  grid-area: actions;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  justify-content: center;
+  gap: 8px;
+  align-items: flex-start;
+  border-left: 1px solid #333;
+  border-top: 0;
 }
 
 .action-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .action-group-label {
@@ -300,6 +331,7 @@ body {
 
 .action-buttons {
   display: flex;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 
@@ -308,7 +340,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 56px;
+  width: 36px;
   height: 42px;
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
@@ -348,8 +380,77 @@ body {
 }
 
 .action-name {
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
+}
+
+@media (min-width: 700px) {
+  body {
+    background: #0b0b0b;
+  }
+
+  #game-screen.active {
+    box-shadow: 0 0 0 1px #333;
+  }
+}
+
+@media (max-width: 380px) {
+  #game-screen.active {
+    grid-template-rows: 48px minmax(0, 1fr) 108px;
+  }
+
+  #top-bar {
+    padding: 0 6px;
+  }
+
+  .player-avatar,
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .player-name {
+    display: none;
+  }
+
+  .top-bar-center {
+    gap: 4px;
+  }
+
+  .resource {
+    padding: 3px 5px;
+  }
+
+  .timer {
+    font-size: 13px;
+  }
+
+  #bottom-bar {
+    grid-template-columns: minmax(96px, 1fr) minmax(164px, auto) 60px;
+    grid-template-rows: 1fr;
+  }
+
+  #minimap-canvas {
+    width: 48px;
+    height: 72px;
+  }
+
+  .panel {
+    padding: 7px 8px;
+  }
+
+  .action-btn {
+    width: 34px;
+    height: 40px;
+  }
+
+  .action-name {
+    display: none;
+  }
+
+  .selection-label {
+    min-width: 36px;
+  }
 }
 
 /* Tactic button color accents */

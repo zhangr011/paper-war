@@ -15,6 +15,7 @@ const CHANGED_HP        = 1 << 3;
 const CHANGED_TARGET_ID = 1 << 4;
 const CHANGED_MORALE    = 1 << 5;
 const CHANGED_STATE     = 1 << 6;
+const CHANGED_SQUAD_ID  = 1 << 7;
 
 // Event types — must match server/pkg/network/snapshot.go
 const EVENT_DAMAGE        = 0;
@@ -100,6 +101,7 @@ function clamp(v, lo, hi) {
 class UnitState {
   constructor() {
     this.entityID = 0;
+    this.squadID = 0;
 
     // Previous snapshot values (float, after fixed-to-float conversion)
     this.prevX = 0;
@@ -188,7 +190,7 @@ export class StateManager {
    *
    * @param {number} tick - Current snapshot tick
    * @param {number} prevTick - Previous snapshot tick this is a diff from
-   * @param {Array<{entityID:number, changedMask:number, x?:number, y?:number, vx?:number, vy?:number, angle?:number, hp?:number, targetID?:number, morale?:number, state?:number}>} unitUpdates
+   * @param {Array<{entityID:number, changedMask:number, x?:number, y?:number, vx?:number, vy?:number, angle?:number, hp?:number, targetID?:number, morale?:number, state?:number, squadID?:number}>} unitUpdates
    *   Unit updates with changedMask bits indicating which fields are present.
    *   Position/velocity values should already be converted from fixed-point.
    * @param {Array<{type:number, data:Uint8Array}>} events - Snapshot events
@@ -214,6 +216,7 @@ export class StateManager {
         // New unit — create with both prev and curr set to the same values
         unit = new UnitState();
         unit.entityID = u.entityID;
+        unit.squadID = u.squadID || 0;
         unit.alive = true;
 
         // Set both prev and curr to initial values
@@ -251,6 +254,9 @@ export class StateManager {
           unit.prevState = u.state;
           unit.currState = u.state;
         }
+        if (u.changedMask & CHANGED_SQUAD_ID) {
+          unit.squadID = u.squadID;
+        }
 
         this.units.set(u.entityID, unit);
       } else {
@@ -287,6 +293,9 @@ export class StateManager {
         }
         if (u.changedMask & CHANGED_STATE) {
           unit.currState = u.state;
+        }
+        if (u.changedMask & CHANGED_SQUAD_ID) {
+          unit.squadID = u.squadID;
         }
 
         // If position did not change in this snapshot, prev = curr so the

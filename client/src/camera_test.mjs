@@ -39,16 +39,9 @@ function inputPan(keys, speed) {
   return [panX, panY];
 }
 
-// ---- Simulate edge scroll computation (mirrors input.js) ----
-function edgeScrollPan(mouseX, mouseY, canvasW, canvasH, zone, speed) {
-  let panX = 0, panY = 0;
-  if (mouseX >= 0 && mouseY >= 0) {
-    if (mouseX < zone) panX -= speed;
-    if (mouseX > canvasW - zone) panX += speed;
-    if (mouseY < zone) panY -= speed;
-    if (mouseY > canvasH - zone) panY += speed;
-  }
-  return [panX, panY];
+// ---- Simulate drag pan computation (mirrors input.js) ----
+function dragPan(lastX, lastY, nextX, nextY) {
+  return [-(nextX - lastX), -(nextY - lastY)];
 }
 
 // ---- Tests: verify that pressing a direction scrolls the viewport correctly ----
@@ -111,46 +104,46 @@ function testDKeyScrollsRight() {
     `D should scroll right (content moves left): before=${sxBfore}, after=${sxAfter}`);
 }
 
-// ---- Edge scroll tests ----
+// ---- Drag pan tests ----
 
-function testEdgeTopScrollsUp() {
+function testDragDownScrollsUp() {
   const cam = new Camera(800, 600);
   const [, syBefore] = cam.worldToScreen(32, 32);
-  const [panX, panY] = edgeScrollPan(400, 5, 800, 600, 20, 100);
+  const [panX, panY] = dragPan(400, 300, 400, 360);
   cam.pan(panX, panY);
   const [, syAfter] = cam.worldToScreen(32, 32);
 
-  assert.ok(syAfter > syBefore, 'Mouse at top edge should scroll up');
+  assert.ok(syAfter > syBefore, 'Dragging down should scroll viewport up');
 }
 
-function testEdgeBottomScrollsDown() {
+function testDragUpScrollsDown() {
   const cam = new Camera(800, 600);
   const [, syBefore] = cam.worldToScreen(32, 32);
-  const [panX, panY] = edgeScrollPan(400, 595, 800, 600, 20, 100);
+  const [panX, panY] = dragPan(400, 300, 400, 240);
   cam.pan(panX, panY);
   const [, syAfter] = cam.worldToScreen(32, 32);
 
-  assert.ok(syAfter < syBefore, 'Mouse at bottom edge should scroll down');
+  assert.ok(syAfter < syBefore, 'Dragging up should scroll viewport down');
 }
 
-function testEdgeLeftScrollsLeft() {
+function testDragRightScrollsLeft() {
   const cam = new Camera(800, 600);
   const [sxBfore] = cam.worldToScreen(32, 32);
-  const [panX, panY] = edgeScrollPan(5, 300, 800, 600, 20, 100);
+  const [panX, panY] = dragPan(400, 300, 460, 300);
   cam.pan(panX, panY);
   const [sxAfter] = cam.worldToScreen(32, 32);
 
-  assert.ok(sxAfter > sxBfore, 'Mouse at left edge should scroll left');
+  assert.ok(sxAfter > sxBfore, 'Dragging right should scroll viewport left');
 }
 
-function testEdgeRightScrollsRight() {
+function testDragLeftScrollsRight() {
   const cam = new Camera(800, 600);
   const [sxBfore] = cam.worldToScreen(32, 32);
-  const [panX, panY] = edgeScrollPan(795, 300, 800, 600, 20, 100);
+  const [panX, panY] = dragPan(400, 300, 340, 300);
   cam.pan(panX, panY);
   const [sxAfter] = cam.worldToScreen(32, 32);
 
-  assert.ok(sxAfter < sxBfore, 'Mouse at right edge should scroll right');
+  assert.ok(sxAfter < sxBfore, 'Dragging left should scroll viewport right');
 }
 
 // ---- Run tests ----
@@ -161,10 +154,10 @@ for (const [name, fn] of Object.entries({
   testSKeyScrollsDown,
   testAKeyScrollsLeft,
   testDKeyScrollsRight,
-  testEdgeTopScrollsUp,
-  testEdgeBottomScrollsDown,
-  testEdgeLeftScrollsLeft,
-  testEdgeRightScrollsRight,
+  testDragDownScrollsUp,
+  testDragUpScrollsDown,
+  testDragRightScrollsLeft,
+  testDragLeftScrollsRight,
 })) {
   try {
     fn();

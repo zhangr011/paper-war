@@ -103,6 +103,7 @@ export class Game {
 
     // Currently selected units for the selection panel
     this.selectedUnits = [];
+    this.selectedEntityIDs = new Set();
 
     // Minimap 2D context
     this.minimapCtx = this.minimapCanvas
@@ -150,6 +151,7 @@ export class Game {
         if (u.targetID !== undefined) converted.targetID = u.targetID;
         if (u.morale !== undefined) converted.morale = u.morale;
         if (u.state !== undefined) converted.state = u.state;
+        if (u.squadID !== undefined) converted.squadID = u.squadID;
         return converted;
       });
 
@@ -221,11 +223,12 @@ export class Game {
 
     // Clear previous selection
     this.input.selectedSquads.clear();
+    this.selectedEntityIDs.clear();
     this.selectedUnits = [];
 
     if (closest) {
-      // For now, each entity is its own "squad" (entityID == squadID)
-      this.input.selectedSquads.add(closest.entityID);
+      this.input.selectedSquads.add(this.getCommandSquadID(closest));
+      this.selectedEntityIDs.add(closest.entityID);
       this.selectedUnits = [closest];
     }
 
@@ -240,17 +243,23 @@ export class Game {
     const allUnits = this.state.getRenderUnits();
 
     this.input.selectedSquads.clear();
+    this.selectedEntityIDs.clear();
     this.selectedUnits = [];
 
     for (const unit of allUnits) {
       const [sx, sy] = this.camera.worldToScreen(unit.renderX, unit.renderY);
       if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
-        this.input.selectedSquads.add(unit.entityID);
+        this.input.selectedSquads.add(this.getCommandSquadID(unit));
+        this.selectedEntityIDs.add(unit.entityID);
         this.selectedUnits.push(unit);
       }
     }
 
     this.updateSelectionPanel();
+  }
+
+  getCommandSquadID(unit) {
+    return unit.squadID || unit.entityID;
   }
 
   /**
@@ -468,7 +477,7 @@ export class Game {
       else if (unit.currState === 3) { r = 0.6; g = 0.6; b = 0.2; } // retreating
 
       // Check if this unit is selected -> brighten
-      const isSelected = this.input.selectedSquads.has(unit.entityID);
+      const isSelected = this.selectedEntityIDs.has(unit.entityID);
       if (isSelected) {
         r = Math.min(1.0, r + 0.3);
         g = Math.min(1.0, g + 0.3);
@@ -602,7 +611,7 @@ export class Game {
       else if (unit.currState === 1) color = '#44cc44';
 
       // Highlight selected units
-      if (this.input.selectedSquads.has(unit.entityID)) {
+      if (this.selectedEntityIDs.has(unit.entityID)) {
         color = '#ffffff';
       }
 

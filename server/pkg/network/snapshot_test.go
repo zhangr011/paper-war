@@ -45,8 +45,28 @@ func TestSnapshotNewUnit(t *testing.T) {
 	if len(snap.Units) != 1 {
 		t.Fatalf("expected 1 new unit, got %d", len(snap.Units))
 	}
-	if snap.Units[0].ChangedMask != 0x7F {
-		t.Errorf("new unit mask = %08b, want 1111111", snap.Units[0].ChangedMask)
+	if snap.Units[0].ChangedMask != 0xFF {
+		t.Errorf("new unit mask = %08b, want 11111111", snap.Units[0].ChangedMask)
+	}
+}
+
+func TestSnapshotDetectsSquadIDChange(t *testing.T) {
+	sg := NewSnapshotGenerator()
+	s1 := EntityState{X: 100, Y: 200, HP: 100, SquadID: 1}
+	sg.Generate(1, []EntityState{s1}, []uint32{1})
+
+	s2 := s1
+	s2.SquadID = 2
+	snap := sg.Generate(2, []EntityState{s2}, []uint32{1})
+
+	if len(snap.Units) != 1 {
+		t.Fatalf("expected 1 changed unit, got %d", len(snap.Units))
+	}
+	if snap.Units[0].ChangedMask&ChangedSquadID == 0 {
+		t.Error("squad ID change not detected")
+	}
+	if snap.Units[0].SquadID != 2 {
+		t.Errorf("squad ID = %d, want 2", snap.Units[0].SquadID)
 	}
 }
 

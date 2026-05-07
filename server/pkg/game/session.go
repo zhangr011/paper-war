@@ -344,6 +344,7 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 		}
 		if boid, ok := boidPool.Get(e); ok {
 			ui.SquadID = boid.SquadID
+			state.SquadID = boid.SquadID
 		}
 		if health, ok := healthPool.Get(e); ok {
 			state.HP = health.HP

@@ -50,3 +50,36 @@ func TestSpawnSquadUsesDefaultCombatUnitSpeed(t *testing.T) {
 		t.Fatalf("spawned velocity component count = %d, want 4", count)
 	}
 }
+
+func TestMoveSquadCommandUpdatesSquadPathTargets(t *testing.T) {
+	gs := NewGameSession()
+	gs.SpawnSquad(1, 7, fixed.FromFloat(10), fixed.FromFloat(10), 3)
+
+	targetX := fixed.FromFloat(20)
+	targetY := fixed.FromFloat(30)
+	gs.handleMoveSquad(7, targetX, targetY)
+
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+
+	updated := 0
+	boidPool.Each(func(e ecs.Entity, boid *component.BoidComponent) {
+		if boid.SquadID != 7 {
+			return
+		}
+		path, ok := pathPool.Get(e)
+		if !ok {
+			t.Errorf("squad entity %d missing pathfinding component", e)
+			return
+		}
+		if path.TargetX != targetX || path.TargetY != targetY {
+			t.Errorf("entity %d target = (%d,%d), want (%d,%d)",
+				e, path.TargetX, path.TargetY, targetX, targetY)
+		}
+		updated++
+	})
+
+	if updated != 4 {
+		t.Fatalf("updated squad member count = %d, want 4", updated)
+	}
+}

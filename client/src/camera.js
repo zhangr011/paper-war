@@ -16,7 +16,7 @@ export class Camera {
     this.offsetX = 0;
     this.offsetY = 0;
 
-    this.zoom = 1.0;     // 1.0 = normal, >1 = zoomed in, <1 = zoomed out
+    this.zoom = 0.5;     // 1.0 = normal, >1 = zoomed in, <1 = zoomed out
     this.viewW = viewWidth;
     this.viewH = viewHeight;
 
@@ -25,8 +25,8 @@ export class Camera {
     this.panVY = 0;
 
     // Zoom limits
-    this.minZoom = 0.5;
-    this.maxZoom = 3.0;
+    this.minZoom = 0.25;
+    this.maxZoom = 0.5;
 
     // Map bounds (tile count)
     this.mapWidth = 48;

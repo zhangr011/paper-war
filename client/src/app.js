@@ -5,9 +5,11 @@
 import { Connection } from './connection.js';
 import { Game } from './main.js';
 
+const LAST_USERNAME_KEY = 'paper-war:last-username';
+
 export class App {
   constructor() {
-    this.username = '';
+    this.username = this.loadLastUsername();
     this.connection = new Connection();
     this.game = null; // created when match starts
 
@@ -19,6 +21,9 @@ export class App {
     // Login elements
     this.loginForm = document.getElementById('login-form');
     this.loginInput = document.getElementById('login-username');
+    if (this.loginInput && this.username) {
+      this.loginInput.value = this.username;
+    }
 
     // Lobby elements
     this.lobbyPlayerName = document.getElementById('lobby-player-name');
@@ -42,6 +47,7 @@ export class App {
       const name = this.loginInput.value.trim();
       if (!name) return;
       this.username = name;
+      this.saveLastUsername(name);
       this.handleLogin(name);
     });
 
@@ -75,6 +81,22 @@ export class App {
   // -----------------------------------------------------------------------
   // Login flow
   // -----------------------------------------------------------------------
+
+  loadLastUsername() {
+    try {
+      return window.localStorage.getItem(LAST_USERNAME_KEY) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  saveLastUsername(name) {
+    try {
+      window.localStorage.setItem(LAST_USERNAME_KEY, name);
+    } catch (_) {
+      // Ignore storage failures; login should still work in private contexts.
+    }
+  }
 
   handleLogin(name) {
     // Connect WebSocket

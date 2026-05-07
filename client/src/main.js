@@ -188,6 +188,11 @@ export class Game {
 
     // --- Resize ---
     window.addEventListener('resize', () => this.handleResize());
+
+    const testMoveBtn = document.getElementById('team-test-move-btn');
+    if (testMoveBtn) {
+      testMoveBtn.addEventListener('click', () => this.handleTestMove());
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -246,6 +251,29 @@ export class Game {
     }
 
     this.updateSelectionPanel();
+  }
+
+  /**
+   * Move selected squads to a random target within the currently visible canvas.
+   */
+  handleTestMove() {
+    if (this.input.selectedSquads.size === 0) return;
+
+    const margin = 24;
+    const maxX = Math.max(margin, this.camera.viewW - margin);
+    const maxY = Math.max(margin, this.camera.viewH - margin);
+    const sx = margin + Math.random() * Math.max(1, maxX - margin);
+    const sy = margin + Math.random() * Math.max(1, maxY - margin);
+    let [worldX, worldY] = this.camera.screenToWorld(sx, sy);
+
+    worldX = Math.max(0, Math.min(this.mapWidth - 0.01, worldX));
+    worldY = Math.max(0, Math.min(this.mapHeight - 0.01, worldY));
+
+    const fixedX = Math.round(worldX * FIXED_ONE);
+    const fixedY = Math.round(worldY * FIXED_ONE);
+    for (const squadID of this.input.selectedSquads) {
+      this.connection.sendMoveSquad(squadID, fixedX, fixedY, 0);
+    }
   }
 
   // -----------------------------------------------------------------------

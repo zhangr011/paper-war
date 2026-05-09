@@ -125,7 +125,14 @@ export class Game {
     this.terrainData = data;
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
-    this.camera.centerOnMap();
+    this.centerCameraOnPlayerStart();
+  }
+
+  centerCameraOnPlayerStart() {
+    const startY = this.playerID === 2 ? this.mapHeight - 10 : 10;
+    this.camera.offsetX = (this.mapWidth / 2) * TILE_WIDTH;
+    this.camera.offsetY = startY * TILE_HEIGHT;
+    this.camera._clamp();
   }
 
   // -----------------------------------------------------------------------
@@ -268,12 +275,41 @@ export class Game {
   handleTestMove() {
     if (this.input.selectedSquads.size === 0) return;
 
+    const selectedUnits = this.state.getRenderUnits()
+      .filter((unit) => this.input.selectedSquads.has(this.getCommandSquadID(unit)));
+    const center = selectedUnits.length > 0
+      ? selectedUnits.reduce((acc, unit) => {
+        acc.x += unit.renderX;
+        acc.y += unit.renderY;
+        return acc;
+      }, { x: 0, y: 0 })
+      : null;
+    if (center) {
+      center.x /= selectedUnits.length;
+      center.y /= selectedUnits.length;
+    }
+
     const margin = 24;
     const maxX = Math.max(margin, this.camera.viewW - margin);
     const maxY = Math.max(margin, this.camera.viewH - margin);
-    const sx = margin + Math.random() * Math.max(1, maxX - margin);
-    const sy = margin + Math.random() * Math.max(1, maxY - margin);
-    let [worldX, worldY] = this.camera.screenToWorld(sx, sy);
+    let worldX = 0;
+    let worldY = 0;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const sx = margin + Math.random() * Math.max(1, maxX - margin);
+      const sy = margin + Math.random() * Math.max(1, maxY - margin);
+      [worldX, worldY] = this.camera.screenToWorld(sx, sy);
+      if (!center || Math.hypot(worldX - center.x, worldY - center.y) >= 8) {
+        break;
+      }
+    }
+
+    if (center && Math.hypot(worldX - center.x, worldY - center.y) < 8) {
+      const [leftWorld] = this.camera.screenToWorld(margin, this.camera.viewH / 2);
+      const [rightWorld] = this.camera.screenToWorld(maxX, this.camera.viewH / 2);
+      worldX = center.x < (leftWorld + rightWorld) / 2 ? rightWorld : leftWorld;
+      worldY = center.y;
+    }
 
     worldX = Math.max(0, Math.min(this.mapWidth - 0.01, worldX));
     worldY = Math.max(0, Math.min(this.mapHeight - 0.01, worldY));

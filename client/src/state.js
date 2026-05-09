@@ -1,5 +1,5 @@
 // client/src/state.js
-// Double-buffered state management with interpolation from 15Hz server
+// Double-buffered state management with interpolation from 5Hz server
 // snapshots to 30fps rendering. Handles incremental diff updates, angle
 // wrapping, velocity-based extrapolation, and accelerated correction.
 
@@ -29,8 +29,8 @@ const FRAC_BITS = 12;
 const FIXED_ONE = 1 << FRAC_BITS;
 
 // Server tick rate
-const SERVER_HZ = 15;
-const TICK_DURATION_MS = 1000 / SERVER_HZ; // ~66.7ms
+const SERVER_HZ = 5;
+const TICK_DURATION_MS = 1000 / SERVER_HZ; // 200ms
 
 // Extrapolation limits
 const MAX_EXTRAPOLATION_MS = 200;
@@ -142,7 +142,7 @@ class UnitState {
 
 /**
  * Manages the double-buffered game state and interpolates between server
- * snapshots to produce smooth rendering at 30fps from 15Hz server updates.
+ * snapshots to produce smooth rendering at 30fps from 5Hz server updates.
  *
  * Usage:
  *   const sm = new StateManager();

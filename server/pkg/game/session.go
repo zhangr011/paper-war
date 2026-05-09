@@ -40,6 +40,7 @@ const (
 	DefaultMapHeight          = 96
 	InitialTeamCombatUnits    = 2
 	CombatUnitsPerTeamLevel   = 2
+	DefaultMovementMultiplier = 5
 	combatUnitCrossMapSeconds = 60 * 60
 )
 
@@ -53,11 +54,11 @@ func CombatUnitCountForTeamLevel(level uint8) int {
 func defaultCombatUnitSpeed(mapWidth int32) int64 {
 	ticks := int64(ServerTicksPerSecond * combatUnitCrossMapSeconds)
 	distance := int64(mapWidth) << fixed.FractionBits
-	speed := distance * movement.PositionDivisor / ticks
+	speed := distance * movement.PositionDivisor * DefaultMovementMultiplier / ticks
 
 	// Movement applies velocity with integer division by movement.PositionDivisor.
 	// Round up to the next divisor step so the effective speed remains near the
-	// one-hour side-to-side target after truncation.
+	// configured side-to-side target after truncation.
 	if rem := speed % movement.PositionDivisor; rem != 0 {
 		speed += movement.PositionDivisor - rem
 	}
@@ -168,6 +169,7 @@ func (gs *GameSession) Reset() {
 		ids = append(ids, e)
 	})
 	for _, e := range ids {
+		gs.removeComponents(e)
 		em.Destroy(e)
 	}
 
@@ -373,6 +375,18 @@ func (gs *GameSession) teamCommanderPosition(squadID uint32) (int64, int64, bool
 	return x, y, found
 }
 
+func (gs *GameSession) removeComponents(e ecs.Entity) {
+	gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent]).Remove(e)
+	gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent]).Remove(e)
+	gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent]).Remove(e)
+	gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent]).Remove(e)
+	gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent]).Remove(e)
+	gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent]).Remove(e)
+	gs.World.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent]).Remove(e)
+	gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent]).Remove(e)
+	gs.World.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent]).Remove(e)
+}
+
 // HandleCommand processes a player command from the network.
 func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 	switch cmd.Type {
@@ -400,6 +414,7 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	attackPool := gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		id := uint32(e)
@@ -412,6 +427,13 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 			X:     pos.X,
 			Y:     pos.Y,
 			Angle: pos.Angle,
+		}
+		if vel, ok := velPool.Get(e); ok {
+			state.Vx = vel.Vx
+			state.Vy = vel.Vy
+			if vel.Vx != 0 || vel.Vy != 0 {
+				state.State = 1
+			}
 		}
 		if boid, ok := boidPool.Get(e); ok {
 			ui.SquadID = boid.SquadID

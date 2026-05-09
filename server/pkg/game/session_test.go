@@ -1,21 +1,25 @@
 package game
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/movement"
+	"github.com/user/paper-war/server/pkg/network"
 )
 
-func TestDefaultCombatUnitSpeedCrossesMapInAboutOneHour(t *testing.T) {
+func TestDefaultCombatUnitSpeedUsesFiveTimesMovement(t *testing.T) {
 	speed := defaultCombatUnitSpeed(DefaultMapWidth)
 	effectivePerSecond := fixed.ToFloat((speed / movement.PositionDivisor) * ServerTicksPerSecond)
 	actualSeconds := float64(DefaultMapWidth) / effectivePerSecond
+	wantSeconds := float64(combatUnitCrossMapSeconds) / float64(DefaultMovementMultiplier)
 
-	if actualSeconds < 55*60 || actualSeconds > 65*60 {
-		t.Fatalf("cross-map time = %.1fs, want about one hour", actualSeconds)
+	if actualSeconds < wantSeconds*0.9 || actualSeconds > wantSeconds*1.1 {
+		t.Fatalf("cross-map time = %.1fs, want about %.1fs at %dx movement",
+			actualSeconds, wantSeconds, DefaultMovementMultiplier)
 	}
 }
 
@@ -154,6 +158,35 @@ func TestTeamMoveCommandMovesTeamMembersTowardTarget(t *testing.T) {
 	}
 }
 
+func TestResetRemovesPreviousTeamComponents(t *testing.T) {
+	gs := NewGameSession()
+	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
+	gs.Reset()
+	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
+
+	if got := len(squadPositions(t, gs, 1)); got != 1+InitialTeamCombatUnits {
+		t.Fatalf("team member count after reset and respawn = %d, want %d", got, 1+InitialTeamCombatUnits)
+	}
+}
+
+func TestMovingSnapshotIncludesVelocityAndMovingState(t *testing.T) {
+	gs := NewGameSession()
+	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
+	gs.handleMoveSquad(1, fixed.FromFloat(10), fixed.FromFloat(20))
+	gs.Tick()
+
+	data := gs.GenerateSnapshot(0, network.Rect{
+		X: 0,
+		Y: 0,
+		W: fixed.FromFloat(float64(DefaultMapWidth)),
+		H: fixed.FromFloat(float64(DefaultMapHeight)),
+	})
+
+	if !snapshotHasMovingUnit(t, data) {
+		t.Fatalf("moving snapshot did not include a nonzero velocity and moving state")
+	}
+}
+
 func TestUpgradeTeamAddsCombatUnitsWithoutAddingCommander(t *testing.T) {
 	gs := NewGameSession()
 	gs.SpawnTeam(1, 9, fixed.FromFloat(10), fixed.FromFloat(10), 1)
@@ -215,4 +248,76 @@ func squadPositions(t *testing.T, gs *GameSession, squadID uint32) map[ecs.Entit
 		positions[e] = pos
 	})
 	return positions
+}
+
+func snapshotHasMovingUnit(t *testing.T, data []byte) bool {
+	t.Helper()
+
+	offset := 0
+	readUint32 := func() uint32 {
+		v := binary.LittleEndian.Uint32(data[offset:])
+		offset += 4
+		return v
+	}
+	readUint16 := func() uint16 {
+		v := binary.LittleEndian.Uint16(data[offset:])
+		offset += 2
+		return v
+	}
+	readInt64 := func() int64 {
+		v := int64(binary.LittleEndian.Uint64(data[offset:]))
+		offset += 8
+		return v
+	}
+
+	readUint32()
+	readUint32()
+	unitCount := readUint16()
+	offset++
+
+	for i := 0; i < int(unitCount); i++ {
+		readUint32()
+		mask := data[offset]
+		offset++
+
+		if mask&network.ChangedPosition != 0 {
+			readInt64()
+			readInt64()
+		}
+
+		vx := int64(0)
+		vy := int64(0)
+		if mask&network.ChangedVelocity != 0 {
+			vx = readInt64()
+			vy = readInt64()
+		}
+		if mask&network.ChangedAngle != 0 {
+			offset += 2
+		}
+		if mask&network.ChangedHP != 0 {
+			offset += 4
+		}
+		if mask&network.ChangedTargetID != 0 {
+			offset += 4
+		}
+		if mask&network.ChangedMorale != 0 {
+			offset += 4
+		}
+
+		state := uint8(0)
+		hasState := mask&network.ChangedState != 0
+		if hasState {
+			state = data[offset]
+			offset++
+		}
+		if mask&network.ChangedSquadID != 0 {
+			offset += 4
+		}
+
+		if (vx != 0 || vy != 0) && hasState && state == 1 {
+			return true
+		}
+	}
+
+	return false
 }

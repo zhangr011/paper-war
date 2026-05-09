@@ -234,9 +234,7 @@ export class Game {
     this.selectedUnits = [];
 
     if (closest) {
-      this.input.selectedSquads.add(this.getCommandSquadID(closest));
-      this.selectedEntityIDs.add(closest.entityID);
-      this.selectedUnits = [closest];
+      this.selectSquads([this.getCommandSquadID(closest)]);
     }
 
     this.updateSelectionPanel();
@@ -257,16 +255,36 @@ export class Game {
       const [sx, sy] = this.camera.worldToScreen(unit.renderX, unit.renderY);
       if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
         this.input.selectedSquads.add(this.getCommandSquadID(unit));
-        this.selectedEntityIDs.add(unit.entityID);
-        this.selectedUnits.push(unit);
       }
     }
 
+    this.syncSelectedTeamUnits();
     this.updateSelectionPanel();
   }
 
   getCommandSquadID(unit) {
     return unit.squadID || unit.entityID;
+  }
+
+  selectSquads(squadIDs) {
+    this.input.selectedSquads.clear();
+    for (const squadID of squadIDs) {
+      this.input.selectedSquads.add(squadID);
+    }
+    this.syncSelectedTeamUnits();
+  }
+
+  syncSelectedTeamUnits() {
+    this.selectedEntityIDs.clear();
+    this.selectedUnits = [];
+
+    if (this.input.selectedSquads.size === 0) return;
+
+    for (const unit of this.state.getRenderUnits()) {
+      if (!this.input.selectedSquads.has(this.getCommandSquadID(unit))) continue;
+      this.selectedEntityIDs.add(unit.entityID);
+      this.selectedUnits.push(unit);
+    }
   }
 
   /**
@@ -376,6 +394,9 @@ export class Game {
     if (this.framesSinceCleanup >= CLEANUP_INTERVAL) {
       this.state.cleanup();
       this.framesSinceCleanup = 0;
+    }
+    if (this.input.selectedSquads.size > 0) {
+      this.syncSelectedTeamUnits();
     }
 
     // --- Render phase ---

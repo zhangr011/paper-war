@@ -167,6 +167,6 @@ func spawnSquadsForPlayer(gs *game.GameSession, playerID uint32, playerIndex, pl
 	}
 
 	baseSquadID := uint32(playerIndex*2 + 1)
-	gs.SpawnSquad(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 8)
-	gs.SpawnSquad(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 8)
+	gs.SpawnTeam(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 1)
+	gs.SpawnTeam(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 1)
 }

@@ -75,6 +75,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
 			dir := ff.GetDirection(tileX, tileY)
 			flowW := fixed.FromFloat(2.5)
+			if hasVel && vel.Speed > flowW {
+				flowW = vel.Speed
+			}
 			flowFX = fixed.Mul(dir.DX, flowW)
 			flowFY = fixed.Mul(dir.DY, flowW)
 		}
@@ -99,6 +102,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			fixed.Mul(aliFY, bc.AlignmentW)
 
 		maxForce := fixed.FromFloat(5.0)
+		if hasVel && vel.Speed > maxForce {
+			maxForce = vel.Speed
+		}
 		totalFX = fixed.Clamp(totalFX, -maxForce, maxForce)
 		totalFY = fixed.Clamp(totalFY, -maxForce, maxForce)
 

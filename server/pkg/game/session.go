@@ -38,8 +38,17 @@ const (
 	ServerTicksPerSecond      = 5
 	DefaultMapWidth           = 48
 	DefaultMapHeight          = 96
+	InitialTeamCombatUnits    = 2
+	CombatUnitsPerTeamLevel   = 2
 	combatUnitCrossMapSeconds = 60 * 60
 )
+
+func CombatUnitCountForTeamLevel(level uint8) int {
+	if level == 0 {
+		level = 1
+	}
+	return InitialTeamCombatUnits + int(level-1)*CombatUnitsPerTeamLevel
+}
 
 func defaultCombatUnitSpeed(mapWidth int32) int64 {
 	ticks := int64(ServerTicksPerSecond * combatUnitCrossMapSeconds)
@@ -177,7 +186,12 @@ func (gs *GameSession) Reset() {
 	gs.SnapGen = network.NewSnapshotGenerator()
 }
 
-// SpawnSquad creates a commander + N units for a given player.
+// SpawnTeam creates the standard team composition for the given level.
+func (gs *GameSession) SpawnTeam(playerID uint32, squadID uint32, cx, cy int64, level uint8) {
+	gs.SpawnSquad(playerID, squadID, cx, cy, CombatUnitCountForTeamLevel(level))
+}
+
+// SpawnSquad creates a commander + N combat units for a given player.
 func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64, unitCount int) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
@@ -236,14 +250,38 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		Role: component.RoleCommander,
 	})
 
-	// --- Combat units ---
+	gs.spawnCombatUnits(squadID, cx, cy, 0, unitCount, unitCount)
+}
+
+// UpgradeTeam grows a team to the combat unit count for the requested level.
+// It returns the number of units added.
+func (gs *GameSession) UpgradeTeam(squadID uint32, level uint8) int {
+	wantCombatUnits := CombatUnitCountForTeamLevel(level)
+	currentCombatUnits := gs.countCombatUnits(squadID)
+	if currentCombatUnits >= wantCombatUnits {
+		return 0
+	}
+
+	cx, cy, ok := gs.teamCommanderPosition(squadID)
+	if !ok {
+		return 0
+	}
+
+	added := wantCombatUnits - currentCombatUnits
+	gs.spawnCombatUnits(squadID, cx, cy, currentCombatUnits, added, wantCombatUnits)
+	return added
+}
+
+func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex, count, formationCount int) {
+	em := gs.World.Entities()
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 	spacing := fixed.FromFloat(0.3)
-	for i := 0; i < unitCount; i++ {
+	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
 		// Arrange units in a grid pattern around the commander
 		cols := 1
-		for cols*cols < unitCount {
+		for cols*cols < formationCount {
 			cols++
 		}
 		row := i / cols
@@ -300,6 +338,39 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 			Role: role,
 		})
 	}
+}
+
+func (gs *GameSession) countCombatUnits(squadID uint32) int {
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+
+	count := 0
+	boidPool.Each(func(_ ecs.Entity, boid *component.BoidComponent) {
+		if boid.SquadID == squadID && boid.Role != component.RoleCommander {
+			count++
+		}
+	})
+	return count
+}
+
+func (gs *GameSession) teamCommanderPosition(squadID uint32) (int64, int64, bool) {
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+
+	var x, y int64
+	found := false
+	boidPool.Each(func(e ecs.Entity, boid *component.BoidComponent) {
+		if found || boid.SquadID != squadID || boid.Role != component.RoleCommander {
+			return
+		}
+		pos, ok := posPool.Get(e)
+		if !ok {
+			return
+		}
+		x = pos.X
+		y = pos.Y
+		found = true
+	})
+	return x, y, found
 }
 
 // HandleCommand processes a player command from the network.

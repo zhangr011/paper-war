@@ -127,10 +127,11 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 		placeWall(gm, mirrorX, wy, length, true, r)
 	}
 
-	// Phase 8: Strongholds scattered across the battlefield, with roads linking
-	// them into a connected strategic network.
+	// Phase 8: Strongholds scattered across the battlefield. Roads are sparse:
+	// building them is expensive, so only important sites become part of the
+	// connected road network and lesser outposts may remain off-road.
 	strongholds := generateStrongholdSites(w, h, r)
-	linkStrongholdsWithRoads(gm, strongholds)
+	linkStrongholdsWithRoads(gm, strongholds, r)
 	for _, site := range strongholds {
 		placeStronghold(gm, site)
 	}
@@ -178,31 +179,50 @@ func generateStrongholdSites(w, h int32, r *rand.Rand) []strongholdSite {
 	return sites
 }
 
-func linkStrongholdsWithRoads(gm *GameMap, sites []strongholdSite) {
+func linkStrongholdsWithRoads(gm *GameMap, sites []strongholdSite, r *rand.Rand) {
 	if len(sites) < 2 {
 		return
 	}
-	for i := 1; i < len(sites); i++ {
-		placeRoadPath(gm, sites[i-1].X, sites[i-1].Y, sites[i].X, sites[i].Y)
+
+	roadSites := chooseRoadStrongholds(sites)
+	for i := 1; i < len(roadSites); i++ {
+		placeRoadPath(gm, roadSites[i-1].X, roadSites[i-1].Y, roadSites[i].X, roadSites[i].Y, r)
 	}
 }
 
-func placeRoadPath(gm *GameMap, x1, y1, x2, y2 int32) {
+func chooseRoadStrongholds(sites []strongholdSite) []strongholdSite {
+	roadSites := make([]strongholdSite, 0, len(sites))
+	for i, site := range sites {
+		if site.Level >= 4 || i%3 == 0 {
+			roadSites = append(roadSites, site)
+		}
+	}
+	if len(roadSites) < 2 {
+		return sites[:2]
+	}
+	return roadSites
+}
+
+func placeRoadPath(gm *GameMap, x1, y1, x2, y2 int32, r *rand.Rand) {
 	x, y := x1, y1
-	for x != x2 {
+	for x != x2 || y != y2 {
 		placeRoadTile(gm, x, y)
 		if x < x2 {
 			x++
-		} else {
+		} else if x > x2 {
 			x--
 		}
-	}
-	for y != y2 {
-		placeRoadTile(gm, x, y)
 		if y < y2 {
 			y++
-		} else {
+		} else if y > y2 {
 			y--
+		}
+		if r.Intn(4) == 0 {
+			if abs32(x2-x) > abs32(y2-y) && y > 1 && y < gm.Height-2 {
+				y += []int32{-1, 1}[r.Intn(2)]
+			} else if x > 1 && x < gm.Width-2 {
+				x += []int32{-1, 1}[r.Intn(2)]
+			}
 		}
 	}
 	placeRoadTile(gm, x, y)

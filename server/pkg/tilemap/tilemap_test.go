@@ -163,8 +163,19 @@ func TestGenerateMapLinksStrongholdsWithRoads(t *testing.T) {
 	if len(strongholdGroups) < int((gm.Width*gm.Height)/400)-2 {
 		t.Fatalf("stronghold groups = %d, want about one per 20x20 grid", len(strongholdGroups))
 	}
-	if strongholdsWithRoad < len(strongholdGroups)*3/4 {
-		t.Fatalf("strongholds linked to roads = %d/%d, want most linked", strongholdsWithRoad, len(strongholdGroups))
+	if strongholdsWithRoad == 0 {
+		t.Fatalf("strongholds linked to roads = 0/%d, want a sparse road network", len(strongholdGroups))
+	}
+	if strongholdsWithRoad >= len(strongholdGroups) {
+		t.Fatalf("strongholds linked to roads = %d/%d, want some strongholds left off-road", strongholdsWithRoad, len(strongholdGroups))
+	}
+}
+
+func TestStrongholdRoadsAreNotOnlyOrthogonalCorridors(t *testing.T) {
+	gm := GenerateMap(48, 96, 42)
+
+	if !hasDiagonalRoadStep(gm) {
+		t.Fatalf("stronghold road network has no diagonal or staggered steps")
 	}
 }
 
@@ -220,4 +231,24 @@ func groupTouchesRoad(gm *GameMap, group [][2]int32) bool {
 		}
 	}
 	return false
+}
+
+func hasDiagonalRoadStep(gm *GameMap) bool {
+	for y := int32(1); y < gm.Height-1; y++ {
+		for x := int32(1); x < gm.Width-1; x++ {
+			if !isRoadLike(gm.TileAt(x, y).TerrainType) {
+				continue
+			}
+			if (isRoadLike(gm.TileAt(x+1, y+1).TerrainType) ||
+				isRoadLike(gm.TileAt(x-1, y+1).TerrainType)) &&
+				!isRoadLike(gm.TileAt(x, y+1).TerrainType) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isRoadLike(tt component.TerrainType) bool {
+	return tt == component.TerrainRoad || tt == component.TerrainBridge
 }

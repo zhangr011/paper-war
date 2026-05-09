@@ -1,10 +1,17 @@
 package tilemap
 
 import (
+	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/user/paper-war/server/pkg/component"
 )
+
+type strongholdSite struct {
+	X, Y  int32
+	Level int
+}
 
 // GenerateMap creates a symmetric natural terrain map for portrait play.
 // Map features: horizontal river with bridges, vertical roads, forests, hills,
@@ -120,7 +127,134 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 		placeWall(gm, mirrorX, wy, length, true, r)
 	}
 
+	// Phase 8: Strongholds scattered across the battlefield, with roads linking
+	// them into a connected strategic network.
+	strongholds := generateStrongholdSites(w, h, r)
+	linkStrongholdsWithRoads(gm, strongholds)
+	for _, site := range strongholds {
+		placeStronghold(gm, site)
+	}
+
 	return gm
+}
+
+func generateStrongholdSites(w, h int32, r *rand.Rand) []strongholdSite {
+	targetCount := int((w * h) / 400)
+	if targetCount < 5 {
+		targetCount = 5
+	}
+
+	margin := int32(5)
+	minDist := float64(12)
+	sites := make([]strongholdSite, 0, targetCount)
+	for attempts := 0; len(sites) < targetCount && attempts < targetCount*80; attempts++ {
+		x := margin + int32(r.Intn(int(w-margin*2)))
+		y := margin + int32(r.Intn(int(h-margin*2)))
+
+		tooClose := false
+		for _, site := range sites {
+			if math.Hypot(float64(x-site.X), float64(y-site.Y)) < minDist {
+				tooClose = true
+				break
+			}
+		}
+		if tooClose {
+			continue
+		}
+
+		sites = append(sites, strongholdSite{
+			X:     x,
+			Y:     y,
+			Level: 1 + len(sites)%5,
+		})
+	}
+
+	sort.Slice(sites, func(i, j int) bool {
+		if sites[i].Y == sites[j].Y {
+			return sites[i].X < sites[j].X
+		}
+		return sites[i].Y < sites[j].Y
+	})
+	return sites
+}
+
+func linkStrongholdsWithRoads(gm *GameMap, sites []strongholdSite) {
+	if len(sites) < 2 {
+		return
+	}
+	for i := 1; i < len(sites); i++ {
+		placeRoadPath(gm, sites[i-1].X, sites[i-1].Y, sites[i].X, sites[i].Y)
+	}
+}
+
+func placeRoadPath(gm *GameMap, x1, y1, x2, y2 int32) {
+	x, y := x1, y1
+	for x != x2 {
+		placeRoadTile(gm, x, y)
+		if x < x2 {
+			x++
+		} else {
+			x--
+		}
+	}
+	for y != y2 {
+		placeRoadTile(gm, x, y)
+		if y < y2 {
+			y++
+		} else {
+			y--
+		}
+	}
+	placeRoadTile(gm, x, y)
+}
+
+func placeRoadTile(gm *GameMap, x, y int32) {
+	tile := gm.TileAt(x, y)
+	if tile == nil {
+		return
+	}
+	if tile.TerrainType == component.TerrainDeep {
+		gm.SetTerrain(x, y, component.TerrainBridge)
+		tile = gm.TileAt(x, y)
+		tile.Health = 500
+		tile.MaxHealth = 500
+		return
+	}
+	gm.SetTerrain(x, y, component.TerrainRoad)
+	tile = gm.TileAt(x, y)
+	tile.Health = 0
+	tile.MaxHealth = 0
+	tile.BlockLOS = false
+	tile.Elevation = 0
+}
+
+func placeStronghold(gm *GameMap, site strongholdSite) {
+	tt := component.TerrainType(int(component.TerrainStronghold1) + site.Level - 1)
+	radius := int32(1 + (site.Level+1)/2)
+	for y := site.Y - radius; y <= site.Y+radius; y++ {
+		for x := site.X - radius; x <= site.X+radius; x++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil {
+				continue
+			}
+			if abs32(x-site.X)+abs32(y-site.Y) > radius+1 {
+				continue
+			}
+			gm.SetTerrain(x, y, tt)
+			tile = gm.TileAt(x, y)
+			tile.Health = int32(400 + site.Level*200)
+			tile.MaxHealth = tile.Health
+			tile.BlockLOS = true
+			tile.Elevation = int8(1 + site.Level/2)
+		}
+	}
+}
+
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // placeCluster places a blob of terrain using a simple flood-fill growth.

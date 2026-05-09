@@ -111,17 +111,22 @@ func NewGameSession() *GameSession {
 	defaultProfile := &component.MovementProfile{
 		ID: 0,
 		TerrainCosts: [16]uint8{
-			component.TerrainPlain:   1,
-			component.TerrainRoad:    1,
-			component.TerrainShallow: 3,
-			component.TerrainDeep:    0, // impassable
-			component.TerrainForest:  2,
-			component.TerrainHill:    3,
-			component.TerrainSwamp:   4,
-			component.TerrainBridge:  1,
-			component.TerrainWall:    0, // impassable
-			component.TerrainSnow:    3,
-			component.TerrainDesert:  2,
+			component.TerrainPlain:       1,
+			component.TerrainRoad:        1,
+			component.TerrainShallow:     3,
+			component.TerrainDeep:        0, // impassable
+			component.TerrainForest:      2,
+			component.TerrainHill:        3,
+			component.TerrainSwamp:       4,
+			component.TerrainBridge:      1,
+			component.TerrainWall:        0, // impassable
+			component.TerrainSnow:        3,
+			component.TerrainDesert:      2,
+			component.TerrainStronghold1: 1,
+			component.TerrainStronghold2: 1,
+			component.TerrainStronghold3: 1,
+			component.TerrainStronghold4: 1,
+			component.TerrainStronghold5: 1,
 		},
 	}
 	profiles := map[uint8]*component.MovementProfile{0: defaultProfile}

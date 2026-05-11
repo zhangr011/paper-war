@@ -49,3 +49,29 @@ func (fg *FogGrid) Data() []byte {
 	copy(data, fg.Visible)
 	return data
 }
+
+type FogSystem struct {
+	Grids      map[uint32]*FogGrid
+	MapW, MapH int32
+}
+
+func NewFogSystem(mapW, mapH int32) *FogSystem {
+	return &FogSystem{
+		Grids: make(map[uint32]*FogGrid),
+		MapW:  mapW,
+		MapH:  mapH,
+	}
+}
+
+func (fs *FogSystem) GetGrid(playerID uint32) *FogGrid {
+	return fs.Grids[playerID]
+}
+
+func (fs *FogSystem) GetOrCreateGrid(playerID uint32) *FogGrid {
+	grid, ok := fs.Grids[playerID]
+	if !ok {
+		grid = NewFogGrid(fs.MapW, fs.MapH)
+		fs.Grids[playerID] = grid
+	}
+	return grid
+}

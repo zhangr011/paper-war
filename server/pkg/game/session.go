@@ -30,6 +30,7 @@ type GameSession struct {
 	commanderSys *commander.CommanderSystem
 	movementSys  *movement.MovementSystem
 	combatSys    *combat.CombatSystem
+	deathSys     *combat.DeathSystem
 
 	tickCount uint32
 }
@@ -104,11 +105,13 @@ func NewGameSession() *GameSession {
 		Profiles: profiles,
 	}
 	gs.combatSys = &combat.CombatSystem{Sh: gs.Sh}
+		gs.deathSys = &combat.DeathSystem{}
 
-	gs.World.AddSystem(gs.terrainSys)
-	gs.World.AddSystem(gs.commanderSys)
-	gs.World.AddSystem(gs.movementSys)
-	gs.World.AddSystem(gs.combatSys)
+		gs.World.AddSystem(gs.terrainSys)
+		gs.World.AddSystem(gs.commanderSys)
+		gs.World.AddSystem(gs.movementSys)
+		gs.World.AddSystem(gs.combatSys)
+		gs.World.AddSystem(gs.deathSys)
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()

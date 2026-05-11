@@ -4,11 +4,13 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/user/paper-war/server/pkg/ai"
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
+	"github.com/user/paper-war/server/pkg/fog"
 	"github.com/user/paper-war/server/pkg/movement"
 	"github.com/user/paper-war/server/pkg/network"
 	"github.com/user/paper-war/server/pkg/pathfinding"
@@ -31,6 +33,8 @@ type GameSession struct {
 	movementSys  *movement.MovementSystem
 	combatSys    *combat.CombatSystem
 	deathSys     *combat.DeathSystem
+	FogSys       *fog.FogSystem
+	AISys        *ai.AISystem
 
 	tickCount uint32
 }
@@ -116,6 +120,12 @@ func NewGameSession() *GameSession {
 	gs.World.AddSystem(&combat.ProjectileSystem{})
 	gs.World.AddSystem(gs.deathSys)
 
+		// Fog system (64x64 map, per-player visibility)
+		gs.FogSys = fog.NewFogSystem(64, 64)
+
+		// AI system (player 2 is AI)
+		gs.AISys = ai.NewAISystem(2, gs.FogSys, 64, 64)
+
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
 	gs.Culler = network.NewCuller()
@@ -130,6 +140,80 @@ func NewGameSession() *GameSession {
 func (gs *GameSession) Tick() {
 	gs.tickCount++
 	gs.World.Tick(gs.tickCount)
+
+	// Fog of war: compute per-player visibility from commander positions
+	gs.updateFog()
+
+	// AI: run decision loop for enemy squads, execute commands
+	gs.runAI()
+}
+
+func (gs *GameSession) updateFog() {
+	if gs.FogSys == nil {
+		return
+	}
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+
+	// Collect alive commander positions per player
+	type cmdInfo struct {
+		playerID    uint32
+		tileX, tileY int32
+	}
+	var commanders []cmdInfo
+	cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
+		if !cmd.IsAlive {
+			return
+		}
+		hp, hasHP := healthPool.Get(e)
+		if hasHP && hp.HP <= 0 {
+			return
+		}
+		pos, hasPos := posPool.Get(e)
+		if !hasPos {
+			return
+		}
+		owner, hasOwner := ownerPool.Get(e)
+		if !hasOwner {
+			return
+		}
+		commanders = append(commanders, cmdInfo{
+			playerID: owner.PlayerID,
+			tileX:    int32(pos.X >> 12),
+			tileY:    int32(pos.Y >> 12),
+		})
+	})
+
+	// Clear all grids and reveal around each commander
+	for pid := range gs.FogSys.Grids {
+		gs.FogSys.Grids[pid].Clear()
+	}
+	for _, c := range commanders {
+		grid := gs.FogSys.GetOrCreateGrid(c.playerID)
+		grid.Reveal(c.tileX, c.tileY)
+	}
+}
+
+func (gs *GameSession) runAI() {
+	if gs.AISys == nil {
+		return
+	}
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+
+	aiCmds := gs.AISys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool)
+	for _, cmd := range aiCmds {
+		switch cmd.Type {
+		case ai.CmdMove:
+			gs.handleMoveSquad(cmd.SquadID, cmd.TargetX, cmd.TargetY)
+		case ai.CmdAttack:
+			gs.handleAttackTarget(cmd.SquadID, cmd.TargetID)
+		}
+	}
 }
 
 // Reset clears all entities, generates a new random map, and resets state.
@@ -159,6 +243,10 @@ func (gs *GameSession) Reset() {
 	// Reset tick counter and snapshot generator
 	gs.tickCount = 0
 	gs.SnapGen = network.NewSnapshotGenerator()
+
+	// Reset fog and AI
+	gs.FogSys = fog.NewFogSystem(64, 64)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, 64, 64)
 }
 
 // SpawnSquad creates a commander + N units for a given player.
@@ -227,6 +315,11 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		PlayerID: playerID,
 		Faction:  faction,
 	})
+
+	// Register with AI system if this is an AI player
+	if gs.AISys != nil && playerID == gs.AISys.AIPlayerID {
+		gs.AISys.RegisterSquad(squadID, uint32(cmdEntity))
+	}
 
 	// --- Combat units ---
 	spacing := fixed.FromFloat(0.3)
@@ -380,7 +473,29 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 
 // --- Helper methods for command handling ---
 
+// resolveSquadID accepts either a real squadID or an entityID and returns the
+// actual squadID by looking up the entity's BoidComponent if needed.
+func (gs *GameSession) resolveSquadID(id uint32) uint32 {
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	// First check if id matches an actual squadID
+	found := false
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.SquadID == id {
+			found = true
+		}
+	})
+	if found {
+		return id
+	}
+	// Otherwise treat id as entityID and look up its squad
+	if bc, ok := boidPool.Get(ecs.Entity(id)); ok {
+		return bc.SquadID
+	}
+	return id
+}
+
 func (gs *GameSession) handleMoveSquad(squadID uint32, targetX, targetY int64) {
+	squadID = gs.resolveSquadID(squadID)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 
@@ -396,6 +511,7 @@ func (gs *GameSession) handleMoveSquad(squadID uint32, targetX, targetY int64) {
 }
 
 func (gs *GameSession) handleAttackTarget(squadID uint32, targetID uint32) {
+	squadID = gs.resolveSquadID(squadID)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	attackPool := gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
 
@@ -410,7 +526,7 @@ func (gs *GameSession) handleAttackTarget(squadID uint32, targetID uint32) {
 }
 
 func (gs *GameSession) handleAttackGround(squadID uint32, targetX, targetY int64) {
-	// For attack-ground, set the pathfinding target to the ground position
+	squadID = gs.resolveSquadID(squadID)
 	// and set attack target to 0 (ground attack mode handled differently)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
@@ -431,6 +547,7 @@ func (gs *GameSession) handleAttackGround(squadID uint32, targetX, targetY int64
 }
 
 func (gs *GameSession) handleChangeFormation(squadID uint32, formationType uint8) {
+	squadID = gs.resolveSquadID(squadID)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	formationPool := gs.World.Pool(component.FormationComponent{}).(*ecs.ComponentPool[component.FormationComponent])
 
@@ -445,6 +562,7 @@ func (gs *GameSession) handleChangeFormation(squadID uint32, formationType uint8
 }
 
 func (gs *GameSession) handleTacticalOrder(squadID uint32, orderType uint8) {
+	squadID = gs.resolveSquadID(squadID)
 	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 
 	cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {

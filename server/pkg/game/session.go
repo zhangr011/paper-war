@@ -61,6 +61,7 @@ func NewGameSession() *GameSession {
 	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
 	formationPool := ecs.NewComponentPool[component.FormationComponent]()
 	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
+	ownerPool := ecs.NewComponentPool[component.OwnerComponent]()
 
 	gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
@@ -72,6 +73,7 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.PathfindingComponent{}, pathPool)
 	gs.World.RegisterPool(component.FormationComponent{}, formationPool)
 	gs.World.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
+	gs.World.RegisterPool(component.OwnerComponent{}, ownerPool)
 
 	// Build a default movement profile for terrain costs
 	defaultProfile := &component.MovementProfile{
@@ -170,7 +172,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	gs.addComponent(cmdEntity, component.VelocityComponent{
 		Vx:    0,
 		Vy:    0,
-		Speed: fixed.FromFloat(0.5),
+		Speed: fixed.FromFloat(0.01),
 	})
 
 	gs.addComponent(cmdEntity, component.BoidComponent{
@@ -211,6 +213,15 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		Role: component.RoleCommander,
 	})
 
+	faction := component.FactionPlayer
+	if playerID == 2 {
+		faction = component.FactionEnemy
+	}
+	gs.addComponent(cmdEntity, component.OwnerComponent{
+		PlayerID: playerID,
+		Faction:  faction,
+	})
+
 	// --- Combat units ---
 	spacing := fixed.FromFloat(0.3)
 	for i := 0; i < unitCount; i++ {
@@ -234,7 +245,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.VelocityComponent{
 			Vx:    0,
 			Vy:    0,
-			Speed: fixed.FromFloat(0.5),
+			Speed: fixed.FromFloat(0.01),
 		})
 
 		// Alternate melee and ranged roles
@@ -273,6 +284,10 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.PathfindingComponent{})
 		gs.addComponent(unitEntity, component.FormationRoleComponent{
 			Role: role,
+		})
+		gs.addComponent(unitEntity, component.OwnerComponent{
+			PlayerID: playerID,
+			Faction:  faction,
 		})
 	}
 }
@@ -476,5 +491,7 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 		p.Add(e, comp.(component.FormationComponent))
 	case *ecs.ComponentPool[component.FormationRoleComponent]:
 		p.Add(e, comp.(component.FormationRoleComponent))
+	case *ecs.ComponentPool[component.OwnerComponent]:
+		p.Add(e, comp.(component.OwnerComponent))
 	}
 }

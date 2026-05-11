@@ -52,3 +52,16 @@ func AlignmentForce(selfVel [2]int64, neighborVels [][2]int64) (fx, fy int64) {
 	fy = (avgVy - selfVel[1]) >> 3
 	return
 }
+
+// CommanderForce returns a steering force toward the target position.
+// The force is proportional to distance (scaled by 1/16) and zero when at the target.
+func CommanderForce(self, target [2]int64) (fx, fy int64) {
+	dx := target[0] - self[0]
+	dy := target[1] - self[1]
+	if dx == 0 && dy == 0 {
+		return 0, 0
+	}
+	fx = dx >> 4
+	fy = dy >> 4
+	return
+}

@@ -16,11 +16,16 @@ type MovementSystem struct {
 	Sh       *spatial.Hash
 	Profiles map[uint8]*component.MovementProfile
 
-	posPool  *ecs.ComponentPool[component.PositionComponent]
-	velPool  *ecs.ComponentPool[component.VelocityComponent]
-	boidPool *ecs.ComponentPool[component.BoidComponent]
-	movePool *ecs.ComponentPool[component.MovementComponent]
-	pathPool *ecs.ComponentPool[component.PathfindingComponent]
+	BeaconPos *[2]int64 // set by GameSession before tick; nil = no beacon
+
+	posPool           *ecs.ComponentPool[component.PositionComponent]
+	velPool           *ecs.ComponentPool[component.VelocityComponent]
+	boidPool          *ecs.ComponentPool[component.BoidComponent]
+	movePool          *ecs.ComponentPool[component.MovementComponent]
+	pathPool          *ecs.ComponentPool[component.PathfindingComponent]
+	cmdPool           *ecs.ComponentPool[component.CommanderComponent]
+	formationRolePool *ecs.ComponentPool[component.FormationRoleComponent]
+	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
 }
 
 func (s *MovementSystem) Name() string  { return "MovementSystem" }
@@ -32,6 +37,15 @@ func (s *MovementSystem) Init(w *ecs.World) {
 	s.boidPool = w.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	s.movePool = w.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent])
 	s.pathPool = w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+	if p := w.Pool(component.CommanderComponent{}); p != nil {
+		s.cmdPool = p.(*ecs.ComponentPool[component.CommanderComponent])
+	}
+	if p := w.Pool(component.FormationRoleComponent{}); p != nil {
+		s.formationRolePool = p.(*ecs.ComponentPool[component.FormationRoleComponent])
+	}
+	if p := w.Pool(component.OwnerComponent{}); p != nil {
+		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
+	}
 }
 
 func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
@@ -40,6 +54,19 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		s.Sh.Insert(uint64(e), pos.X, pos.Y)
 	})
 
+	// Build map of squadID -> commander position
+	commanderPos := make(map[uint32][2]int64)
+	if s.cmdPool != nil {
+		s.cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
+			if !cmd.IsAlive {
+				return
+			}
+			if pos, ok := s.posPool.Get(e); ok {
+				commanderPos[cmd.SquadID] = [2]int64{pos.X, pos.Y}
+			}
+		})
+	}
+
 	s.boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
 		pos, ok := s.posPool.GetPtr(e)
 		if !ok {
@@ -47,34 +74,44 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		}
 		vel, hasVel := s.velPool.GetPtr(e)
 
+		// Check if this unit should follow the beacon
+		useBeacon := false
+		if s.BeaconPos != nil && s.ownerPool != nil {
+			if owner, ok := s.ownerPool.Get(e); ok && owner.Faction == component.FactionPlayer {
+				useBeacon = true
+			}
+		}
+
+		// Flow-field force (skip when beacon is active for player units)
 		var flowFX, flowFY int64
-		if path, ok := s.pathPool.Get(e); ok {
-			profile := s.Profiles[0]
-			if mc, ok := s.movePool.Get(e); ok {
-				if p, exists := s.Profiles[mc.ProfileID]; exists {
-					profile = p
+		if !useBeacon {
+			if path, ok := s.pathPool.Get(e); ok {
+				profile := s.Profiles[0]
+				if mc, ok := s.movePool.Get(e); ok {
+					if p, exists := s.Profiles[mc.ProfileID]; exists {
+						profile = p
+					}
 				}
+				tileX := int32(pos.X >> 12)
+				tileY := int32(pos.Y >> 12)
+				if tileX < 0 {
+					tileX = 0
+				}
+				if tileY < 0 {
+					tileY = 0
+				}
+				if tileX >= s.Gm.Width {
+					tileX = s.Gm.Width - 1
+				}
+				if tileY >= s.Gm.Height {
+					tileY = s.Gm.Height - 1
+				}
+				ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
+				dir := ff.GetDirection(tileX, tileY)
+				flowW := fixed.FromFloat(2.5)
+				flowFX = fixed.Mul(dir.DX, flowW)
+				flowFY = fixed.Mul(dir.DY, flowW)
 			}
-			tileX := int32(pos.X >> 12)
-			tileY := int32(pos.Y >> 12)
-			// Clamp tile coords to valid map range
-			if tileX < 0 {
-				tileX = 0
-			}
-			if tileY < 0 {
-				tileY = 0
-			}
-			if tileX >= s.Gm.Width {
-				tileX = s.Gm.Width - 1
-			}
-			if tileY >= s.Gm.Height {
-				tileY = s.Gm.Height - 1
-			}
-			ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
-			dir := ff.GetDirection(tileX, tileY)
-			flowW := fixed.FromFloat(2.5)
-			flowFX = fixed.Mul(dir.DX, flowW)
-			flowFY = fixed.Mul(dir.DY, flowW)
 		}
 
 		neighborPos := s.queryNeighborPositions(pos.X, pos.Y, bc.NeighborRange, uint64(e))
@@ -87,14 +124,33 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			aliFX, aliFY = boid.AlignmentForce([2]int64{vel.Vx, vel.Vy}, neighborVels)
 		}
 
+		// Commander-following force (or beacon steering for player units)
+		var cmdFX, cmdFY int64
+		if useBeacon {
+			cmdFX, cmdFY = boid.CommanderForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
+		} else if bc.Role != component.RoleCommander {
+			if cpos, ok := commanderPos[bc.SquadID]; ok {
+				target := [2]int64{cpos[0], cpos[1]}
+				if s.formationRolePool != nil {
+					if fr, ok := s.formationRolePool.Get(e); ok {
+						target[0] += fr.OffsetX
+						target[1] += fr.OffsetY
+					}
+				}
+				cmdFX, cmdFY = boid.CommanderForce([2]int64{pos.X, pos.Y}, target)
+			}
+		}
+
 		totalFX := flowFX +
 			fixed.Mul(sepFX, bc.SeparationW) +
 			fixed.Mul(cohFX, bc.CohesionW) +
-			fixed.Mul(aliFX, bc.AlignmentW)
+			fixed.Mul(aliFX, bc.AlignmentW) +
+			fixed.Mul(cmdFX, bc.FormationW)
 		totalFY := flowFY +
 			fixed.Mul(sepFY, bc.SeparationW) +
 			fixed.Mul(cohFY, bc.CohesionW) +
-			fixed.Mul(aliFY, bc.AlignmentW)
+			fixed.Mul(aliFY, bc.AlignmentW) +
+			fixed.Mul(cmdFY, bc.FormationW)
 
 		maxForce := fixed.FromFloat(5.0)
 		totalFX = fixed.Clamp(totalFX, -maxForce, maxForce)
@@ -111,7 +167,6 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			pos.Y += totalFY
 		}
 
-		// Clamp to map bounds
 		mapMaxX := int64(s.Gm.Width) << fixed.FractionBits
 		mapMaxY := int64(s.Gm.Height) << fixed.FractionBits
 		pos.X = fixed.Clamp(pos.X, 0, mapMaxX)

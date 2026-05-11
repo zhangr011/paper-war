@@ -13,6 +13,7 @@ type CombatSystem struct {
 	healthPool *ecs.ComponentPool[component.HealthComponent]
 	attackPool *ecs.ComponentPool[component.AttackComponent]
 	boidPool   *ecs.ComponentPool[component.BoidComponent]
+	ownerPool  *ecs.ComponentPool[component.OwnerComponent]
 }
 
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
@@ -23,6 +24,9 @@ func (s *CombatSystem) Init(w *ecs.World) {
 	s.healthPool = w.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	s.attackPool = w.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
 	s.boidPool = w.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	if p := w.Pool(component.OwnerComponent{}); p != nil {
+		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
+	}
 }
 
 func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
@@ -45,10 +49,18 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 				if id == selfID {
 					continue
 				}
-				if hasSelfBoid {
+				if s.ownerPool != nil {
+					if selfOwner, ok := s.ownerPool.Get(e); ok {
+						if otherOwner, ok := s.ownerPool.Get(ecs.Entity(id)); ok {
+							if selfOwner.Faction == otherOwner.Faction {
+								continue // skip same faction
+							}
+						}
+					}
+				} else if hasSelfBoid {
 					if otherBoid, ok := s.boidPool.Get(ecs.Entity(id)); ok {
 						if selfBoid.SquadID == otherBoid.SquadID {
-							continue // skip allies
+							continue // fallback: skip same squad
 						}
 					}
 				}

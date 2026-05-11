@@ -63,8 +63,9 @@ func NewGameSession() *GameSession {
 	formationPool := ecs.NewComponentPool[component.FormationComponent]()
 	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 	ownerPool := ecs.NewComponentPool[component.OwnerComponent]()
+		projPool := ecs.NewComponentPool[component.ProjectileComponent]()
 
-	gs.World.RegisterPool(component.PositionComponent{}, posPool)
+		gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
 	gs.World.RegisterPool(component.BoidComponent{}, boidPool)
 	gs.World.RegisterPool(component.HealthComponent{}, healthPool)
@@ -75,6 +76,7 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.FormationComponent{}, formationPool)
 	gs.World.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 	gs.World.RegisterPool(component.OwnerComponent{}, ownerPool)
+		gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
 
 	// Build a default movement profile for terrain costs
 	defaultProfile := &component.MovementProfile{
@@ -105,13 +107,14 @@ func NewGameSession() *GameSession {
 		Profiles: profiles,
 	}
 	gs.combatSys = &combat.CombatSystem{Sh: gs.Sh}
-		gs.deathSys = &combat.DeathSystem{}
+	gs.deathSys = &combat.DeathSystem{}
 
-		gs.World.AddSystem(gs.terrainSys)
-		gs.World.AddSystem(gs.commanderSys)
-		gs.World.AddSystem(gs.movementSys)
-		gs.World.AddSystem(gs.combatSys)
-		gs.World.AddSystem(gs.deathSys)
+	gs.World.AddSystem(gs.terrainSys)
+	gs.World.AddSystem(gs.commanderSys)
+	gs.World.AddSystem(gs.movementSys)
+	gs.World.AddSystem(gs.combatSys)
+	gs.World.AddSystem(&combat.ProjectileSystem{})
+	gs.World.AddSystem(gs.deathSys)
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -496,5 +499,7 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 		p.Add(e, comp.(component.FormationRoleComponent))
 	case *ecs.ComponentPool[component.OwnerComponent]:
 		p.Add(e, comp.(component.OwnerComponent))
+	case *ecs.ComponentPool[component.ProjectileComponent]:
+		p.Add(e, comp.(component.ProjectileComponent))
 	}
 }

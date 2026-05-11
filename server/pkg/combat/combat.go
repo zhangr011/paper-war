@@ -3,29 +3,36 @@ package combat
 import (
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
+	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/spatial"
 )
 
 type CombatSystem struct {
 	Sh *spatial.Hash
+	em *ecs.EntityManager
 
 	posPool    *ecs.ComponentPool[component.PositionComponent]
 	healthPool *ecs.ComponentPool[component.HealthComponent]
 	attackPool *ecs.ComponentPool[component.AttackComponent]
 	boidPool   *ecs.ComponentPool[component.BoidComponent]
 	ownerPool  *ecs.ComponentPool[component.OwnerComponent]
+	projPool   *ecs.ComponentPool[component.ProjectileComponent]
 }
 
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
 func (s *CombatSystem) Priority() int { return 80 }
 
 func (s *CombatSystem) Init(w *ecs.World) {
+	s.em = w.Entities()
 	s.posPool = w.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	s.healthPool = w.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	s.attackPool = w.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
 	s.boidPool = w.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	if p := w.Pool(component.OwnerComponent{}); p != nil {
 		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
+	}
+	if p := w.Pool(component.ProjectileComponent{}); p != nil {
+		s.projPool = p.(*ecs.ComponentPool[component.ProjectileComponent])
 	}
 }
 
@@ -103,6 +110,32 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			}
 			targetHealth.HP -= dmg
 			ac.LastAttack = tick
+		} else {
+			// Artillery: spawn projectile entity
+			if s.projPool != nil && s.em != nil {
+				proj := s.em.Create()
+				s.posPool.Add(proj, component.PositionComponent{X: pos.X, Y: pos.Y})
+				tpos, _ := s.posPool.Get(ecs.Entity(ac.TargetID))
+				dx := tpos.X - pos.X
+				dy := tpos.Y - pos.Y
+				speed := fixed.FromFloat(2.0)
+				dist := fixed.ISqrt(fixed.DistSq(dx, dy))
+				var vdx, vdy int64
+				if dist > 0 {
+					vdx = fixed.Mul(fixed.Div(dx, dist), speed)
+					vdy = fixed.Mul(fixed.Div(dy, dist), speed)
+				}
+				s.projPool.Add(proj, component.ProjectileComponent{
+					DX:           vdx,
+					DY:           vdy,
+					TargetX:      tpos.X,
+					TargetY:      tpos.Y,
+					Damage:       ac.Damage,
+					ImpactTick:   tick + 5,
+					SplashRadius: fixed.FromFloat(1.5),
+				})
+				ac.LastAttack = tick
+			}
 		}
 	})
 }

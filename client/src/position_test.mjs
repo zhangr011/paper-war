@@ -4,22 +4,20 @@
 import assert from 'node:assert/strict';
 
 // ---- Constants matching iso.js ----
-const TILE_WIDTH = 64;
+const TILE_WIDTH = 32;
 const TILE_HEIGHT = 32;
-const HALF_W = TILE_WIDTH / 2;  // 32
-const HALF_H = TILE_HEIGHT / 2; // 16
 
 // ---- Terrain tile raw world-pixel position (no camera offset) ----
 function terrainTileScreen(tx, ty, zoom) {
-  const sx = (tx - ty) * HALF_W * zoom;
-  const sy = (tx + ty) * HALF_H * zoom;
+  const sx = tx * TILE_WIDTH * zoom;
+  const sy = ty * TILE_HEIGHT * zoom;
   return [sx, sy];
 }
 
 // ---- Unit raw world-pixel position (same formula as terrain, using float world coords) ----
 function unitWorldToRawScreen(wx, wy, zoom) {
-  const sx = (wx - wy) * HALF_W * zoom;
-  const sy = (wx + wy) * HALF_H * zoom;
+  const sx = wx * TILE_WIDTH * zoom;
+  const sy = wy * TILE_HEIGHT * zoom;
   return [sx, sy];
 }
 
@@ -34,8 +32,8 @@ function testUnitPositionMatchesTilePosition() {
   const zoom = 1.0;
   const viewW = 800;
   const viewH = 600;
-  const cameraOffsetX = (32 + 32) * HALF_W * zoom - viewW / 2;
-  const cameraOffsetY = (32 + 32) * HALF_H * zoom - viewH / 2;
+  const cameraOffsetX = 24 * TILE_WIDTH * zoom - viewW / 2;
+  const cameraOffsetY = 48 * TILE_HEIGHT * zoom - viewH / 2;
 
   // Terrain tile (10, 10)
   const [rawTileX, rawTileY] = terrainTileScreen(10, 10, zoom);
@@ -55,8 +53,8 @@ function testUnitPositionMatchesAtDifferentZoom() {
   const zoom = 2.0;
   const viewW = 1024;
   const viewH = 768;
-  const cameraOffsetX = 64 * HALF_W * zoom - viewW / 2;
-  const cameraOffsetY = 64 * HALF_H * zoom - viewH / 2;
+  const cameraOffsetX = 24 * TILE_WIDTH * zoom - viewW / 2;
+  const cameraOffsetY = 48 * TILE_HEIGHT * zoom - viewH / 2;
 
   // Terrain tile (5, 20)
   const [rawTileX, rawTileY] = terrainTileScreen(5, 20, zoom);
@@ -84,8 +82,8 @@ function testFractionalPositionMatchesBetweenTiles() {
   const [finalUnitX, finalUnitY] = applyCameraOffset(rawUnitX, rawUnitY, cameraOffsetX, cameraOffsetY);
 
   // Expected: same formula as tile (10.5, 10.5)
-  const expectedX = (10.5 - 10.5) * HALF_W * zoom;
-  const expectedY = (10.5 + 10.5) * HALF_H * zoom;
+  const expectedX = 10.5 * TILE_WIDTH * zoom;
+  const expectedY = 10.5 * TILE_HEIGHT * zoom;
 
   assert.strictEqual(finalUnitX, expectedX);
   assert.strictEqual(finalUnitY, expectedY);

@@ -28,6 +28,8 @@ type MovementSystem struct {
 	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
 }
 
+const PositionDivisor = 10
+
 func (s *MovementSystem) Name() string  { return "MovementSystem" }
 func (s *MovementSystem) Priority() int { return 60 }
 
@@ -109,6 +111,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 				ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
 				dir := ff.GetDirection(tileX, tileY)
 				flowW := fixed.FromFloat(2.5)
+				if hasVel && vel.Speed > flowW {
+					flowW = vel.Speed
+				}
 				flowFX = fixed.Mul(dir.DX, flowW)
 				flowFY = fixed.Mul(dir.DY, flowW)
 			}
@@ -153,6 +158,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			fixed.Mul(cmdFY, bc.FormationW)
 
 		maxForce := fixed.FromFloat(5.0)
+		if hasVel && vel.Speed > maxForce {
+			maxForce = vel.Speed
+		}
 		totalFX = fixed.Clamp(totalFX, -maxForce, maxForce)
 		totalFY = fixed.Clamp(totalFY, -maxForce, maxForce)
 
@@ -160,8 +168,8 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			speed := vel.Speed
 			vel.Vx = fixed.Clamp(totalFX, -speed, speed)
 			vel.Vy = fixed.Clamp(totalFY, -speed, speed)
-			pos.X += vel.Vx / 10
-			pos.Y += vel.Vy / 10
+			pos.X += vel.Vx / PositionDivisor
+			pos.Y += vel.Vy / PositionDivisor
 		} else {
 			pos.X += totalFX
 			pos.Y += totalFY

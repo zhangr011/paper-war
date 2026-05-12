@@ -20,6 +20,7 @@ export const CHANGED_HP = 1 << 3;
 export const CHANGED_TARGET_ID = 1 << 4;
 export const CHANGED_MORALE = 1 << 5;
 export const CHANGED_STATE = 1 << 6;
+export const CHANGED_SQUAD_ID = 1 << 7;
 
 // ---------------------------------------------------------------------------
 // Event types (server -> client)
@@ -294,6 +295,9 @@ export class Connection {
       }
       if (mask & CHANGED_STATE) {
         unit.state = view.getUint8(off); off += 1;
+      }
+      if (mask & CHANGED_SQUAD_ID) {
+        unit.squadID = view.getUint32(off, true); off += 4;
       }
 
       units.push(unit);

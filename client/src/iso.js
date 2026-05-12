@@ -1,11 +1,10 @@
 // client/src/iso.js
-// Isometric coordinate conversion utilities for 2:1 diamond tile projection.
-// Tile dimensions: 64x32px (standard isometric)
+// Rectangular coordinate conversion utilities for top-down tile projection.
 
-const TILE_WIDTH = 64;
+const TILE_WIDTH = 32;
 const TILE_HEIGHT = 32;
-const HALF_W = TILE_WIDTH / 2;  // 32
-const HALF_H = TILE_HEIGHT / 2; // 16
+const HALF_W = TILE_WIDTH / 2;
+const HALF_H = TILE_HEIGHT / 2;
 
 /**
  * Convert world tile coordinates to screen pixel coordinates.
@@ -16,8 +15,8 @@ const HALF_H = TILE_HEIGHT / 2; // 16
  * @returns {[number, number]} [screenX, screenY]
  */
 export function worldToScreen(wx, wy, offsetX, offsetY) {
-  const sx = (wx - wy) * HALF_W + offsetX;
-  const sy = (wx + wy) * HALF_H + offsetY;
+  const sx = wx * TILE_WIDTH + offsetX;
+  const sy = wy * TILE_HEIGHT + offsetY;
   return [sx, sy];
 }
 
@@ -33,8 +32,8 @@ export function worldToScreen(wx, wy, offsetX, offsetY) {
 export function screenToWorld(sx, sy, offsetX, offsetY) {
   const ax = sx - offsetX;
   const ay = sy - offsetY;
-  const wx = (ax / HALF_W + ay / HALF_H) / 2;
-  const wy = (ay / HALF_H - ax / HALF_W) / 2;
+  const wx = ax / TILE_WIDTH;
+  const wy = ay / TILE_HEIGHT;
   return [wx, wy];
 }
 
@@ -49,13 +48,13 @@ export function screenToWorld(sx, sy, offsetX, offsetY) {
  * @returns {[number, number]} [screenX, screenY] relative to canvas
  */
 export function worldToScreenCentered(wx, wy, camX, camY, viewW, viewH) {
-  const sx = (wx - wy) * HALF_W - camX + viewW / 2;
-  const sy = (wx + wy) * HALF_H - camY + viewH / 2;
+  const sx = wx * TILE_WIDTH - camX + viewW / 2;
+  const sy = wy * TILE_HEIGHT - camY + viewH / 2;
   return [sx, sy];
 }
 
 /**
- * Get depth sort key for isometric rendering order.
+ * Get depth sort key for top-down rendering order.
  * Lower values are drawn first (behind), higher values drawn later (in front).
  * Sort by Y ascending (depth), same Y sorts by X.
  * @param {number} wx - World tile X
@@ -63,7 +62,7 @@ export function worldToScreenCentered(wx, wy, camX, camY, viewW, viewH) {
  * @returns {number} Sort key
  */
 export function depthKey(wx, wy) {
-  return (wx + wy) * 10000 + wx;
+  return wy * 10000 + wx;
 }
 
 export { TILE_WIDTH, TILE_HEIGHT, HALF_W, HALF_H };

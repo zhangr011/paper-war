@@ -2,19 +2,19 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js';
-import { Camera } from './camera.js';
-import { StateManager } from './state.js';
-import { Connection } from './connection.js';
-import { InputHandler } from './input.js';
-import { TILE_WIDTH, TILE_HEIGHT, HALF_W, HALF_H } from './iso.js';
+import { Renderer } from './gl.js?v=drag-pan-1';
+import { Camera } from './camera.js?v=drag-pan-1';
+import { StateManager } from './state.js?v=drag-pan-1';
+import { Connection } from './connection.js?v=drag-pan-1';
+import { InputHandler } from './input.js?v=drag-pan-1';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=drag-pan-1';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAP_WIDTH = 64;
-const MAP_HEIGHT = 64;
+const MAP_WIDTH = 48;
+const MAP_HEIGHT = 96;
 
 // Fixed-point conversion (server uses int64 with 12-bit fraction)
 const FRAC_BITS = 12;
@@ -48,6 +48,11 @@ const TERRAIN_COLORS = [
   { r: 0.45, g: 0.45, b: 0.42 }, // 8 Wall (stone gray)
   { r: 0.80, g: 0.85, b: 0.90 }, // 9 Snow (white)
   { r: 0.70, g: 0.60, b: 0.35 }, // 10 Desert (sand)
+  { r: 0.42, g: 0.39, b: 0.34 }, // 11 Stronghold L1
+  { r: 0.48, g: 0.43, b: 0.36 }, // 12 Stronghold L2
+  { r: 0.55, g: 0.47, b: 0.38 }, // 13 Stronghold L3
+  { r: 0.62, g: 0.50, b: 0.39 }, // 14 Stronghold L4
+  { r: 0.70, g: 0.52, b: 0.38 }, // 15 Stronghold L5
 ];
 
 // ---------------------------------------------------------------------------
@@ -103,6 +108,7 @@ export class Game {
 
     // Currently selected units for the selection panel
     this.selectedUnits = [];
+    this.selectedEntityIDs = new Set();
 
     // Minimap 2D context
     this.minimapCtx = this.minimapCanvas
@@ -124,7 +130,14 @@ export class Game {
     this.terrainData = data;
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
-    this.camera.centerOnMap();
+    this.centerCameraOnPlayerStart();
+  }
+
+  centerCameraOnPlayerStart() {
+    const startY = this.playerID === 2 ? this.mapHeight - 10 : 10;
+    this.camera.offsetX = (this.mapWidth / 2) * TILE_WIDTH;
+    this.camera.offsetY = startY * TILE_HEIGHT;
+    this.camera._clamp();
   }
 
   // -----------------------------------------------------------------------
@@ -150,6 +163,7 @@ export class Game {
         if (u.targetID !== undefined) converted.targetID = u.targetID;
         if (u.morale !== undefined) converted.morale = u.morale;
         if (u.state !== undefined) converted.state = u.state;
+        if (u.squadID !== undefined) converted.squadID = u.squadID;
         return converted;
       });
 
@@ -188,6 +202,11 @@ export class Game {
 
     // --- Resize ---
     window.addEventListener('resize', () => this.handleResize());
+
+    const testMoveBtn = document.getElementById('team-test-move-btn');
+    if (testMoveBtn) {
+      testMoveBtn.addEventListener('click', () => this.handleTestMove());
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -216,12 +235,11 @@ export class Game {
 
     // Clear previous selection
     this.input.selectedSquads.clear();
+    this.selectedEntityIDs.clear();
     this.selectedUnits = [];
 
     if (closest) {
-      // For now, each entity is its own "squad" (entityID == squadID)
-      this.input.selectedSquads.add(closest.entityID);
-      this.selectedUnits = [closest];
+      this.selectSquads([this.getCommandSquadID(closest)]);
     }
 
     this.updateSelectionPanel();
@@ -235,17 +253,95 @@ export class Game {
     const allUnits = this.state.getRenderUnits();
 
     this.input.selectedSquads.clear();
+    this.selectedEntityIDs.clear();
     this.selectedUnits = [];
 
     for (const unit of allUnits) {
       const [sx, sy] = this.camera.worldToScreen(unit.renderX, unit.renderY);
       if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
-        this.input.selectedSquads.add(unit.entityID);
-        this.selectedUnits.push(unit);
+        this.input.selectedSquads.add(this.getCommandSquadID(unit));
       }
     }
 
+    this.syncSelectedTeamUnits();
     this.updateSelectionPanel();
+  }
+
+  getCommandSquadID(unit) {
+    return unit.squadID || unit.entityID;
+  }
+
+  selectSquads(squadIDs) {
+    this.input.selectedSquads.clear();
+    for (const squadID of squadIDs) {
+      this.input.selectedSquads.add(squadID);
+    }
+    this.syncSelectedTeamUnits();
+  }
+
+  syncSelectedTeamUnits() {
+    this.selectedEntityIDs.clear();
+    this.selectedUnits = [];
+
+    if (this.input.selectedSquads.size === 0) return;
+
+    for (const unit of this.state.getRenderUnits()) {
+      if (!this.input.selectedSquads.has(this.getCommandSquadID(unit))) continue;
+      this.selectedEntityIDs.add(unit.entityID);
+      this.selectedUnits.push(unit);
+    }
+  }
+
+  /**
+   * Move selected squads to a random target within the currently visible canvas.
+   */
+  handleTestMove() {
+    if (this.input.selectedSquads.size === 0) return;
+
+    const selectedUnits = this.state.getRenderUnits()
+      .filter((unit) => this.input.selectedSquads.has(this.getCommandSquadID(unit)));
+    const center = selectedUnits.length > 0
+      ? selectedUnits.reduce((acc, unit) => {
+        acc.x += unit.renderX;
+        acc.y += unit.renderY;
+        return acc;
+      }, { x: 0, y: 0 })
+      : null;
+    if (center) {
+      center.x /= selectedUnits.length;
+      center.y /= selectedUnits.length;
+    }
+
+    const margin = 24;
+    const maxX = Math.max(margin, this.camera.viewW - margin);
+    const maxY = Math.max(margin, this.camera.viewH - margin);
+    let worldX = 0;
+    let worldY = 0;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const sx = margin + Math.random() * Math.max(1, maxX - margin);
+      const sy = margin + Math.random() * Math.max(1, maxY - margin);
+      [worldX, worldY] = this.camera.screenToWorld(sx, sy);
+      if (!center || Math.hypot(worldX - center.x, worldY - center.y) >= 8) {
+        break;
+      }
+    }
+
+    if (center && Math.hypot(worldX - center.x, worldY - center.y) < 8) {
+      const [leftWorld] = this.camera.screenToWorld(margin, this.camera.viewH / 2);
+      const [rightWorld] = this.camera.screenToWorld(maxX, this.camera.viewH / 2);
+      worldX = center.x < (leftWorld + rightWorld) / 2 ? rightWorld : leftWorld;
+      worldY = center.y;
+    }
+
+    worldX = Math.max(0, Math.min(this.mapWidth - 0.01, worldX));
+    worldY = Math.max(0, Math.min(this.mapHeight - 0.01, worldY));
+
+    const fixedX = Math.round(worldX * FIXED_ONE);
+    const fixedY = Math.round(worldY * FIXED_ONE);
+    for (const squadID of this.input.selectedSquads) {
+      this.connection.sendMoveSquad(squadID, fixedX, fixedY, 0);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -304,6 +400,9 @@ export class Game {
       this.state.cleanup();
       this.framesSinceCleanup = 0;
     }
+    if (this.input.selectedSquads.size > 0) {
+      this.syncSelectedTeamUnits();
+    }
 
     // --- Render phase ---
     this.render();
@@ -329,12 +428,8 @@ export class Game {
     // Build selection highlight descriptors
     const selectionHighlights = this.buildSelectionHighlights();
 
-    // Camera offset for the renderer: the screen-pixel offset that maps
-    // world-origin to the canvas. The camera stores (offsetX, offsetY)
-    // as the world-pixel at viewport center, so the screen offset is:
-    //   cameraOffset.x = offsetX * zoom - viewW/2
-    //   cameraOffset.y = offsetY * zoom - viewH/2
-    // This is exactly how worldToScreen computes positions.
+    // Camera offset for the renderer: world-pixel at viewport center converted
+    // into the raw projected coordinate space used by descriptors below.
     const cameraOffset = {
       x: this.camera.offsetX * this.camera.zoom - this.camera.viewW / 2,
       y: this.camera.offsetY * this.camera.zoom - this.camera.viewH / 2,
@@ -391,9 +486,9 @@ export class Game {
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
-        // Isometric diamond position in screen pixels
-        const sx = (tx - ty) * HALF_W * zoom;
-        const sy = (tx + ty) * HALF_H * zoom;
+        // Rectangular tile position in screen pixels.
+        const sx = tx * TILE_WIDTH * zoom;
+        const sy = ty * TILE_HEIGHT * zoom;
 
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
@@ -467,9 +562,9 @@ export class Game {
     for (const unit of units) {
       if (!unit.alive) continue;
 
-      // Raw world-pixel position (same formula as terrain tiles in buildTerrainTiles)
-      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
-      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
+      // Raw world-pixel position (same formula as terrain tiles).
+      const sx = unit.renderX * TILE_WIDTH * zoom;
+      const sy = unit.renderY * TILE_HEIGHT * zoom;
 
       // Scale sprite size by zoom
       const w = UNIT_SPRITE_W * zoom;
@@ -482,7 +577,7 @@ export class Game {
       else if (unit.currState === 3) { r = 0.6; g = 0.6; b = 0.2; } // retreating
 
       // Check if this unit is selected -> brighten
-      const isSelected = this.input.selectedSquads.has(unit.entityID);
+      const isSelected = this.selectedEntityIDs.has(unit.entityID);
       if (isSelected) {
         r = Math.min(1.0, r + 0.3);
         g = Math.min(1.0, g + 0.3);
@@ -529,9 +624,9 @@ export class Game {
     for (const unit of this.selectedUnits) {
       if (!unit.alive) continue;
 
-      // Raw world-pixel position (same formula as terrain tiles)
-      const sx = (unit.renderX - unit.renderY) * HALF_W * zoom;
-      const sy = (unit.renderX + unit.renderY) * HALF_H * zoom;
+      // Raw world-pixel position (same formula as terrain tiles).
+      const sx = unit.renderX * TILE_WIDTH * zoom;
+      const sy = unit.renderY * TILE_HEIGHT * zoom;
       const w = UNIT_SPRITE_W * zoom;
       const h = UNIT_SPRITE_H * zoom;
 
@@ -581,44 +676,34 @@ export class Game {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, mw, mh);
 
-    // Draw map outline (isometric diamond projected onto minimap)
+    // Draw map outline as a top-down rectangle so portrait maps read correctly
+    // on a phone-sized minimap.
+    const pad = 8;
+    const mapAspect = this.mapWidth / this.mapHeight;
+    let mapDrawH = mh - pad * 2;
+    let mapDrawW = mapDrawH * mapAspect;
+    if (mapDrawW > mw - pad * 2) {
+      mapDrawW = mw - pad * 2;
+      mapDrawH = mapDrawW / mapAspect;
+    }
+    const mapX = (mw - mapDrawW) / 2;
+    const mapY = (mh - mapDrawH) / 2;
+    const projectToMinimap = (wx, wy) => [
+      mapX + (wx / this.mapWidth) * mapDrawW,
+      mapY + (wy / this.mapHeight) * mapDrawH,
+    ];
+
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
-    ctx.beginPath();
-
-    // Map corners in normalized coordinates [0..1]
-    // Top: tile (0,0) -> (0.5, 0)
-    // Right: tile (MAP_WIDTH, 0) -> (1, 0.5)
-    // Bottom: tile (MAP_WIDTH, MAP_HEIGHT) -> (0.5, 1)
-    // Left: tile (0, MAP_HEIGHT) -> (0, 0.5)
-    const topX = mw * 0.5, topY = 0;
-    const rightX = mw, rightY = mh * 0.5;
-    const bottomX = mw * 0.5, bottomY = mh;
-    const leftX = 0, leftY = mh * 0.5;
-
-    ctx.moveTo(topX, topY);
-    ctx.lineTo(rightX, rightY);
-    ctx.lineTo(bottomX, bottomY);
-    ctx.lineTo(leftX, leftY);
-    ctx.closePath();
     ctx.fillStyle = '#1a2a1a';
-    ctx.fill();
-    ctx.stroke();
+    ctx.fillRect(mapX, mapY, mapDrawW, mapDrawH);
+    ctx.strokeRect(mapX, mapY, mapDrawW, mapDrawH);
 
     // Draw units as colored dots
     for (const unit of units) {
       if (!unit.alive) continue;
 
-      // Normalize world position to [0..1]
-      const nx = unit.renderX / this.mapWidth;
-      const ny = unit.renderY / this.mapHeight;
-
-      // Project to minimap diamond coordinates
-      // The isometric diamond in minimap space:
-      //   px = 0.5 + (nx - ny) * 0.5
-      //   py = (nx + ny) * 0.5
-      const px = mw * (0.5 + (nx - ny) * 0.5);
-      const py = mh * ((nx + ny) * 0.5);
+      const [px, py] = projectToMinimap(unit.renderX, unit.renderY);
 
       // Color based on state
       let color = '#4488cc';
@@ -626,7 +711,7 @@ export class Game {
       else if (unit.currState === 1) color = '#44cc44';
 
       // Highlight selected units
-      if (this.input.selectedSquads.has(unit.entityID)) {
+      if (this.selectedEntityIDs.has(unit.entityID)) {
         color = '#ffffff';
       }
 
@@ -635,7 +720,6 @@ export class Game {
     }
 
     // Draw viewport rectangle on the minimap
-    const vis = this.camera.getVisibleTiles();
     const corners = [
       this.camera.screenToWorld(0, 0),
       this.camera.screenToWorld(this.camera.viewW, 0),
@@ -648,10 +732,7 @@ export class Game {
     ctx.beginPath();
     for (let i = 0; i < corners.length; i++) {
       const [wx, wy] = corners[i];
-      const nx = wx / this.mapWidth;
-      const ny = wy / this.mapHeight;
-      const px = mw * (0.5 + (nx - ny) * 0.5);
-      const py = mh * ((nx + ny) * 0.5);
+      const [px, py] = projectToMinimap(wx, wy);
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }

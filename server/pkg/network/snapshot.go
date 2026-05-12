@@ -12,6 +12,7 @@ const (
 	ChangedTargetID
 	ChangedMorale
 	ChangedState
+	ChangedSquadID
 )
 
 type UnitSnapshot struct {
@@ -24,6 +25,7 @@ type UnitSnapshot struct {
 	TargetID    uint32
 	Morale      int32
 	State       uint8
+	SquadID     uint32
 }
 
 type EventType uint8
@@ -42,10 +44,10 @@ type Event struct {
 }
 
 type Snapshot struct {
-	Tick       uint32
-	PrevTick   uint32
-	Units      []UnitSnapshot
-	Events     []Event
+	Tick     uint32
+	PrevTick uint32
+	Units    []UnitSnapshot
+	Events   []Event
 }
 
 type EntityState struct {
@@ -56,6 +58,7 @@ type EntityState struct {
 	TargetID uint32
 	Morale   int32
 	State    uint8
+	SquadID  uint32
 }
 
 type SnapshotGenerator struct {
@@ -74,9 +77,9 @@ func NewSnapshotGenerator() *SnapshotGenerator {
 	sg := &SnapshotGenerator{
 		prevStates: make(map[uint32]EntityState),
 	}
-	sg.thresholds.position = 10   // ~0.002 world units
+	sg.thresholds.position = 10 // ~0.002 world units
 	sg.thresholds.velocity = 5
-	sg.thresholds.angle = 5       // ~0.5 degrees
+	sg.thresholds.angle = 5 // ~0.5 degrees
 	sg.thresholds.hp = 1
 	sg.thresholds.morale = 1
 	return sg
@@ -103,14 +106,15 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 			// New unit — send all fields
 			snap.Units = append(snap.Units, UnitSnapshot{
 				EntityID:    id,
-				ChangedMask: 0x7F, // all bits set
-				X: cur.X, Y: cur.Y,
+				ChangedMask: 0xFF, // all bits set
+				X:           cur.X, Y: cur.Y,
 				Vx: cur.Vx, Vy: cur.Vy,
-				Angle: cur.Angle,
-				HP: cur.HP,
+				Angle:    cur.Angle,
+				HP:       cur.HP,
 				TargetID: cur.TargetID,
-				Morale: cur.Morale,
-				State: cur.State,
+				Morale:   cur.Morale,
+				State:    cur.State,
+				SquadID:  cur.SquadID,
 			})
 		} else {
 			mask := uint8(0)
@@ -122,14 +126,18 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 			}
 			if cur.Angle != prev.Angle {
 				d := cur.Angle - prev.Angle
-				if d < 0 { d = -d }
+				if d < 0 {
+					d = -d
+				}
 				if d > sg.thresholds.angle {
 					mask |= ChangedAngle
 				}
 			}
 			if cur.HP != prev.HP {
 				d := cur.HP - prev.HP
-				if d < 0 { d = -d }
+				if d < 0 {
+					d = -d
+				}
 				if d >= sg.thresholds.hp {
 					mask |= ChangedHP
 				}
@@ -139,7 +147,9 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 			}
 			if cur.Morale != prev.Morale {
 				d := cur.Morale - prev.Morale
-				if d < 0 { d = -d }
+				if d < 0 {
+					d = -d
+				}
 				if d >= sg.thresholds.morale {
 					mask |= ChangedMorale
 				}
@@ -147,18 +157,22 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 			if cur.State != prev.State {
 				mask |= ChangedState
 			}
+			if cur.SquadID != prev.SquadID {
+				mask |= ChangedSquadID
+			}
 
 			if mask > 0 {
 				snap.Units = append(snap.Units, UnitSnapshot{
 					EntityID:    id,
 					ChangedMask: mask,
-					X: cur.X, Y: cur.Y,
+					X:           cur.X, Y: cur.Y,
 					Vx: cur.Vx, Vy: cur.Vy,
-					Angle: cur.Angle,
-					HP: cur.HP,
+					Angle:    cur.Angle,
+					HP:       cur.HP,
 					TargetID: cur.TargetID,
-					Morale: cur.Morale,
-					State: cur.State,
+					Morale:   cur.Morale,
+					State:    cur.State,
+					SquadID:  cur.SquadID,
 				})
 			}
 		}
@@ -176,13 +190,30 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 	// Estimate unit data
 	for _, u := range snap.Units {
 		size += 4 + 1 // entityID + mask
-		if u.ChangedMask&ChangedPosition != 0 { size += 16 }
-		if u.ChangedMask&ChangedVelocity != 0 { size += 16 }
-		if u.ChangedMask&ChangedAngle != 0 { size += 2 }
-		if u.ChangedMask&ChangedHP != 0 { size += 4 }
-		if u.ChangedMask&ChangedTargetID != 0 { size += 4 }
-		if u.ChangedMask&ChangedMorale != 0 { size += 4 }
-		if u.ChangedMask&ChangedState != 0 { size += 1 }
+		if u.ChangedMask&ChangedPosition != 0 {
+			size += 16
+		}
+		if u.ChangedMask&ChangedVelocity != 0 {
+			size += 16
+		}
+		if u.ChangedMask&ChangedAngle != 0 {
+			size += 2
+		}
+		if u.ChangedMask&ChangedHP != 0 {
+			size += 4
+		}
+		if u.ChangedMask&ChangedTargetID != 0 {
+			size += 4
+		}
+		if u.ChangedMask&ChangedMorale != 0 {
+			size += 4
+		}
+		if u.ChangedMask&ChangedState != 0 {
+			size += 1
+		}
+		if u.ChangedMask&ChangedSquadID != 0 {
+			size += 4
+		}
 	}
 
 	buf := make([]byte, 0, size)
@@ -216,6 +247,9 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 		}
 		if u.ChangedMask&ChangedState != 0 {
 			buf = append(buf, u.State)
+		}
+		if u.ChangedMask&ChangedSquadID != 0 {
+			buf = appendUint32(buf, u.SquadID)
 		}
 	}
 	return buf

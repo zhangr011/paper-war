@@ -1,10 +1,5 @@
 // client/src/input.js
 
-export const FORMATION_LINE = 0;
-export const FORMATION_WEDGE = 1;
-export const FORMATION_CIRCLE = 2;
-export const FORMATION_SCATTER = 3;
-
 export const TACTICAL_CHARGE = 0;
 export const TACTICAL_RETREAT = 1;
 export const TACTICAL_HOLD = 2;
@@ -30,12 +25,17 @@ export class InputHandler {
     this.selEndY = 0;
     this.selectedSquads = new Set(); // squadIDs
 
+    // Drag pan state
+    this.dragging = false;
+    this.dragPanning = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+    this.dragLastX = 0;
+    this.dragLastY = 0;
+    this.dragPanThreshold = 8;
+
     // Keys held
     this.keys = new Set();
-
-    // Edge scroll
-    this.edgeScrollZone = 20; // pixels from edge
-    this.edgeScrollSpeed = 400; // pixels per second
 
     // Callbacks
     this.onSelect = null;       // callback(worldX, worldY)
@@ -81,6 +81,12 @@ export class InputHandler {
     const sy = e.clientY - rect.top;
 
     if (e.button === 0) { // left click
+      this.dragging = true;
+      this.dragPanning = false;
+      this.dragStartX = sx;
+      this.dragStartY = sy;
+      this.dragLastX = sx;
+      this.dragLastY = sy;
       this.selecting = true;
       this.selStartX = sx;
       this.selStartY = sy;
@@ -104,6 +110,24 @@ export class InputHandler {
       this.selEndY = this.mouseY;
     }
 
+    if (this.dragging) {
+      const totalDX = this.mouseX - this.dragStartX;
+      const totalDY = this.mouseY - this.dragStartY;
+      if (!this.dragPanning && Math.hypot(totalDX, totalDY) >= this.dragPanThreshold) {
+        this.dragPanning = true;
+        this.selecting = false;
+      }
+
+      if (this.dragPanning) {
+        const dx = this.mouseX - this.dragLastX;
+        const dy = this.mouseY - this.dragLastY;
+        this.camera.pan(-dx, -dy);
+      }
+
+      this.dragLastX = this.mouseX;
+      this.dragLastY = this.mouseY;
+    }
+
     if (this.onHover) this.onHover(this.mouseWorldX, this.mouseWorldY);
   }
 
@@ -112,8 +136,16 @@ export class InputHandler {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    if (e.button === 0 && this.selecting) {
+    if (e.button === 0) {
+      const wasSelecting = this.selecting;
+      const wasPanning = this.dragPanning;
+      this.dragging = false;
+      this.dragPanning = false;
       this.selecting = false;
+      if (!wasSelecting || wasPanning) {
+        return;
+      }
+
       const dx = Math.abs(sx - this.selStartX);
       const dy = Math.abs(sy - this.selStartY);
 
@@ -144,14 +176,6 @@ export class InputHandler {
 
   _onKeyDown(e) {
     this.keys.add(e.key.toLowerCase());
-
-    // Formation hotkeys
-    if (e.key >= '1' && e.key <= '4' && this.selectedSquads.size > 0) {
-      const formation = parseInt(e.key) - 1;
-      for (const squadID of this.selectedSquads) {
-        this.connection.sendChangeFormation(squadID, formation);
-      }
-    }
 
     // Tactical hotkeys
     const tacticalMap = { q: 0, w: 1, e: 2, r: 3 };
@@ -192,7 +216,7 @@ export class InputHandler {
     }
   }
 
-  // Call each frame to handle WASD and edge scrolling
+  // Call each frame to handle keyboard panning.
   update(dt) {
     let panX = 0, panY = 0;
     const speed = 500 * dt; // pixels per second
@@ -202,16 +226,6 @@ export class InputHandler {
     if (this.keys.has('s') || this.keys.has('arrowdown')) panY += speed;
     if (this.keys.has('a') || this.keys.has('arrowleft')) panX -= speed;
     if (this.keys.has('d') || this.keys.has('arrowright')) panX += speed;
-
-    // Edge scrolling (only if mouse is over the canvas area)
-    if (this.mouseX >= 0 && this.mouseY >= 0) {
-      const z = this.edgeScrollZone;
-      const es = this.edgeScrollSpeed * dt;
-      if (this.mouseX < z) panX -= es;
-      if (this.mouseX > this.canvas.clientWidth - z) panX += es;
-      if (this.mouseY < z) panY -= es;
-      if (this.mouseY > this.canvas.clientHeight - z) panY += es;
-    }
 
     if (panX !== 0 || panY !== 0) {
       this.camera.pan(panX, panY);

@@ -106,38 +106,19 @@
           <span class="selection-value" id="sel-status">Idle</span>
         </div>
       </div>
+      <button class="team-test-move-btn" id="team-test-move-btn" title="Move selected team to a random visible position">
+        Test Move
+      </button>
     </section>
 
     <!-- Minimap -->
     <section class="panel" id="minimap-panel">
-      <canvas id="minimap-canvas" width="160" height="160"></canvas>
+      <canvas id="minimap-canvas" width="120" height="180"></canvas>
     </section>
 
     <!-- Action panel -->
     <section class="panel" id="action-panel">
       <h3 class="panel-title">Actions</h3>
-
-      <div class="action-group">
-        <span class="action-group-label">Formation</span>
-        <div class="action-buttons">
-          <button class="action-btn" data-formation="line" title="Line formation [1]">
-            <span class="action-key">1</span>
-            <span class="action-name">Line</span>
-          </button>
-          <button class="action-btn" data-formation="wedge" title="Wedge formation [2]">
-            <span class="action-key">2</span>
-            <span class="action-name">Wedge</span>
-          </button>
-          <button class="action-btn" data-formation="ring" title="Ring formation [3]">
-            <span class="action-key">3</span>
-            <span class="action-name">Ring</span>
-          </button>
-          <button class="action-btn" data-formation="scatter" title="Scatter formation [4]">
-            <span class="action-key">4</span>
-            <span class="action-name">Scatter</span>
-          </button>
-        </div>
-      </div>
 
       <div class="action-group">
         <span class="action-group-label">Tactics</span>
@@ -166,6 +147,6 @@
 
   </div><!-- /game-screen -->
 
-  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/app.js?v=drag-pan-1"></script>
 </body>
 </html>

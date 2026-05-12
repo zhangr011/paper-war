@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/user/paper-war/server/pkg/ai"
+	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
-	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/fog"
@@ -39,6 +39,40 @@ type GameSession struct {
 	tickCount uint32
 }
 
+const (
+	ServerTicksPerSecond      = 5
+	DefaultMapWidth           = 48
+	DefaultMapHeight          = 96
+	InitialTeamCombatUnits    = 2
+	CombatUnitsPerTeamLevel   = 2
+	DefaultMovementMultiplier = 5
+	combatUnitCrossMapSeconds = 60 * 60
+)
+
+func CombatUnitCountForTeamLevel(level uint8) int {
+	if level == 0 {
+		level = 1
+	}
+	return InitialTeamCombatUnits + int(level-1)*CombatUnitsPerTeamLevel
+}
+
+func defaultCombatUnitSpeed(mapWidth int32) int64 {
+	ticks := int64(ServerTicksPerSecond * combatUnitCrossMapSeconds)
+	distance := int64(mapWidth) << fixed.FractionBits
+	speed := distance * movement.PositionDivisor * DefaultMovementMultiplier / ticks
+
+	// Movement applies velocity with integer division by movement.PositionDivisor.
+	// Round up to the next divisor step so the effective speed remains near the
+	// configured side-to-side target after truncation.
+	if rem := speed % movement.PositionDivisor; rem != 0 {
+		speed += movement.PositionDivisor - rem
+	}
+	if speed < movement.PositionDivisor {
+		return movement.PositionDivisor
+	}
+	return speed
+}
+
 func NewGameSession() *GameSession {
 	gs := &GameSession{}
 
@@ -46,8 +80,8 @@ func NewGameSession() *GameSession {
 	em := ecs.NewEntityManager()
 	gs.World = ecs.NewWorld(em)
 
-	// 2. Create GameMap (64x64 generated terrain)
-	gs.Map = tilemap.GenerateMap(64, 64, 42)
+	// 2. Create GameMap
+	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, 42)
 
 	// 3. Create Spatial Hash (cell size = 2 world units in fixed-point)
 	gs.Sh = spatial.NewHash(fixed.FromFloat(2.0))
@@ -86,17 +120,22 @@ func NewGameSession() *GameSession {
 	defaultProfile := &component.MovementProfile{
 		ID: 0,
 		TerrainCosts: [16]uint8{
-			component.TerrainPlain:   1,
-			component.TerrainRoad:    1,
-			component.TerrainShallow: 3,
-			component.TerrainDeep:    0, // impassable
-			component.TerrainForest:  2,
-			component.TerrainHill:    3,
-			component.TerrainSwamp:   4,
-			component.TerrainBridge:  1,
-			component.TerrainWall:    0, // impassable
-			component.TerrainSnow:    3,
-			component.TerrainDesert:  2,
+			component.TerrainPlain:       1,
+			component.TerrainRoad:        1,
+			component.TerrainShallow:     3,
+			component.TerrainDeep:        0, // impassable
+			component.TerrainForest:      2,
+			component.TerrainHill:        3,
+			component.TerrainSwamp:       4,
+			component.TerrainBridge:      1,
+			component.TerrainWall:        0, // impassable
+			component.TerrainSnow:        3,
+			component.TerrainDesert:      2,
+			component.TerrainStronghold1: 1,
+			component.TerrainStronghold2: 1,
+			component.TerrainStronghold3: 1,
+			component.TerrainStronghold4: 1,
+			component.TerrainStronghold5: 1,
 		},
 	}
 	profiles := map[uint8]*component.MovementProfile{0: defaultProfile}
@@ -227,12 +266,13 @@ func (gs *GameSession) Reset() {
 		ids = append(ids, e)
 	})
 	for _, e := range ids {
+		gs.removeComponents(e)
 		em.Destroy(e)
 	}
 
 	// Generate new map with random seed
 	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
-	gs.Map = tilemap.GenerateMap(64, 64, seed)
+	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, seed)
 	gs.Cache = pathfinding.NewCache(gs.Map, 64)
 
 	// Update system references
@@ -249,9 +289,15 @@ func (gs *GameSession) Reset() {
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, 64, 64)
 }
 
-// SpawnSquad creates a commander + N units for a given player.
+// SpawnTeam creates the standard team composition for the given level.
+func (gs *GameSession) SpawnTeam(playerID uint32, squadID uint32, cx, cy int64, level uint8) {
+	gs.SpawnSquad(playerID, squadID, cx, cy, CombatUnitCountForTeamLevel(level))
+}
+
+// SpawnSquad creates a commander + N combat units for a given player.
 func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64, unitCount int) {
 	em := gs.World.Entities()
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 
 	// --- Commander ---
 	cmdEntity := em.Create()
@@ -266,7 +312,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	gs.addComponent(cmdEntity, component.VelocityComponent{
 		Vx:    0,
 		Vy:    0,
-		Speed: fixed.FromFloat(0.01),
+		Speed: unitSpeed,
 	})
 
 	gs.addComponent(cmdEntity, component.BoidComponent{
@@ -322,13 +368,53 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	}
 
 	// --- Combat units ---
+	gs.spawnCombatUnits(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction)
+}
+
+// UpgradeTeam grows a team to the combat unit count for the requested level.
+// It returns the number of units added.
+func (gs *GameSession) UpgradeTeam(squadID uint32, level uint8) int {
+	wantCombatUnits := CombatUnitCountForTeamLevel(level)
+	currentCombatUnits := gs.countCombatUnits(squadID)
+	if currentCombatUnits >= wantCombatUnits {
+		return 0
+	}
+
+	cx, cy, ok := gs.teamCommanderPosition(squadID)
+	if !ok {
+		return 0
+	}
+
+	added := wantCombatUnits - currentCombatUnits
+
+	// Look up owner info from the squad's commander
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	var playerID uint32
+	var faction uint8
+	boidPool.Each(func(e ecs.Entity, boid *component.BoidComponent) {
+		if boid.SquadID == squadID && boid.Role == component.RoleCommander {
+			if owner, ok := ownerPool.Get(e); ok {
+				playerID = owner.PlayerID
+				faction = owner.Faction
+			}
+		}
+	})
+
+	gs.spawnCombatUnits(squadID, cx, cy, currentCombatUnits, added, wantCombatUnits, playerID, faction)
+	return added
+}
+
+func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8) {
+	em := gs.World.Entities()
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 	spacing := fixed.FromFloat(0.3)
-	for i := 0; i < unitCount; i++ {
+	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
 		// Arrange units in a grid pattern around the commander
 		cols := 1
-		for cols*cols < unitCount {
+		for cols*cols < formationCount {
 			cols++
 		}
 		row := i / cols
@@ -344,7 +430,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		gs.addComponent(unitEntity, component.VelocityComponent{
 			Vx:    0,
 			Vy:    0,
-			Speed: fixed.FromFloat(0.01),
+			Speed: unitSpeed,
 		})
 
 		// Alternate melee and ranged roles
@@ -391,6 +477,51 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 	}
 }
 
+func (gs *GameSession) countCombatUnits(squadID uint32) int {
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+
+	count := 0
+	boidPool.Each(func(_ ecs.Entity, boid *component.BoidComponent) {
+		if boid.SquadID == squadID && boid.Role != component.RoleCommander {
+			count++
+		}
+	})
+	return count
+}
+
+func (gs *GameSession) teamCommanderPosition(squadID uint32) (int64, int64, bool) {
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+
+	var x, y int64
+	found := false
+	boidPool.Each(func(e ecs.Entity, boid *component.BoidComponent) {
+		if found || boid.SquadID != squadID || boid.Role != component.RoleCommander {
+			return
+		}
+		pos, ok := posPool.Get(e)
+		if !ok {
+			return
+		}
+		x = pos.X
+		y = pos.Y
+		found = true
+	})
+	return x, y, found
+}
+
+func (gs *GameSession) removeComponents(e ecs.Entity) {
+	gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent]).Remove(e)
+	gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent]).Remove(e)
+	gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent]).Remove(e)
+	gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent]).Remove(e)
+	gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent]).Remove(e)
+	gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent]).Remove(e)
+	gs.World.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent]).Remove(e)
+	gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent]).Remove(e)
+	gs.World.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent]).Remove(e)
+}
+
 // HandleCommand processes a player command from the network.
 func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 	switch cmd.Type {
@@ -430,6 +561,7 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 
 	// Track own commander entities for always-include
 	ownCommanders := make(map[uint32]bool)
+	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		id := uint32(e)
@@ -456,8 +588,16 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 			Y:     pos.Y,
 			Angle: pos.Angle,
 		}
+		if vel, ok := velPool.Get(e); ok {
+			state.Vx = vel.Vx
+			state.Vy = vel.Vy
+			if vel.Vx != 0 || vel.Vy != 0 {
+				state.State = 1
+			}
+		}
 		if boid, ok := boidPool.Get(e); ok {
 			ui.SquadID = boid.SquadID
+			state.SquadID = boid.SquadID
 		}
 		if health, ok := healthPool.Get(e); ok {
 			state.HP = health.HP

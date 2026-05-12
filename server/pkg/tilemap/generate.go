@@ -1,72 +1,81 @@
 package tilemap
 
 import (
+	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/user/paper-war/server/pkg/component"
 )
 
-// GenerateMap creates a symmetric natural terrain map for competitive play.
-// Map features: river with bridges, forests, hills, roads, open plains.
-// The map is horizontally symmetric (mirrored left-right) for fairness.
+type strongholdSite struct {
+	X, Y  int32
+	Level int
+}
+
+// GenerateMap creates a symmetric natural terrain map for portrait play.
+// Map features: horizontal river with bridges, vertical roads, forests, hills,
+// open plains. The map is horizontally symmetric (mirrored left-right) for
+// fairness while the battlefield advances along the vertical axis.
 func GenerateMap(w, h int32, seed int64) *GameMap {
 	gm := NewGameMap(w, h)
 	r := rand.New(rand.NewSource(seed))
 
 	midX := w / 2
+	midY := h / 2
 
-	// Phase 1: River (vertical, winding through center)
-	riverX := midX
-	for y := int32(0); y < h; y++ {
+	// Phase 1: River (horizontal, winding across the center)
+	riverY := midY
+	for x := int32(0); x < w; x++ {
 		// Winding river
-		riverX += int32(r.Intn(3) - 1)
-		if riverX < midX-3 {
-			riverX = midX - 3
+		riverY += int32(r.Intn(3) - 1)
+		if riverY < midY-3 {
+			riverY = midY - 3
 		}
-		if riverX > midX+3 {
-			riverX = midX + 3
+		if riverY > midY+3 {
+			riverY = midY + 3
 		}
 		// River width = 2-3 tiles
 		width := 2 + r.Intn(2)
-		for dx := int32(0); dx < int32(width); dx++ {
-			gm.SetTerrain(riverX+dx, y, component.TerrainDeep)
+		for dy := int32(0); dy < int32(width); dy++ {
+			gm.SetTerrain(x, riverY+dy, component.TerrainDeep)
 			// Shallow banks on edges
-			if gm.TileAt(riverX-1, y) != nil && gm.TileAt(riverX-1, y).TerrainType == component.TerrainPlain {
-				gm.SetTerrain(riverX-1, y, component.TerrainShallow)
+			if gm.TileAt(x, riverY-1) != nil && gm.TileAt(x, riverY-1).TerrainType == component.TerrainPlain {
+				gm.SetTerrain(x, riverY-1, component.TerrainShallow)
 			}
-			rightEdge := riverX + int32(width)
-			if gm.TileAt(rightEdge, y) != nil && gm.TileAt(rightEdge, y).TerrainType == component.TerrainPlain {
-				gm.SetTerrain(rightEdge, y, component.TerrainShallow)
+			bottomEdge := riverY + int32(width)
+			if gm.TileAt(x, bottomEdge) != nil && gm.TileAt(x, bottomEdge).TerrainType == component.TerrainPlain {
+				gm.SetTerrain(x, bottomEdge, component.TerrainShallow)
 			}
 		}
 	}
 
-	// Phase 2: Bridges (2-3 crossings)
+	// Phase 2: Bridges with vertical roads (north-south crossings)
 	bridgeCount := 2 + r.Intn(2)
-	bridgeSpacing := h / int32(bridgeCount+1)
+	bridgeSpacing := w / int32(bridgeCount+1)
 	for i := int32(0); i < int32(bridgeCount); i++ {
-		by := bridgeSpacing*(i+1) + int32(r.Intn(5)-2)
-		if by < 1 || by >= h-1 {
-			by = bridgeSpacing * (i + 1)
+		bx := bridgeSpacing*(i+1) + int32(r.Intn(5)-2)
+		if bx < 1 || bx >= w-1 {
+			bx = bridgeSpacing * (i + 1)
 		}
-		// Find the river at this y and place bridge
-		for x := int32(0); x < w; x++ {
-			tile := gm.TileAt(x, by)
+		// Find the river at this x and place bridge
+		for y := int32(0); y < h; y++ {
+			tile := gm.TileAt(bx, y)
 			if tile != nil && tile.TerrainType == component.TerrainDeep {
-				gm.SetTerrain(x, by, component.TerrainBridge)
-				tile = gm.TileAt(x, by)
+				gm.SetTerrain(bx, y, component.TerrainBridge)
+				tile = gm.TileAt(bx, y)
 				tile.Health = 500
 				tile.MaxHealth = 500
 			}
 		}
-		// Roads leading to bridges
-		for x := int32(0); x < w; x++ {
-			tile := gm.TileAt(x, by)
+		// Roads leading north-south to bridges
+		for y := int32(0); y < h; y++ {
+			tile := gm.TileAt(bx, y)
 			if tile != nil && tile.TerrainType == component.TerrainPlain {
-				gm.SetTerrain(x, by, component.TerrainRoad)
+				gm.SetTerrain(bx, y, component.TerrainRoad)
 			}
 			if tile != nil && tile.TerrainType == component.TerrainShallow {
-				gm.SetTerrain(x, by, component.TerrainRoad)
+				gm.SetTerrain(bx, y, component.TerrainRoad)
 			}
 		}
 	}
@@ -93,10 +102,10 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 	}
 
 	// Phase 5: Spawn areas (clear plains for player starts)
-	clearArea(gm, 2, 2, 12, 12)          // top-left (player 1)
-	clearArea(gm, 2, h-14, 12, 12)       // bottom-left
-	clearArea(gm, w-14, 2, 12, 12)       // top-right (player 2)
-	clearArea(gm, w-14, h-14, 12, 12)    // bottom-right
+	clearArea(gm, 2, 2, 12, 12)       // top-left (player 1)
+	clearArea(gm, 2, h-14, 12, 12)    // bottom-left
+	clearArea(gm, w-14, 2, 12, 12)    // top-right (player 2)
+	clearArea(gm, w-14, h-14, 12, 12) // bottom-right
 
 	// Phase 6: A few scattered swamp patches
 	for i := 0; i < 4; i++ {
@@ -118,7 +127,154 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 		placeWall(gm, mirrorX, wy, length, true, r)
 	}
 
+	// Phase 8: Strongholds scattered across the battlefield. Roads are sparse:
+	// building them is expensive, so only important sites become part of the
+	// connected road network and lesser outposts may remain off-road.
+	strongholds := generateStrongholdSites(w, h, r)
+	linkStrongholdsWithRoads(gm, strongholds, r)
+	for _, site := range strongholds {
+		placeStronghold(gm, site)
+	}
+
 	return gm
+}
+
+func generateStrongholdSites(w, h int32, r *rand.Rand) []strongholdSite {
+	targetCount := int((w * h) / 400)
+	if targetCount < 5 {
+		targetCount = 5
+	}
+
+	margin := int32(5)
+	minDist := float64(12)
+	sites := make([]strongholdSite, 0, targetCount)
+	for attempts := 0; len(sites) < targetCount && attempts < targetCount*80; attempts++ {
+		x := margin + int32(r.Intn(int(w-margin*2)))
+		y := margin + int32(r.Intn(int(h-margin*2)))
+
+		tooClose := false
+		for _, site := range sites {
+			if math.Hypot(float64(x-site.X), float64(y-site.Y)) < minDist {
+				tooClose = true
+				break
+			}
+		}
+		if tooClose {
+			continue
+		}
+
+		sites = append(sites, strongholdSite{
+			X:     x,
+			Y:     y,
+			Level: 1 + len(sites)%5,
+		})
+	}
+
+	sort.Slice(sites, func(i, j int) bool {
+		if sites[i].Y == sites[j].Y {
+			return sites[i].X < sites[j].X
+		}
+		return sites[i].Y < sites[j].Y
+	})
+	return sites
+}
+
+func linkStrongholdsWithRoads(gm *GameMap, sites []strongholdSite, r *rand.Rand) {
+	if len(sites) < 2 {
+		return
+	}
+
+	roadSites := chooseRoadStrongholds(sites)
+	for i := 1; i < len(roadSites); i++ {
+		placeRoadPath(gm, roadSites[i-1].X, roadSites[i-1].Y, roadSites[i].X, roadSites[i].Y, r)
+	}
+}
+
+func chooseRoadStrongholds(sites []strongholdSite) []strongholdSite {
+	roadSites := make([]strongholdSite, 0, len(sites))
+	for i, site := range sites {
+		if site.Level >= 4 || i%3 == 0 {
+			roadSites = append(roadSites, site)
+		}
+	}
+	if len(roadSites) < 2 {
+		return sites[:2]
+	}
+	return roadSites
+}
+
+func placeRoadPath(gm *GameMap, x1, y1, x2, y2 int32, r *rand.Rand) {
+	x, y := x1, y1
+	for x != x2 || y != y2 {
+		placeRoadTile(gm, x, y)
+		if x < x2 {
+			x++
+		} else if x > x2 {
+			x--
+		}
+		if y < y2 {
+			y++
+		} else if y > y2 {
+			y--
+		}
+		if r.Intn(4) == 0 {
+			if abs32(x2-x) > abs32(y2-y) && y > 1 && y < gm.Height-2 {
+				y += []int32{-1, 1}[r.Intn(2)]
+			} else if x > 1 && x < gm.Width-2 {
+				x += []int32{-1, 1}[r.Intn(2)]
+			}
+		}
+	}
+	placeRoadTile(gm, x, y)
+}
+
+func placeRoadTile(gm *GameMap, x, y int32) {
+	tile := gm.TileAt(x, y)
+	if tile == nil {
+		return
+	}
+	if tile.TerrainType == component.TerrainDeep {
+		gm.SetTerrain(x, y, component.TerrainBridge)
+		tile = gm.TileAt(x, y)
+		tile.Health = 500
+		tile.MaxHealth = 500
+		return
+	}
+	gm.SetTerrain(x, y, component.TerrainRoad)
+	tile = gm.TileAt(x, y)
+	tile.Health = 0
+	tile.MaxHealth = 0
+	tile.BlockLOS = false
+	tile.Elevation = 0
+}
+
+func placeStronghold(gm *GameMap, site strongholdSite) {
+	tt := component.TerrainType(int(component.TerrainStronghold1) + site.Level - 1)
+	radius := int32(1 + (site.Level+1)/2)
+	for y := site.Y - radius; y <= site.Y+radius; y++ {
+		for x := site.X - radius; x <= site.X+radius; x++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil {
+				continue
+			}
+			if abs32(x-site.X)+abs32(y-site.Y) > radius+1 {
+				continue
+			}
+			gm.SetTerrain(x, y, tt)
+			tile = gm.TileAt(x, y)
+			tile.Health = int32(400 + site.Level*200)
+			tile.MaxHealth = tile.Health
+			tile.BlockLOS = true
+			tile.Elevation = int8(1 + site.Level/2)
+		}
+	}
+}
+
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // placeCluster places a blob of terrain using a simple flood-fill growth.
@@ -141,8 +297,10 @@ func placeCluster(gm *GameMap, cx, cy int32, size int, tt component.TerrainType,
 		if tile == nil {
 			continue
 		}
-		// Don't overwrite deep water or bridges
-		if tile.TerrainType == component.TerrainDeep || tile.TerrainType == component.TerrainBridge {
+		// Don't overwrite river crossings or the main road network.
+		if tile.TerrainType == component.TerrainDeep ||
+			tile.TerrainType == component.TerrainBridge ||
+			tile.TerrainType == component.TerrainRoad {
 			continue
 		}
 
@@ -175,6 +333,9 @@ func placeWall(gm *GameMap, x, y, length int32, horizontal bool, r *rand.Rand) {
 		if tile.TerrainType == component.TerrainDeep || tile.TerrainType == component.TerrainBridge {
 			continue
 		}
+		if tile.TerrainType == component.TerrainRoad {
+			continue
+		}
 		gm.SetTerrain(wx, wy, component.TerrainWall)
 		tile = gm.TileAt(wx, wy)
 		tile.Health = 300
@@ -198,9 +359,9 @@ func clearArea(gm *GameMap, x, y, w, h int32) {
 			}
 		}
 	}
-	// Road through center of spawn area
-	roadY := y + h/2
-	for dx := int32(0); dx < w; dx++ {
-		gm.SetTerrain(x+dx, roadY, component.TerrainRoad)
+	// Road through center of spawn area, matching the map's vertical road axis.
+	roadX := x + w/2
+	for dy := int32(0); dy < h; dy++ {
+		gm.SetTerrain(roadX, y+dy, component.TerrainRoad)
 	}
 }

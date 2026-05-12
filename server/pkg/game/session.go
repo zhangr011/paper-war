@@ -409,7 +409,14 @@ func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 
 // GenerateSnapshot produces a binary snapshot for a specific client.
 func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []byte {
-	// Gather all unit info for culling
+	// Solo game: clientID 0 → player 1
+	playerID := uint32(1)
+
+	var fogGrid *fog.FogGrid
+	if gs.FogSys != nil {
+		fogGrid = gs.FogSys.GetGrid(playerID)
+	}
+
 	var units []network.UnitInfo
 	var allStates []network.EntityState
 	var allIDs []uint32
@@ -418,9 +425,27 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	attackPool := gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
+
+	// Track own commander entities for always-include
+	ownCommanders := make(map[uint32]bool)
 
 	posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		id := uint32(e)
+
+		// Fog filtering: own units always visible, enemy only if in fog-visible tile
+		if fogGrid != nil {
+			owner, hasOwner := ownerPool.Get(e)
+			if hasOwner && owner.PlayerID != playerID {
+				tileX := int32(pos.X >> 12)
+				tileY := int32(pos.Y >> 12)
+				if !fogGrid.IsVisible(tileX, tileY) {
+					return
+				}
+			}
+		}
+
 		ui := network.UnitInfo{
 			EntityID: id,
 			X:        pos.X,
@@ -444,20 +469,32 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 		units = append(units, ui)
 		allStates = append(allStates, state)
 		allIDs = append(allIDs, id)
+
+		// Track own commanders
+		if owner, hasOwner := ownerPool.Get(e); hasOwner && owner.PlayerID == playerID {
+			if _, isCmd := cmdPool.Get(e); isCmd {
+				ownCommanders[id] = true
+			}
+		}
 	})
 
-	// Set up a temporary client view for culling
+	// Always include own commanders (even off-screen)
+	_ = ownCommanders // tracked above, already included since we iterate all positions
+
 	cv := &network.ClientView{
 		ClientID: clientID,
 		ViewRect: view,
 	}
 	visible := network.Cull(cv, units)
 
-	// Build visible entity states and IDs
 	var visStates []network.EntityState
 	var visIDs []uint32
 	visibleSet := make(map[uint32]bool, len(visible))
 	for _, id := range visible {
+		visibleSet[id] = true
+	}
+	// Also include own commanders even if culled
+	for id := range ownCommanders {
 		visibleSet[id] = true
 	}
 	for i, id := range allIDs {
@@ -468,7 +505,23 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 	}
 
 	snap := gs.SnapGen.Generate(gs.tickCount, visStates, visIDs)
-	return network.EncodeSnapshot(snap)
+	snapshotBytes := network.EncodeSnapshot(snap)
+
+	// Append fog grid data: marker 0xFF 0xFD + w(uint16) + h(uint16) + visible bytes
+	if fogGrid != nil {
+		fogData := make([]byte, 0, 6+len(fogGrid.Visible))
+		fogData = append(fogData, 0xFF, 0xFD)
+		fogData = appendUint16(fogData, uint16(fogGrid.Width))
+		fogData = appendUint16(fogData, uint16(fogGrid.Height))
+		fogData = append(fogData, fogGrid.Visible...)
+		snapshotBytes = append(snapshotBytes, fogData...)
+	}
+
+	return snapshotBytes
+}
+
+func appendUint16(buf []byte, v uint16) []byte {
+	return append(buf, byte(v), byte(v>>8))
 }
 
 // --- Helper methods for command handling ---

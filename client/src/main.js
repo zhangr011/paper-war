@@ -153,7 +153,7 @@ export class Game {
         return converted;
       });
 
-      this.state.applySnapshot(snap.tick, snap.prevTick, units, snap.events);
+      this.state.applySnapshot(snap.tick, snap.prevTick, units, snap.events, snap.fog);
     };
 
     // --- Connection status ---
@@ -345,6 +345,12 @@ export class Game {
     // Pass 1: Terrain
     this.renderer.drawTerrain(terrainTiles, cameraOffset);
 
+    // Pass 1.5: Fog overlay
+    const fogTiles = this.buildFogTiles(visible);
+    if (fogTiles.length > 0) {
+      this.renderer.drawEffects(fogTiles, cameraOffset);
+    }
+
     // Pass 2: Terrain objects (none yet)
 
     // Pass 3: Units (already Y-sorted by buildUnitDescriptors)
@@ -414,6 +420,38 @@ export class Game {
       }
     }
 
+    return tiles;
+  }
+
+  /**
+   * Build fog overlay tile descriptors for fogged areas.
+   * Returns dark semi-transparent quads for tiles NOT visible in the fog grid.
+   */
+  buildFogTiles(visible) {
+    const fog = this.state.fogVisible;
+    if (!fog) return [];
+    const fogW = this.state.fogWidth;
+    const tiles = [];
+    const { minTX, maxTX, minTY, maxTY } = visible;
+    const startX = Math.max(0, minTX);
+    const endX = Math.min(this.mapWidth, maxTX);
+    const startY = Math.max(0, minTY);
+    const endY = Math.min(this.mapHeight, maxTY);
+    const zoom = this.camera.zoom;
+
+    for (let ty = startY; ty < endY; ty++) {
+      for (let tx = startX; tx < endX; tx++) {
+        if (fog[ty * fogW + tx]) continue; // visible, skip
+        const sx = (tx - ty) * HALF_W * zoom;
+        const sy = (tx + ty) * HALF_H * zoom;
+        const tw = TILE_WIDTH * zoom;
+        const th = TILE_HEIGHT * zoom;
+        tiles.push({
+          x: sx, y: sy, w: tw, h: th,
+          r: 0.0, g: 0.0, b: 0.0, a: 0.55,
+        });
+      }
+    }
     return tiles;
   }
 

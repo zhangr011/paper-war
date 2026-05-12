@@ -177,6 +177,11 @@ export class StateManager {
     // Pending events from the latest snapshot (for external consumers that
     // poll instead of using callbacks)
     this.pendingEvents = [];
+
+    // Fog of war grid
+    this.fogWidth = 0;
+    this.fogHeight = 0;
+    this.fogVisible = null; // Uint8Array: 0=fogged, 1=visible
   }
 
   // -----------------------------------------------------------------------
@@ -193,7 +198,13 @@ export class StateManager {
    *   Position/velocity values should already be converted from fixed-point.
    * @param {Array<{type:number, data:Uint8Array}>} events - Snapshot events
    */
-  applySnapshot(tick, prevTick, unitUpdates, events) {
+  applySnapshot(tick, prevTick, unitUpdates, events, fog) {
+    // Update fog grid
+    if (fog && fog.visible) {
+      this.fogWidth = fog.width;
+      this.fogHeight = fog.height;
+      this.fogVisible = fog.visible;
+    }
     const now = performance.now();
 
     // If this is an out-of-order or duplicate snapshot, skip it

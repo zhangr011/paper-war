@@ -111,7 +111,7 @@ export class Connection {
             this.onMapData(terrainData);
           }
         } else {
-          // Snapshot data
+          // Snapshot data — may contain appended fog grid
           this.handleMessage(event.data);
         }
       }
@@ -233,7 +233,29 @@ export class Connection {
    *   [EventCount x events]
    */
   handleMessage(data) {
-    const view = new DataView(data);
+    // Check for appended fog data (marker 0xFF 0xFD)
+    let fogData = null;
+    let snapshotEnd = data.byteLength;
+    const scanView = new DataView(data);
+    // Search backwards for fog marker
+    for (let i = data.byteLength - 1; i >= 5; i--) {
+      if (scanView.getUint8(i) === 0xFD && scanView.getUint8(i - 1) === 0xFF) {
+        const fogW = scanView.getUint16(i + 1, true);
+        const fogH = scanView.getUint16(i + 3, true);
+        const fogSize = fogW * fogH;
+        if (i + 5 + fogSize <= data.byteLength) {
+          fogData = {
+            width: fogW,
+            height: fogH,
+            visible: new Uint8Array(data, i + 5, fogSize),
+          };
+          snapshotEnd = i;
+        }
+        break;
+      }
+    }
+
+    const view = new DataView(data, 0, snapshotEnd);
     let off = 0;
 
     // --- Snapshot header ---
@@ -329,7 +351,7 @@ export class Connection {
     }
 
     if (this.onSnapshot) {
-      this.onSnapshot({ tick, prevTick, units, events });
+      this.onSnapshot({ tick, prevTick, units, events, fog: fogData });
     }
   }
 

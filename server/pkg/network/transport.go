@@ -216,6 +216,25 @@ func (h *Hub) GetClientName(clientID uint32) string {
 	return ""
 }
 
+func (h *Hub) SetClientPlayerID(clientID uint32, playerID uint32) {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		session.PlayerID = playerID
+	}
+}
+
+func (h *Hub) GetClientPlayerID(clientID uint32) uint32 {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		return session.PlayerID
+	}
+	return 0
+}
+
 func (h *Hub) Broadcast(data []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -231,6 +250,17 @@ func (h *Hub) ClientCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
+}
+
+// ClientIDs returns a snapshot of all connected client IDs.
+func (h *Hub) ClientIDs() []uint32 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ids := make([]uint32, 0, len(h.clients))
+	for id := range h.clients {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // Serve starts the WebSocket server on the given address.

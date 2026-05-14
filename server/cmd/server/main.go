@@ -48,6 +48,7 @@ func main() {
 		gs.Reset()
 		for i, p := range players {
 			playerID := uint32(i + 1)
+			hub.SetClientPlayerID(p.ClientID, playerID)
 			// Spawn 2 squads per player
 			spawnSquadsForPlayer(gs, playerID, i, len(players))
 
@@ -95,6 +96,7 @@ func main() {
 				name := hub.GetClientName(clientID)
 				log.Printf("client %d (%s) starting solo game", clientID, name)
 				gs.Reset()
+				hub.SetClientPlayerID(clientID, 1)
 				spawnSquadsForPlayer(gs, 1, 0, 2)
 				spawnSquadsForPlayer(gs, 2, 1, 2)
 				mw, mh := gs.MapSize()
@@ -129,9 +131,15 @@ func main() {
 				H: fixed.FromFloat(float64(mh)),
 			}
 
-			data := gs.GenerateSnapshot(0, fullView)
-			if data != nil {
-				hub.Broadcast(data)
+			for _, cid := range hub.ClientIDs() {
+				pid := hub.GetClientPlayerID(cid)
+				if pid == 0 {
+					continue
+				}
+				data := gs.GenerateSnapshot(pid, fullView)
+				if data != nil {
+					hub.SendToClient(cid, data)
+				}
 			}
 		}
 	}()

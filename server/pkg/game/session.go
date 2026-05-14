@@ -538,10 +538,8 @@ func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 	}
 }
 
-// GenerateSnapshot produces a binary snapshot for a specific client.
-func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []byte {
-	// Solo game: clientID 0 → player 1
-	playerID := uint32(1)
+// GenerateSnapshot produces a binary snapshot for a specific player.
+func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []byte {
 
 	var fogGrid *fog.FogGrid
 	if gs.FogSys != nil {
@@ -622,7 +620,7 @@ func (gs *GameSession) GenerateSnapshot(clientID uint32, view network.Rect) []by
 	_ = ownCommanders // tracked above, already included since we iterate all positions
 
 	cv := &network.ClientView{
-		ClientID: clientID,
+		ClientID: playerID,
 		ViewRect: view,
 	}
 	visible := network.Cull(cv, units)

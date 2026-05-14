@@ -175,7 +175,7 @@ func TestMovingSnapshotIncludesVelocityAndMovingState(t *testing.T) {
 	gs.handleMoveSquad(1, fixed.FromFloat(10), fixed.FromFloat(20))
 	gs.Tick()
 
-	data := gs.GenerateSnapshot(0, network.Rect{
+	data := gs.GenerateSnapshot(1, network.Rect{
 		X: 0,
 		Y: 0,
 		W: fixed.FromFloat(float64(DefaultMapWidth)),

@@ -537,8 +537,8 @@ export class Game {
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
         if (fog[ty * fogW + tx]) continue; // visible, skip
-        const sx = (tx - ty) * HALF_W * zoom;
-        const sy = (tx + ty) * HALF_H * zoom;
+        const sx = tx * TILE_WIDTH * zoom;
+        const sy = ty * TILE_HEIGHT * zoom;
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
         tiles.push({

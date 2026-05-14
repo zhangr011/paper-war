@@ -159,11 +159,11 @@ func NewGameSession() *GameSession {
 	gs.World.AddSystem(&combat.ProjectileSystem{})
 	gs.World.AddSystem(gs.deathSys)
 
-		// Fog system (64x64 map, per-player visibility)
-		gs.FogSys = fog.NewFogSystem(64, 64)
+		// Fog system (per-player visibility)
+		gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
 		// AI system (player 2 is AI)
-		gs.AISys = ai.NewAISystem(2, gs.FogSys, 64, 64)
+		gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -285,8 +285,8 @@ func (gs *GameSession) Reset() {
 	gs.SnapGen = network.NewSnapshotGenerator()
 
 	// Reset fog and AI
-	gs.FogSys = fog.NewFogSystem(64, 64)
-	gs.AISys = ai.NewAISystem(2, gs.FogSys, 64, 64)
+	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 }
 
 // SpawnTeam creates the standard team composition for the given level.

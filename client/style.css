@@ -1,6 +1,27 @@
 /* ============================================
-   Paper War - UI Layout Stylesheet
+   Paper War - Vintage Paper UI Stylesheet
    ============================================ */
+
+:root {
+  --paper-bg: #E8D0A9;
+  --paper-light: #F0E6D2;
+  --paper-dark: #D4B88C;
+  --map-bg: #1A3A1A;
+  --panel-header: #4A6B8A;
+  --border-color: #A08060;
+  --border-light: #C4AA82;
+  --text-dark: #3A2A1A;
+  --text-muted: #6B5E4E;
+  --morale-red: #FF4D4D;
+  --morale-green: #4CAF50;
+  --action-btn-bg: #F0E6D2;
+  --action-btn-hover: #E0D6C2;
+  --gold-accent: #C8A832;
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --shadow: 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.1);
+}
 
 /* --- Reset & Base --- */
 *,
@@ -15,10 +36,10 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Georgia, 'Times New Roman', 'Courier New', serif;
   font-size: 13px;
-  color: #c8c8c8;
-  background: #1a1a1a;
+  color: var(--text-dark);
+  background: #2A1F14;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -28,10 +49,9 @@ html, body {
   display: none;
 }
 .screen.active {
-  display: flex;  /* default for login/lobby; game-screen overrides to grid */
+  display: flex;
 }
 
-/* Override body layout — screens manage their own layout */
 body {
   display: block;
   height: 100vh;
@@ -39,7 +59,7 @@ body {
   min-width: 0;
 }
 
-/* Game screen uses a portrait-first grid for phone play. */
+/* Game screen — portrait grid */
 #game-screen.active {
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr) 118px;
@@ -51,7 +71,7 @@ body {
   height: 100vh;
   height: 100dvh;
   margin: 0 auto;
-  background: #111;
+  background: var(--map-bg);
 }
 
 /* --- Top Info Bar --- */
@@ -62,8 +82,9 @@ body {
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px;
-  background: #222;
-  border-bottom: 1px solid #333;
+  background: var(--paper-bg);
+  border-bottom: 2px solid var(--border-color);
+  box-shadow: var(--shadow);
   z-index: 10;
   min-width: 0;
 }
@@ -103,9 +124,9 @@ body {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 4px;
-  background: #444;
-  color: #aaa;
+  border-radius: var(--radius-sm);
+  background: var(--panel-header);
+  color: var(--paper-light);
   font-weight: 700;
   font-size: 14px;
 }
@@ -113,7 +134,7 @@ body {
 .player-name {
   font-weight: 600;
   font-size: 13px;
-  color: #ddd;
+  color: var(--text-dark);
   max-width: 78px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -125,20 +146,20 @@ body {
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
+  background: var(--paper-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
 }
 
 .resource-icon {
   font-size: 14px;
-  color: #888;
+  color: var(--gold-accent);
 }
 
 .resource-value {
   font-weight: 700;
   font-size: 14px;
-  color: #e0e0e0;
+  color: var(--text-dark);
   min-width: 24px;
   text-align: right;
 }
@@ -146,20 +167,20 @@ body {
 .resource-label {
   display: none;
   font-size: 11px;
-  color: #777;
+  color: var(--text-muted);
   margin-left: 2px;
 }
 
 .timer {
-  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-family: 'Courier New', monospace;
   font-size: 14px;
   font-weight: 700;
-  color: #e0e0e0;
+  color: var(--text-dark);
   letter-spacing: 1px;
   padding: 4px 6px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
+  background: var(--paper-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
 }
 
 .icon-btn {
@@ -168,18 +189,18 @@ body {
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
-  color: #aaa;
+  background: var(--paper-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
   font-size: 18px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .icon-btn:hover {
-  background: #3a3a3a;
-  color: #ddd;
+  background: var(--action-btn-hover);
+  color: var(--text-dark);
 }
 
 /* --- Main Game Viewport --- */
@@ -187,7 +208,7 @@ body {
   grid-area: viewport;
   position: relative;
   overflow: hidden;
-  background: #111;
+  background: var(--map-bg);
 }
 
 #game-canvas {
@@ -199,16 +220,35 @@ body {
 /* --- Bottom Control Bar --- */
 #bottom-bar {
   grid-area: bottombar;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(112px, 1fr) minmax(172px, auto) 72px;
   grid-template-rows: 1fr;
   grid-template-areas:
     "selection actions minimap";
   gap: 0;
-  background: #222;
-  border-top: 1px solid #333;
+  background: var(--paper-bg);
+  border-top: 2px solid var(--border-color);
+  box-shadow: 0 -2px 4px rgba(0,0,0,0.15);
   z-index: 10;
   min-width: 0;
+}
+
+/* Paper texture overlay on bottom bar */
+#bottom-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 15% 80%, rgba(139,90,43,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 20%, rgba(139,90,43,0.06) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#bottom-bar > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* --- Panel (shared) --- */
@@ -218,15 +258,15 @@ body {
 }
 
 .panel + .panel {
-  border-left: 1px solid #333;
+  border-left: 1px solid var(--border-color);
 }
 
 .panel-title {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: #666;
+  color: var(--panel-header);
   margin-bottom: 5px;
 }
 
@@ -255,13 +295,13 @@ body {
 
 .selection-label {
   font-size: 10px;
-  color: #777;
+  color: var(--text-muted);
   min-width: 42px;
 }
 
 .selection-value {
   font-size: 12px;
-  color: #ccc;
+  color: var(--text-dark);
   font-weight: 600;
   min-width: 0;
   overflow: hidden;
@@ -273,15 +313,16 @@ body {
   flex: 1;
   max-width: 74px;
   height: 8px;
-  background: #333;
+  background: var(--paper-dark);
   border-radius: 4px;
   overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
 .morale-bar {
   height: 100%;
-  background: linear-gradient(90deg, #c0392b, #27ae60);
-  border-radius: 4px;
+  background: linear-gradient(90deg, var(--morale-red), var(--morale-green));
+  border-radius: 3px;
   transition: width 0.3s ease;
 }
 
@@ -289,19 +330,19 @@ body {
   align-self: flex-start;
   height: 24px;
   padding: 0 8px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
-  color: #bbb;
+  background: #FFD700;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-dark);
+  font-family: Georgia, serif;
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  box-shadow: var(--shadow-xs);
 }
 
 .team-test-move-btn:hover {
-  background: #3a3a3a;
-  border-color: #555;
-  color: #eee;
+  background: #E6C200;
 }
 
 /* --- Minimap Panel --- */
@@ -317,9 +358,9 @@ body {
   display: block;
   width: 56px;
   height: 84px;
-  background: #0a0a0a;
-  border: 1px solid #3a3a3a;
-  border-radius: 2px;
+  background: var(--map-bg);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
 }
 
 /* --- Action Panel --- */
@@ -330,7 +371,7 @@ body {
   justify-content: center;
   gap: 8px;
   align-items: flex-start;
-  border-left: 1px solid #333;
+  border-left: 1px solid var(--border-color);
   border-top: 0;
 }
 
@@ -343,10 +384,10 @@ body {
 
 .action-group-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: #666;
+  color: var(--panel-header);
 }
 
 .action-buttons {
@@ -362,41 +403,42 @@ body {
   justify-content: center;
   width: 36px;
   height: 42px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
-  color: #bbb;
+  background: var(--action-btn-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-dark);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
   gap: 1px;
+  box-shadow: var(--shadow-xs);
 }
 
 .action-btn:hover {
-  background: #3a3a3a;
-  border-color: #555;
-  color: #eee;
+  background: var(--action-btn-hover);
+  border-color: var(--text-muted);
 }
 
 .action-btn:active {
-  background: #444;
+  background: var(--paper-dark);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
 }
 
 .action-btn.active {
-  background: #2c3e50;
-  border-color: #3498db;
+  background: var(--panel-header);
+  border-color: var(--panel-header);
   color: #fff;
 }
 
 .action-key {
-  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-family: 'Courier New', monospace;
   font-size: 11px;
   font-weight: 700;
-  color: #888;
+  color: var(--text-muted);
   line-height: 1;
 }
 
 .action-btn:hover .action-key {
-  color: #bbb;
+  color: var(--text-dark);
 }
 
 .action-name {
@@ -404,13 +446,14 @@ body {
   line-height: 1;
 }
 
+/* --- Responsive --- */
 @media (min-width: 700px) {
   body {
-    background: #0b0b0b;
+    background: #2A1F14;
   }
 
   #game-screen.active {
-    box-shadow: 0 0 0 1px #333;
+    box-shadow: 0 0 0 2px var(--border-color);
   }
 }
 
@@ -497,94 +540,125 @@ body {
 }
 
 /* ============================================
-   Login Screen
+   Login Screen — Paper Parchment Style
    ============================================ */
 #login-screen {
   justify-content: center;
   align-items: center;
-  background: radial-gradient(ellipse at center, #1a2a1a 0%, #0a0a0a 100%);
+  background: radial-gradient(ellipse at center, #3A2A1A 0%, #1A0F05 100%);
   height: 100vh;
 }
 .login-card {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: var(--paper-bg);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
   padding: 40px;
   text-align: center;
   min-width: 320px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.login-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 90%, rgba(139,90,43,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 10%, rgba(100,70,30,0.08) 0%, transparent 40%);
+  border-radius: inherit;
+  pointer-events: none;
 }
 .login-title {
   font-size: 28px;
   font-weight: 700;
-  color: #c8a832;
+  color: var(--text-dark);
   margin-bottom: 4px;
   letter-spacing: 2px;
+  position: relative;
 }
 .login-subtitle {
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 3px;
   margin-bottom: 32px;
+  position: relative;
 }
 #login-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
 }
 #login-username {
   padding: 10px 14px;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: #ddd;
+  background: var(--paper-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-dark);
+  font-family: Georgia, serif;
   font-size: 14px;
   outline: none;
   text-align: center;
 }
 #login-username:focus {
-  border-color: #c8a832;
+  border-color: var(--panel-header);
 }
 #login-username::placeholder {
-  color: #555;
+  color: var(--border-color);
 }
 .login-btn {
   padding: 10px;
-  background: #c8a832;
-  color: #1a1a1a;
-  border: none;
-  border-radius: 4px;
+  background: var(--gold-accent);
+  color: var(--text-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: Georgia, serif;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
+  box-shadow: var(--shadow-xs);
 }
 .login-btn:hover {
-  background: #d4b83a;
+  background: #D4B83A;
 }
 
 /* ============================================
-   Lobby Screen
+   Lobby Screen — Paper Parchment Style
    ============================================ */
 #lobby-screen {
   justify-content: center;
   align-items: center;
-  background: radial-gradient(ellipse at center, #1a2a1a 0%, #0a0a0a 100%);
+  background: radial-gradient(ellipse at center, #3A2A1A 0%, #1A0F05 100%);
   height: 100vh;
 }
 .lobby-card {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: var(--paper-bg);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
   padding: 40px;
   text-align: center;
   min-width: 360px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.lobby-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 25% 85%, rgba(139,90,43,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 75% 15%, rgba(100,70,30,0.08) 0%, transparent 40%);
+  border-radius: inherit;
+  pointer-events: none;
 }
 .lobby-title {
   font-size: 22px;
   font-weight: 700;
-  color: #ddd;
+  color: var(--text-dark);
   margin-bottom: 20px;
+  position: relative;
 }
 .lobby-player {
   display: flex;
@@ -593,9 +667,10 @@ body {
   gap: 10px;
   margin-bottom: 24px;
   padding: 12px;
-  background: #222;
-  border-radius: 6px;
-  border: 1px solid #333;
+  background: var(--paper-light);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  position: relative;
 }
 .lobby-player-avatar {
   display: inline-flex;
@@ -603,53 +678,57 @@ body {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 4px;
-  background: #444;
-  color: #c8a832;
+  border-radius: var(--radius-sm);
+  background: var(--panel-header);
+  color: var(--paper-light);
   font-weight: 700;
   font-size: 16px;
 }
 .lobby-player-name {
   font-size: 16px;
   font-weight: 600;
-  color: #ddd;
+  color: var(--text-dark);
 }
 .lobby-queue {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
 }
 .lobby-status {
   font-size: 13px;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 .lobby-btn {
   padding: 10px;
-  background: #2a6a2a;
-  color: #ddd;
-  border: none;
-  border-radius: 4px;
+  background: var(--panel-header);
+  color: var(--paper-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: Georgia, serif;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
+  box-shadow: var(--shadow-xs);
 }
 .lobby-btn:hover {
-  background: #3a8a3a;
+  background: #3A5A7A;
 }
 .lobby-btn-solo {
-  background: #2a4a6a;
+  background: var(--gold-accent);
+  color: var(--text-dark);
   margin-bottom: 4px;
 }
 .lobby-btn-solo:hover {
-  background: #3a5a8a;
+  background: #D4B83A;
 }
 .lobby-btn-cancel {
-  background: #6a2a2a;
+  background: #8A4A3A;
 }
 .lobby-btn-cancel:hover {
-  background: #8a3a3a;
+  background: #9A5A4A;
 }
 .lobby-spinner {
   display: flex;
@@ -659,8 +738,8 @@ body {
 .spinner {
   width: 24px;
   height: 24px;
-  border: 3px solid #333;
-  border-top-color: #c8a832;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--panel-header);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

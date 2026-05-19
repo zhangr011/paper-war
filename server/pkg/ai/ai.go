@@ -7,6 +7,7 @@ import (
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/fog"
+	"github.com/user/paper-war/server/pkg/tilemap"
 )
 
 const (
@@ -15,9 +16,10 @@ const (
 	StateApproach uint8 = 2
 	StateAttack   uint8 = 3
 	StateRetreat  uint8 = 4
+	StateDefend   uint8 = 5 // v1: defend capture target
 
-	EvalInterval       uint32 = 30
-	RetreatHPThreshold        = 0.3
+	EvalInterval        uint32 = 30
+	RetreatHPThreshold         = 0.3
 )
 
 type AIState struct {
@@ -31,23 +33,27 @@ type AIState struct {
 }
 
 type AICommand struct {
-	Type     uint8 // CmdMove or CmdAttack
+	Type     uint8 // CmdMove, CmdAttack, or CmdRecruit
 	SquadID  uint32
 	TargetX  int64
 	TargetY  int64
 	TargetID uint32
+	UnitType component.CombatUnitType // for CmdRecruit
 }
 
 const (
-	CmdMove   uint8 = 1
-	CmdAttack uint8 = 2
+	CmdMove    uint8 = 1
+	CmdAttack  uint8 = 2
+	CmdRecruit uint8 = 3
 )
 
 type AISystem struct {
-	States     map[uint32]*AIState
-	AIPlayerID uint32
-	FogSystem  *fog.FogSystem
-	MapW, MapH int32
+	States       map[uint32]*AIState
+	AIPlayerID   uint32
+	FogSystem    *fog.FogSystem
+	MapW, MapH   int32
+	Objective    *tilemap.Objective // v1: objective for AI awareness
+	AIRecruitGold int32             // v1: gold available for AI recruitment
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
@@ -58,6 +64,10 @@ func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AI
 		MapW:       mapW,
 		MapH:       mapH,
 	}
+}
+
+func (as *AISystem) SetObjective(obj *tilemap.Objective) {
+	as.Objective = obj
 }
 
 func (as *AISystem) RegisterSquad(squadID, commanderID uint32) {
@@ -82,6 +92,9 @@ func (as *AISystem) Update(
 	if as.FogSystem != nil {
 		aiFog = as.FogSystem.GetGrid(as.AIPlayerID)
 	}
+
+	// v1: AI recruitment check
+	cmds = append(cmds, as.recruitDecisions()...)
 
 	for squadID, state := range as.States {
 		cmdEntity := ecs.Entity(state.CommanderID)
@@ -114,6 +127,12 @@ func (as *AISystem) Update(
 		}
 		state.NextEvalTick = tick + EvalInterval
 
+		// v1: Capture objective defense
+		if as.Objective != nil && as.Objective.Type == tilemap.ObjectiveCapture {
+			cmds = append(cmds, as.captureDefense(squadID, state, pos)...)
+			continue
+		}
+
 		// Scan for nearest enemy commander within vision
 		var bestDist int64 = -1
 		var bestEnemyID uint32
@@ -131,7 +150,6 @@ func (as *AISystem) Update(
 			if !hasEPos {
 				return
 			}
-			// Fog check
 			if aiFog != nil {
 				ex := int32(ePos.X >> 12)
 				ey := int32(ePos.Y >> 12)
@@ -183,6 +201,53 @@ func (as *AISystem) Update(
 			if dx*dx+dy*dy < fixed.FromFloat(4.0)*fixed.FromFloat(4.0)>>12 {
 				as.pickPatrolTarget(state)
 			}
+		}
+	}
+	return cmds
+}
+
+// captureDefense returns commands to move AI squad to the capture target.
+func (as *AISystem) captureDefense(squadID uint32, state *AIState, pos component.PositionComponent) []AICommand {
+	if as.Objective == nil {
+		return nil
+	}
+	targetX := fixed.FromFloat(float64(as.Objective.TargetX))
+	targetY := fixed.FromFloat(float64(as.Objective.TargetY))
+	dx := targetX - pos.X
+	dy := targetY - pos.Y
+	distSq := dx*dx + dy*dy
+
+	// If already at the target, no movement needed
+	if distSq < fixed.FromFloat(4.0)*fixed.FromFloat(4.0)>>12 {
+		state.State = StateDefend
+		return nil
+	}
+
+	state.State = StateDefend
+	return []AICommand{{
+		Type:    CmdMove,
+		SquadID: squadID,
+		TargetX: targetX,
+		TargetY: targetY,
+	}}
+}
+
+// recruitDecisions returns recruit commands when AI has enough gold.
+func (as *AISystem) recruitDecisions() []AICommand {
+	if as.AIRecruitGold < 15 {
+		return nil
+	}
+	var cmds []AICommand
+	// Simple strategy: recruit cheapest available units
+	// For v1, just recruit Light Infantry
+	for as.AIRecruitGold >= 15 {
+		as.AIRecruitGold -= 15
+		cmds = append(cmds, AICommand{
+			Type:     CmdRecruit,
+			UnitType: component.UnitLightInfantry,
+		})
+		if len(cmds) >= 3 { // max 3 recruits per tick
+			break
 		}
 	}
 	return cmds

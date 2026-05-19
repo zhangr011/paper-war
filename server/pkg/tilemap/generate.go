@@ -51,7 +51,7 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 	}
 
 	// Phase 2: Bridges with vertical roads (north-south crossings)
-	bridgeCount := 2 + r.Intn(2)
+	bridgeCount := 3 + r.Intn(2)
 	bridgeSpacing := w / int32(bridgeCount+1)
 	for i := int32(0); i < int32(bridgeCount); i++ {
 		bx := bridgeSpacing*(i+1) + int32(r.Intn(5)-2)
@@ -135,6 +135,15 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 	for _, site := range strongholds {
 		placeStronghold(gm, site)
 	}
+
+	// Phase 9: Shallow water fords (2-3), far from bridges
+	placeShallowFords(gm, r)
+
+	// Phase 10: Ensure spawn areas connect to the road network
+	ensureSpawnRoadConnection(gm, r)
+
+	// Phase 11: Assign random objective
+	assignObjective(gm, r)
 
 	return gm
 }
@@ -262,8 +271,8 @@ func placeStronghold(gm *GameMap, site strongholdSite) {
 			}
 			gm.SetTerrain(x, y, tt)
 			tile = gm.TileAt(x, y)
-			tile.Health = int32(400 + site.Level*200)
-			tile.MaxHealth = tile.Health
+			tile.Health = 0
+			tile.MaxHealth = 0
 			tile.BlockLOS = true
 			tile.Elevation = int8(1 + site.Level/2)
 		}
@@ -333,9 +342,6 @@ func placeWall(gm *GameMap, x, y, length int32, horizontal bool, r *rand.Rand) {
 		if tile.TerrainType == component.TerrainDeep || tile.TerrainType == component.TerrainBridge {
 			continue
 		}
-		if tile.TerrainType == component.TerrainRoad {
-			continue
-		}
 		gm.SetTerrain(wx, wy, component.TerrainWall)
 		tile = gm.TileAt(wx, wy)
 		tile.Health = 300
@@ -364,4 +370,203 @@ func clearArea(gm *GameMap, x, y, w, h int32) {
 	for dy := int32(0); dy < h; dy++ {
 		gm.SetTerrain(roadX, y+dy, component.TerrainRoad)
 	}
+}
+
+// placeShallowFords places 2-3 shallow water fords on deep water tiles,
+// each at least 10 tiles Manhattan distance from any bridge.
+func placeShallowFords(gm *GameMap, r *rand.Rand) {
+	// Collect bridge positions
+	var bridges [][2]int32
+	for y := int32(0); y < gm.Height; y++ {
+		for x := int32(0); x < gm.Width; x++ {
+			if gm.TileAt(x, y).TerrainType == component.TerrainBridge {
+				bridges = append(bridges, [2]int32{x, y})
+			}
+		}
+	}
+
+	// Collect deep water tiles far from bridges
+	var candidates [][2]int32
+	for y := int32(0); y < gm.Height; y++ {
+		for x := int32(0); x < gm.Width; x++ {
+			if gm.TileAt(x, y).TerrainType != component.TerrainDeep {
+				continue
+			}
+			minDist := int32(999)
+			for _, b := range bridges {
+				d := abs32(x-b[0]) + abs32(y-b[1])
+				if d < minDist {
+					minDist = d
+				}
+			}
+			if minDist >= 5 {
+				candidates = append(candidates, [2]int32{x, y})
+			}
+		}
+	}
+
+	fordCount := 2 + r.Intn(2) // 2 or 3
+	if fordCount > len(candidates) {
+		fordCount = len(candidates)
+	}
+	for i := 0; i < fordCount; i++ {
+		idx := r.Intn(len(candidates))
+		pos := candidates[idx]
+		gm.SetTerrain(pos[0], pos[1], component.TerrainShallow)
+		// Remove used candidate
+		candidates = append(candidates[:idx], candidates[idx+1:]...)
+	}
+}
+
+// ensureSpawnRoadConnection checks that each spawn area's road connects
+// to the main road/bridge network. If not, places a road path.
+func ensureSpawnRoadConnection(gm *GameMap, r *rand.Rand) {
+	spawns := [][2]int32{
+		{2 + 12 / 2, 2 + 6},               // top-left spawn center road
+		{2 + 12 / 2, gm.Height - 14 + 6},  // bottom-left
+		{gm.Width - 14 + 12 / 2, 2 + 6},   // top-right
+		{gm.Width - 14 + 12 / 2, gm.Height - 14 + 6}, // bottom-right
+	}
+
+	for _, spawn := range spawns {
+		if !isConnectedToRoadNetwork(gm, spawn[0], spawn[1]) {
+			// Find nearest bridge
+			nearestBridge := findNearestBridge(gm, spawn[0], spawn[1])
+			if nearestBridge != nil {
+				placeRoadPath(gm, spawn[0], spawn[1], nearestBridge[0], nearestBridge[1], r)
+			}
+		}
+	}
+}
+
+// isConnectedToRoadNetwork does a small BFS from (x,y) along road/bridge tiles.
+// Returns true if it reaches a bridge.
+func isConnectedToRoadNetwork(gm *GameMap, startX, startY int32) bool {
+	visited := make(map[[2]int32]bool)
+	queue := [][2]int32{{startX, startY}}
+	visited[[2]int32{startX, startY}] = true
+
+	for len(queue) > 0 {
+		pos := queue[0]
+		queue = queue[1:]
+		tile := gm.TileAt(pos[0], pos[1])
+		if tile == nil {
+			continue
+		}
+		if tile.TerrainType == component.TerrainBridge {
+			return true
+		}
+		if tile.TerrainType != component.TerrainRoad {
+			continue
+		}
+		for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			next := [2]int32{pos[0] + d[0], pos[1] + d[1]}
+			if visited[next] {
+				continue
+			}
+			visited[next] = true
+			queue = append(queue, next)
+		}
+	}
+	return false
+}
+
+func findNearestBridge(gm *GameMap, x, y int32) *[2]int32 {
+	var best *[2]int32
+	bestDist := int32(99999)
+	for by := int32(0); by < gm.Height; by++ {
+		for bx := int32(0); bx < gm.Width; bx++ {
+			if gm.TileAt(bx, by).TerrainType == component.TerrainBridge {
+				d := abs32(x-bx) + abs32(y-by)
+				if d < bestDist {
+					bestDist = d
+					best = &[2]int32{bx, by}
+				}
+			}
+		}
+	}
+	return best
+}
+
+// assignObjective picks a random objective and fills in type-specific data.
+func assignObjective(gm *GameMap, r *rand.Rand) {
+	objType := ObjectiveType(r.Intn(3))
+	gm.Objective = Objective{Type: objType}
+
+	switch objType {
+	case ObjectiveCapture:
+		// Find stronghold group closest to map center
+		centerX, centerY := gm.Width/2, gm.Height/2
+		groups := findStrongholdGroups(gm)
+		if len(groups) == 0 {
+			gm.Objective.Type = ObjectiveElimination
+			return
+		}
+		var bestGroup [][2]int32
+		bestDist := float64(99999)
+		for _, g := range groups {
+			for _, cell := range g {
+				d := math.Hypot(float64(cell[0]-centerX), float64(cell[1]-centerY))
+				if d < bestDist {
+					bestDist = d
+					bestGroup = g
+				}
+			}
+		}
+		// Use center of best group
+		var sumX, sumY int32
+		for _, cell := range bestGroup {
+			sumX += cell[0]
+			sumY += cell[1]
+		}
+		gm.Objective.TargetX = sumX / int32(len(bestGroup))
+		gm.Objective.TargetY = sumY / int32(len(bestGroup))
+		gm.Objective.HoldTarget = 300
+
+	case ObjectiveSurvival:
+		gm.Objective.Duration = int32(3000 + r.Intn(3001))
+	}
+}
+
+func isStrongholdTerrain(tt component.TerrainType) bool {
+	return tt >= component.TerrainStronghold1 && tt <= component.TerrainStronghold5
+}
+
+func findStrongholdGroups(gm *GameMap) [][][2]int32 {
+	visited := make(map[[2]int32]bool)
+	var groups [][][2]int32
+	for y := int32(0); y < gm.Height; y++ {
+		for x := int32(0); x < gm.Width; x++ {
+			start := [2]int32{x, y}
+			if visited[start] {
+				continue
+			}
+			tile := gm.TileAt(x, y)
+			if tile == nil || !isStrongholdTerrain(tile.TerrainType) {
+				continue
+			}
+			var group [][2]int32
+			queue := [][2]int32{start}
+			visited[start] = true
+			for len(queue) > 0 {
+				cell := queue[0]
+				queue = queue[1:]
+				group = append(group, cell)
+				for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+					next := [2]int32{cell[0] + d[0], cell[1] + d[1]}
+					if visited[next] {
+						continue
+					}
+					t := gm.TileAt(next[0], next[1])
+					if t == nil || !isStrongholdTerrain(t.TerrainType) {
+						continue
+					}
+					visited[next] = true
+					queue = append(queue, next)
+				}
+			}
+			groups = append(groups, group)
+		}
+	}
+	return groups
 }

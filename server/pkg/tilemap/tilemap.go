@@ -10,9 +10,27 @@ type Tile struct {
 	MaxHealth   int32
 }
 
+type ObjectiveType uint8
+
+const (
+	ObjectiveElimination ObjectiveType = 0
+	ObjectiveCapture    ObjectiveType = 1
+	ObjectiveSurvival   ObjectiveType = 2
+)
+
+type Objective struct {
+	Type        ObjectiveType
+	TargetX     int32 // Capture: stronghold tile X
+	TargetY     int32 // Capture: stronghold tile Y
+	HoldTarget  int32 // Capture: ticks needed to hold (300)
+	HoldCounter int32 // Capture: current progress
+	Duration    int32 // Survival: total ticks
+}
+
 type GameMap struct {
 	Width, Height int32
 	Tiles         []Tile
+	Objective     Objective
 }
 
 func NewGameMap(w, h int32) *GameMap {

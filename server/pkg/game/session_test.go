@@ -40,10 +40,10 @@ func TestCombatUnitCountForTeamLevel(t *testing.T) {
 		level uint8
 		want  int
 	}{
-		{level: 0, want: 2},
-		{level: 1, want: 2},
-		{level: 2, want: 4},
-		{level: 3, want: 6},
+		{level: 0, want: InitialTeamCombatUnits},
+		{level: 1, want: InitialTeamCombatUnits},
+		{level: 2, want: InitialTeamCombatUnits + CombatUnitsPerTeamLevel},
+		{level: 3, want: InitialTeamCombatUnits + 2*CombatUnitsPerTeamLevel},
 	}
 
 	for _, tt := range tests {

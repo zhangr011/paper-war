@@ -9,9 +9,11 @@ import (
 
 // MatchResult indicates the outcome of a match.
 type MatchResult struct {
-	Winner uint8  // 0 = player, 1 = enemy
-	Reason string // "elimination", "capture", "survival"
-	Draw   bool
+	Winner       uint8  // FactionPlayer or FactionEnemy
+	WinnerFaction uint8 // alias for Winner
+	Reason       string // "elimination", "capture", "survival"
+	Draw         bool
+	Finished     bool
 }
 
 // ObjectiveSystem checks win conditions each tick based on the GameMap's Objective.
@@ -65,6 +67,15 @@ func (s *ObjectiveSystem) Result() *MatchResult {
 	return s.result
 }
 
+// CheckResult returns a MatchResult struct compatible with the lifecycle system.
+// Returns a zero-value result if the match is still ongoing.
+func (s *ObjectiveSystem) CheckResult() MatchResult {
+	if s.result == nil {
+		return MatchResult{}
+	}
+	return *s.result
+}
+
 // CaptureState returns the current capture holder and hold counter for HUD display.
 func (s *ObjectiveSystem) CaptureState() (holder uint8, counter int32) {
 	return s.captureHolder, s.gm.Objective.HoldCounter
@@ -92,9 +103,9 @@ func (s *ObjectiveSystem) checkElimination() {
 	})
 
 	if playerAlive == 0 {
-		s.result = &MatchResult{Winner: component.FactionEnemy, Reason: "elimination"}
+		s.result = &MatchResult{Winner: component.FactionEnemy, WinnerFaction: component.FactionEnemy, Reason: "elimination", Finished: true}
 	} else if enemyAlive == 0 {
-		s.result = &MatchResult{Winner: component.FactionPlayer, Reason: "elimination"}
+		s.result = &MatchResult{Winner: component.FactionPlayer, WinnerFaction: component.FactionPlayer, Reason: "elimination", Finished: true}
 	}
 }
 
@@ -142,7 +153,7 @@ func (s *ObjectiveSystem) checkCapture() {
 	if holder == s.captureHolder && holder != 0 {
 		s.gm.Objective.HoldCounter++
 		if s.gm.Objective.HoldCounter >= s.gm.Objective.HoldTarget {
-			s.result = &MatchResult{Winner: bestFaction, Reason: "capture"}
+			s.result = &MatchResult{Winner: bestFaction, WinnerFaction: bestFaction, Reason: "capture", Finished: true}
 		}
 	} else {
 		s.captureHolder = holder
@@ -159,6 +170,6 @@ func (s *ObjectiveSystem) checkSurvival(tick uint32) {
 
 	// Check timer
 	if s.gm.Objective.Duration > 0 && tick >= uint32(s.gm.Objective.Duration) {
-		s.result = &MatchResult{Winner: component.FactionPlayer, Reason: "survival"}
+		s.result = &MatchResult{Winner: component.FactionPlayer, WinnerFaction: component.FactionPlayer, Reason: "survival", Finished: true}
 	}
 }

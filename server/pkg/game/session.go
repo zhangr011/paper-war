@@ -13,6 +13,7 @@ import (
 	"github.com/user/paper-war/server/pkg/fog"
 	"github.com/user/paper-war/server/pkg/movement"
 	"github.com/user/paper-war/server/pkg/network"
+	"github.com/user/paper-war/server/pkg/objective"
 	"github.com/user/paper-war/server/pkg/pathfinding"
 	"github.com/user/paper-war/server/pkg/spatial"
 	"github.com/user/paper-war/server/pkg/terrain"
@@ -28,25 +29,31 @@ type GameSession struct {
 	Culler  *network.Culler
 
 	// Systems (kept as references for command handling)
-	terrainSys   *terrain.TerrainSystem
-	commanderSys *commander.CommanderSystem
-	movementSys  *movement.MovementSystem
-	combatSys    *combat.CombatSystem
-	deathSys     *combat.DeathSystem
-	FogSys       *fog.FogSystem
-	AISys        *ai.AISystem
+	terrainSys    *terrain.TerrainSystem
+	commanderSys  *commander.CommanderSystem
+	movementSys   *movement.MovementSystem
+	combatSys     *combat.CombatSystem
+	deathSys      *combat.DeathSystem
+	levelingSys   *combat.LevelingSystem      // v1
+	objectiveSys  *objective.ObjectiveSystem   // v1
+	recruitSys    *combat.RecruitmentSystem    // v1
+	FogSys        *fog.FogSystem
+	AISys         *ai.AISystem
+	Lifecycle     *MatchLifecycle              // v1
+	PlayerGold    map[uint32]int32             // v1: gold per player
 
 	tickCount uint32
 }
 
 const (
-	ServerTicksPerSecond      = 5
+	ServerTicksPerSecond      = 10
 	DefaultMapWidth           = 48
 	DefaultMapHeight          = 96
-	InitialTeamCombatUnits    = 2
+	InitialTeamCombatUnits    = 5  // v1: starter roster is 1 Cmd + 5 LI
 	CombatUnitsPerTeamLevel   = 2
 	DefaultMovementMultiplier = 5
 	combatUnitCrossMapSeconds = 60 * 60
+	StartGold                 = 50 // v1: 50 gold start
 )
 
 func CombatUnitCountForTeamLevel(level uint8) int {
@@ -102,6 +109,8 @@ func NewGameSession() *GameSession {
 	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 	ownerPool := ecs.NewComponentPool[component.OwnerComponent]()
 		projPool := ecs.NewComponentPool[component.ProjectileComponent]()
+	killPointsPool := ecs.NewComponentPool[component.KillPointsComponent]()
+	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
 
 		gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
@@ -115,6 +124,8 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 	gs.World.RegisterPool(component.OwnerComponent{}, ownerPool)
 		gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
+	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
+	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 
 	// Build a default movement profile for terrain costs
 	defaultProfile := &component.MovementProfile{
@@ -159,6 +170,19 @@ func NewGameSession() *GameSession {
 	gs.World.AddSystem(&combat.ProjectileSystem{})
 	gs.World.AddSystem(gs.deathSys)
 
+	// v1 systems
+	gs.levelingSys = &combat.LevelingSystem{}
+	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
+	gs.recruitSys = &combat.RecruitmentSystem{}
+	gs.World.AddSystem(gs.levelingSys)
+	gs.World.AddSystem(gs.objectiveSys)
+	gs.World.AddSystem(gs.recruitSys)
+
+	// v1: lifecycle and gold
+	gs.Lifecycle = NewMatchLifecycle(nil, nil)
+	gs.Lifecycle.Start() // start immediately for PvAI
+	gs.PlayerGold = make(map[uint32]int32)
+
 		// Fog system (per-player visibility)
 		gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
@@ -177,6 +201,10 @@ func NewGameSession() *GameSession {
 
 // Tick advances the game by one tick.
 func (gs *GameSession) Tick() {
+	if gs.Lifecycle.Phase != PhasePlaying {
+		return
+	}
+
 	gs.tickCount++
 	gs.World.Tick(gs.tickCount)
 
@@ -185,6 +213,14 @@ func (gs *GameSession) Tick() {
 
 	// AI: run decision loop for enemy squads, execute commands
 	gs.runAI()
+
+	// v1: Check objectives
+	if gs.objectiveSys != nil {
+		result := gs.objectiveSys.CheckResult()
+		if result.Finished {
+			gs.Lifecycle.End(result.WinnerFaction, result.Reason)
+		}
+	}
 }
 
 func (gs *GameSession) updateFog() {
@@ -251,6 +287,9 @@ func (gs *GameSession) runAI() {
 			gs.handleMoveSquad(cmd.SquadID, cmd.TargetX, cmd.TargetY)
 		case ai.CmdAttack:
 			gs.handleAttackTarget(cmd.SquadID, cmd.TargetID)
+		case ai.CmdRecruit:
+			// v1: handle AI recruitment
+			gs.handleAIRecruit(cmd.UnitType)
 		}
 	}
 }
@@ -713,6 +752,32 @@ func (gs *GameSession) handleAttackTarget(squadID uint32, targetID uint32) {
 		if attack, ok := attackPool.GetPtr(e); ok {
 			attack.TargetID = targetID
 		}
+	})
+}
+
+// handleAIRecruit processes an AI recruit command.
+func (gs *GameSession) handleAIRecruit(unitType component.CombatUnitType) {
+	if gs.recruitSys == nil {
+		return
+	}
+	// Find the AI commander entity
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+
+	var cmdEntity ecs.Entity
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.Role == component.RoleCommander {
+			if owner, ok := ownerPool.Get(e); ok && owner.PlayerID == gs.AISys.AIPlayerID {
+				cmdEntity = e
+			}
+		}
+	})
+	if cmdEntity == 0 {
+		return
+	}
+	gs.recruitSys.Recruit(combat.RecruitRequest{
+		CommanderEntity: cmdEntity,
+		UnitType:        unitType,
 	})
 }
 

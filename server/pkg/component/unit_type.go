@@ -108,3 +108,11 @@ func DamageMultiplier(weapon WeaponType, armor ArmorType) int32 {
 func CanDamageTerrain(weapon WeaponType) bool {
 	return weapon == WeaponCannon || weapon == WeaponMissile
 }
+
+// UnitTypeComponent is the ECS component that stores a unit's type identity.
+// Used by CombatSystem for damage matrix lookups and smart targeting.
+type UnitTypeComponent struct {
+	Type   CombatUnitType
+	Weapon WeaponType
+	Armor  ArmorType
+}

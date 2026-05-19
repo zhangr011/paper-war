@@ -331,6 +331,10 @@ func (gs *GameSession) Reset() {
 // SpawnTeam creates the standard team composition for the given level.
 func (gs *GameSession) SpawnTeam(playerID uint32, squadID uint32, cx, cy int64, level uint8) {
 	gs.SpawnSquad(playerID, squadID, cx, cy, CombatUnitCountForTeamLevel(level))
+	// Initialize gold for this player if not set
+	if _, ok := gs.PlayerGold[playerID]; !ok {
+		gs.PlayerGold[playerID] = StartGold
+	}
 }
 
 // SpawnSquad creates a commander + N combat units for a given player.

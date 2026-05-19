@@ -148,7 +148,7 @@ func TestDeathSystemClearsAttackTarget(t *testing.T) {
 	}
 }
 
-func TestDeathSystemCommanderDeath(t *testing.T) {
+func TestDeathSystemCommanderPromotion(t *testing.T) {
 	em := ecs.NewEntityManager()
 	w := ecs.NewWorld(em)
 
@@ -160,7 +160,7 @@ func TestDeathSystemCommanderDeath(t *testing.T) {
 	cmdPool := ecs.NewComponentPool[component.CommanderComponent]()
 	movePool := ecs.NewComponentPool[component.MovementComponent]()
 	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
-	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
+	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
 
 	w.RegisterPool(component.PositionComponent{}, posPool)
 	w.RegisterPool(component.VelocityComponent{}, velPool)
@@ -170,7 +170,7 @@ func TestDeathSystemCommanderDeath(t *testing.T) {
 	w.RegisterPool(component.CommanderComponent{}, cmdPool)
 	w.RegisterPool(component.MovementComponent{}, movePool)
 	w.RegisterPool(component.PathfindingComponent{}, pathPool)
-	w.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
+	w.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 
 	w.AddSystem(&DeathSystem{})
 	w.Init()
@@ -181,27 +181,33 @@ func TestDeathSystemCommanderDeath(t *testing.T) {
 	velPool.Add(cmd, component.VelocityComponent{})
 	healthPool.Add(cmd, component.HealthComponent{HP: 0, MaxHP: 200})
 	attackPool.Add(cmd, component.AttackComponent{})
-	boidPool.Add(cmd, component.BoidComponent{SquadID: 5, FormationW: fixed.FromFloat(2.0), SeparationW: fixed.FromFloat(1.5), CohesionW: fixed.FromFloat(0.8)})
+	boidPool.Add(cmd, component.BoidComponent{SquadID: 5, Role: component.RoleCommander, NeighborRange: fixed.FromFloat(5.0)})
 	cmdPool.Add(cmd, component.CommanderComponent{SquadID: 5, IsAlive: true})
 	movePool.Add(cmd, component.MovementComponent{})
 	pathPool.Add(cmd, component.PathfindingComponent{})
-	formationRolePool.Add(cmd, component.FormationRoleComponent{})
+	unitTypePool.Add(cmd, component.UnitTypeComponent{Type: component.UnitLightInfantry, Level: 3})
 
-	// Squad member
-	unit := em.Create()
-	posPool.Add(unit, component.PositionComponent{})
-	velPool.Add(unit, component.VelocityComponent{})
-	healthPool.Add(unit, component.HealthComponent{HP: 80, MaxHP: 80})
-	attackPool.Add(unit, component.AttackComponent{})
-	boidPool.Add(unit, component.BoidComponent{
-		SquadID:       5,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(0.8),
-		FormationW:    fixed.FromFloat(2.0),
-	})
-	movePool.Add(unit, component.MovementComponent{})
-	pathPool.Add(unit, component.PathfindingComponent{})
-	formationRolePool.Add(unit, component.FormationRoleComponent{})
+	// Low-level squad member
+	lowUnit := em.Create()
+	posPool.Add(lowUnit, component.PositionComponent{})
+	velPool.Add(lowUnit, component.VelocityComponent{})
+	healthPool.Add(lowUnit, component.HealthComponent{HP: 50, MaxHP: 80})
+	attackPool.Add(lowUnit, component.AttackComponent{})
+	boidPool.Add(lowUnit, component.BoidComponent{SquadID: 5, Role: component.RoleMelee})
+	movePool.Add(lowUnit, component.MovementComponent{})
+	pathPool.Add(lowUnit, component.PathfindingComponent{})
+	unitTypePool.Add(lowUnit, component.UnitTypeComponent{Type: component.UnitLightInfantry, Level: 1})
+
+	// High-level squad member — should be promoted
+	highUnit := em.Create()
+	posPool.Add(highUnit, component.PositionComponent{})
+	velPool.Add(highUnit, component.VelocityComponent{})
+	healthPool.Add(highUnit, component.HealthComponent{HP: 80, MaxHP: 80})
+	attackPool.Add(highUnit, component.AttackComponent{})
+	boidPool.Add(highUnit, component.BoidComponent{SquadID: 5, Role: component.RoleRanged})
+	movePool.Add(highUnit, component.MovementComponent{})
+	pathPool.Add(highUnit, component.PathfindingComponent{})
+	unitTypePool.Add(highUnit, component.UnitTypeComponent{Type: component.UnitHeavyInfantry, Level: 4})
 
 	w.Tick(1)
 
@@ -210,15 +216,156 @@ func TestDeathSystemCommanderDeath(t *testing.T) {
 		t.Error("dead commander should be destroyed")
 	}
 
-	// Squad member should still be alive but with adjusted weights
-	bc, ok := boidPool.Get(unit)
+	// Low unit should NOT be promoted
+	lowBC, _ := boidPool.Get(lowUnit)
+	if lowBC.Role == component.RoleCommander {
+		t.Error("low-level unit should not be promoted")
+	}
+
+	// High-level unit should be promoted to Commander
+	highBC, ok := boidPool.Get(highUnit)
 	if !ok {
-		t.Fatal("squad member should still exist")
+		t.Fatal("promoted unit should still exist")
 	}
-	if bc.FormationW >= fixed.FromFloat(2.0) {
-		t.Errorf("formation weight should decrease after commander death, got %d", bc.FormationW)
+	if highBC.Role != component.RoleCommander {
+		t.Errorf("high-level unit should be promoted to Commander, got role %d", highBC.Role)
 	}
-	if bc.SeparationW <= fixed.FromFloat(1.5) {
-		t.Errorf("separation weight should increase after commander death, got %d", bc.SeparationW)
+
+	// Should have CommanderComponent
+	promotedCmd, ok := cmdPool.Get(highUnit)
+	if !ok {
+		t.Fatal("promoted unit should have CommanderComponent")
+	}
+	if !promotedCmd.IsAlive {
+		t.Error("promoted commander should be alive")
+	}
+	if promotedCmd.SquadID != 5 {
+		t.Errorf("promoted commander squad ID = %d, want 5", promotedCmd.SquadID)
+	}
+
+	// CombatUnitType should be preserved (types never convert)
+	ut, _ := unitTypePool.Get(highUnit)
+	if ut.Type != component.UnitHeavyInfantry {
+		t.Errorf("promoted unit type should be preserved, got %d", ut.Type)
+	}
+}
+
+func TestDeathSystemKillPointsAwarded(t *testing.T) {
+	em := ecs.NewEntityManager()
+	w := ecs.NewWorld(em)
+
+	posPool := ecs.NewComponentPool[component.PositionComponent]()
+	velPool := ecs.NewComponentPool[component.VelocityComponent]()
+	healthPool := ecs.NewComponentPool[component.HealthComponent]()
+	attackPool := ecs.NewComponentPool[component.AttackComponent]()
+	boidPool := ecs.NewComponentPool[component.BoidComponent]()
+	movePool := ecs.NewComponentPool[component.MovementComponent]()
+	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
+	kpPool := ecs.NewComponentPool[component.KillPointsComponent]()
+
+	w.RegisterPool(component.PositionComponent{}, posPool)
+	w.RegisterPool(component.VelocityComponent{}, velPool)
+	w.RegisterPool(component.HealthComponent{}, healthPool)
+	w.RegisterPool(component.AttackComponent{}, attackPool)
+	w.RegisterPool(component.BoidComponent{}, boidPool)
+	w.RegisterPool(component.MovementComponent{}, movePool)
+	w.RegisterPool(component.PathfindingComponent{}, pathPool)
+	w.RegisterPool(component.KillPointsComponent{}, kpPool)
+
+	w.AddSystem(&DeathSystem{})
+	w.Init()
+
+	// Killer
+	killer := em.Create()
+	posPool.Add(killer, component.PositionComponent{})
+	velPool.Add(killer, component.VelocityComponent{})
+	healthPool.Add(killer, component.HealthComponent{HP: 100, MaxHP: 100})
+	attackPool.Add(killer, component.AttackComponent{})
+	boidPool.Add(killer, component.BoidComponent{})
+	movePool.Add(killer, component.MovementComponent{})
+	pathPool.Add(killer, component.PathfindingComponent{})
+	kpPool.Add(killer, component.KillPointsComponent{Points: 0})
+
+	// Victim killed by killer
+	victim := em.Create()
+	posPool.Add(victim, component.PositionComponent{})
+	velPool.Add(victim, component.VelocityComponent{})
+	healthPool.Add(victim, component.HealthComponent{HP: 0, MaxHP: 50, LastAttacker: uint32(killer)})
+	attackPool.Add(victim, component.AttackComponent{})
+	boidPool.Add(victim, component.BoidComponent{})
+	movePool.Add(victim, component.MovementComponent{})
+	pathPool.Add(victim, component.PathfindingComponent{})
+
+	w.Tick(1)
+
+	// Killer should have kill points
+	kp, ok := kpPool.Get(killer)
+	if !ok {
+		t.Fatal("killer should still exist")
+	}
+	if kp.Points < 1 {
+		t.Errorf("killer should have kill points >= 1, got %d", kp.Points)
+	}
+
+	// Victim should be removed
+	if em.Alive(victim) {
+		t.Error("victim should be destroyed")
+	}
+}
+
+func TestDeathSystemCommanderKillBonus(t *testing.T) {
+	em := ecs.NewEntityManager()
+	w := ecs.NewWorld(em)
+
+	posPool := ecs.NewComponentPool[component.PositionComponent]()
+	velPool := ecs.NewComponentPool[component.VelocityComponent]()
+	healthPool := ecs.NewComponentPool[component.HealthComponent]()
+	attackPool := ecs.NewComponentPool[component.AttackComponent]()
+	boidPool := ecs.NewComponentPool[component.BoidComponent]()
+	cmdPool := ecs.NewComponentPool[component.CommanderComponent]()
+	movePool := ecs.NewComponentPool[component.MovementComponent]()
+	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
+	kpPool := ecs.NewComponentPool[component.KillPointsComponent]()
+
+	w.RegisterPool(component.PositionComponent{}, posPool)
+	w.RegisterPool(component.VelocityComponent{}, velPool)
+	w.RegisterPool(component.HealthComponent{}, healthPool)
+	w.RegisterPool(component.AttackComponent{}, attackPool)
+	w.RegisterPool(component.BoidComponent{}, boidPool)
+	w.RegisterPool(component.CommanderComponent{}, cmdPool)
+	w.RegisterPool(component.MovementComponent{}, movePool)
+	w.RegisterPool(component.PathfindingComponent{}, pathPool)
+	w.RegisterPool(component.KillPointsComponent{}, kpPool)
+
+	w.AddSystem(&DeathSystem{})
+	w.Init()
+
+	// Killer
+	killer := em.Create()
+	posPool.Add(killer, component.PositionComponent{})
+	velPool.Add(killer, component.VelocityComponent{})
+	healthPool.Add(killer, component.HealthComponent{HP: 100, MaxHP: 100})
+	attackPool.Add(killer, component.AttackComponent{})
+	boidPool.Add(killer, component.BoidComponent{})
+	movePool.Add(killer, component.MovementComponent{})
+	pathPool.Add(killer, component.PathfindingComponent{})
+	kpPool.Add(killer, component.KillPointsComponent{Points: 0})
+
+	// Commander victim
+	cmdVictim := em.Create()
+	posPool.Add(cmdVictim, component.PositionComponent{})
+	velPool.Add(cmdVictim, component.VelocityComponent{})
+	healthPool.Add(cmdVictim, component.HealthComponent{HP: 0, MaxHP: 200, LastAttacker: uint32(killer)})
+	attackPool.Add(cmdVictim, component.AttackComponent{})
+	boidPool.Add(cmdVictim, component.BoidComponent{SquadID: 3})
+	cmdPool.Add(cmdVictim, component.CommanderComponent{SquadID: 3, IsAlive: true})
+	movePool.Add(cmdVictim, component.MovementComponent{})
+	pathPool.Add(cmdVictim, component.PathfindingComponent{})
+
+	w.Tick(1)
+
+	kp, _ := kpPool.Get(killer)
+	if kp.Points != 5 {
+		t.Errorf("commander kill bonus should be 5 points, got %d", kp.Points)
 	}
 }

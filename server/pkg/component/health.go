@@ -1,9 +1,10 @@
 package component
 
 type HealthComponent struct {
-	HP, MaxHP int32
-	Armor     int32
-	Morale    int32
+	HP, MaxHP    int32
+	Armor        int32
+	Morale       int32
+	LastAttacker uint32 // entity ID of the last attacker (for kill credit)
 }
 
 type AttackType uint8

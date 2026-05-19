@@ -106,6 +106,7 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 
 		// Apply damage to primary target
 		targetHealth.HP -= dmg
+		targetHealth.LastAttacker = uint32(e)
 
 		// Cannon splash: apply 50% damage to units within 2 tiles
 		if weapon == component.WeaponCannon {

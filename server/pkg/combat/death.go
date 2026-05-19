@@ -8,17 +8,19 @@ import (
 type DeathSystem struct {
 	em *ecs.EntityManager
 
-	healthPool       *ecs.ComponentPool[component.HealthComponent]
-	posPool          *ecs.ComponentPool[component.PositionComponent]
-	velPool          *ecs.ComponentPool[component.VelocityComponent]
-	boidPool         *ecs.ComponentPool[component.BoidComponent]
-	attackPool       *ecs.ComponentPool[component.AttackComponent]
-	cmdPool          *ecs.ComponentPool[component.CommanderComponent]
-	movePool         *ecs.ComponentPool[component.MovementComponent]
-	pathPool         *ecs.ComponentPool[component.PathfindingComponent]
-	formationPool    *ecs.ComponentPool[component.FormationComponent]
+	healthPool        *ecs.ComponentPool[component.HealthComponent]
+	posPool           *ecs.ComponentPool[component.PositionComponent]
+	velPool           *ecs.ComponentPool[component.VelocityComponent]
+	boidPool          *ecs.ComponentPool[component.BoidComponent]
+	attackPool        *ecs.ComponentPool[component.AttackComponent]
+	cmdPool           *ecs.ComponentPool[component.CommanderComponent]
+	movePool          *ecs.ComponentPool[component.MovementComponent]
+	pathPool          *ecs.ComponentPool[component.PathfindingComponent]
+	formationPool     *ecs.ComponentPool[component.FormationComponent]
 	formationRolePool *ecs.ComponentPool[component.FormationRoleComponent]
-	ownerPool        *ecs.ComponentPool[component.OwnerComponent]
+	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
+	killPointsPool    *ecs.ComponentPool[component.KillPointsComponent]
+	unitTypePool      *ecs.ComponentPool[component.UnitTypeComponent]
 }
 
 func (s *DeathSystem) Name() string  { return "DeathSystem" }
@@ -45,6 +47,12 @@ func (s *DeathSystem) Init(w *ecs.World) {
 	if p := w.Pool(component.OwnerComponent{}); p != nil {
 		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
 	}
+	if p := w.Pool(component.KillPointsComponent{}); p != nil {
+		s.killPointsPool = p.(*ecs.ComponentPool[component.KillPointsComponent])
+	}
+	if p := w.Pool(component.UnitTypeComponent{}); p != nil {
+		s.unitTypePool = p.(*ecs.ComponentPool[component.UnitTypeComponent])
+	}
 }
 
 func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
@@ -56,7 +64,19 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 	})
 
 	for _, e := range dead {
-		// Handle commander death before removing
+		hp, _ := s.healthPool.Get(e)
+
+		// Award kill points to the killer
+		if hp.LastAttacker != 0 && s.killPointsPool != nil {
+			killerEntity := ecs.Entity(hp.LastAttacker)
+			if killerHP, ok := s.healthPool.Get(killerEntity); ok && killerHP.HP > 0 {
+				if kp, ok := s.killPointsPool.GetPtr(killerEntity); ok {
+					kp.Points += s.killPointValue(e)
+				}
+			}
+		}
+
+		// Handle commander death: promote highest-level unit in squad
 		if s.cmdPool != nil {
 			if cmd, ok := s.cmdPool.Get(e); ok && cmd.IsAlive {
 				cmd.IsAlive = false
@@ -92,18 +112,66 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 		if s.ownerPool != nil {
 			s.ownerPool.Remove(e)
 		}
+		if s.killPointsPool != nil {
+			s.killPointsPool.Remove(e)
+		}
+		if s.unitTypePool != nil {
+			s.unitTypePool.Remove(e)
+		}
 
 		s.em.Destroy(e)
 	}
 }
 
+// killPointValue returns the kill point value of a dying entity.
+// Commanders are worth more.
+func (s *DeathSystem) killPointValue(dead ecs.Entity) int32 {
+	if s.cmdPool != nil {
+		if _, ok := s.cmdPool.Get(dead); ok {
+			return 5 // Commander kill bonus
+		}
+	}
+	return 1
+}
+
+// handleCommanderDeath promotes the highest-level CombatUnit in the squad
+// to Commander. The promoted unit retains its CombatUnitType (types never convert).
 func (s *DeathSystem) handleCommanderDeath(squadID uint32) {
+	var bestEntity ecs.Entity
+	var bestLevel uint8
+
 	s.boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
-		if bc.SquadID != squadID {
+		if bc.SquadID != squadID || bc.Role == component.RoleCommander {
 			return
 		}
-		bc.SeparationW = bc.SeparationW * 3 / 2
-		bc.CohesionW = bc.CohesionW * 2
-		bc.FormationW = bc.FormationW / 2
+
+		level := uint8(0)
+		if s.unitTypePool != nil {
+			if ut, ok := s.unitTypePool.Get(e); ok {
+				level = ut.Level
+			}
+		}
+
+		if level > bestLevel || (level == bestLevel && bestEntity == 0) {
+			bestEntity = e
+			bestLevel = level
+		}
 	})
+
+	if bestEntity == 0 {
+		return // no one to promote
+	}
+
+	// Promote: change BoidRole to Commander
+	bc, _ := s.boidPool.GetPtr(bestEntity)
+	bc.Role = component.RoleCommander
+
+	// Add CommanderComponent if not present
+	if s.cmdPool != nil {
+		s.cmdPool.Add(bestEntity, component.CommanderComponent{
+			SquadID:   squadID,
+			IsAlive:   true,
+			AuraRadius: bc.NeighborRange,
+		})
+	}
 }

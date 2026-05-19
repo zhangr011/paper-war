@@ -115,4 +115,5 @@ type UnitTypeComponent struct {
 	Type   CombatUnitType
 	Weapon WeaponType
 	Armor  ArmorType
+	Level  uint8 // 1-6 for CombatUnits, 1-10 for Commanders
 }

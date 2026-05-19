@@ -1,0 +1,3 @@
+# Simplified Movement: Attraction + Separation Only
+
+The original spec used full Boid flocking (separation, cohesion, alignment, formation forces). For v1, this is reduced to two forces: attraction toward the formation offset from the Commander, and separation from nearby units. Cohesion and alignment were cut because: formation switching was cut for v1 (no Line/Wedge/Circle/Scatter), all combat is ranged (no melee positioning needs), and the tuning complexity of 4+ force weights per unit type wasn't justified by the gameplay benefit. The two-force model produces organized-looking squads with natural spacing, and can be extended back to full Boid later if needed.

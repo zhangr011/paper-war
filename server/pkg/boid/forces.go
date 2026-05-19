@@ -2,6 +2,7 @@ package boid
 
 import "github.com/user/paper-war/server/pkg/fixed"
 
+// SeparationForce pushes units apart when too close.
 func SeparationForce(self [2]int64, neighbors [][2]int64, range_ int64) (fx, fy int64) {
 	for _, n := range neighbors {
 		dx := self[0] - n[0]
@@ -21,41 +22,8 @@ func SeparationForce(self [2]int64, neighbors [][2]int64, range_ int64) (fx, fy 
 	return
 }
 
-func CohesionForce(self [2]int64, neighbors [][2]int64) (fx, fy int64) {
-	if len(neighbors) == 0 {
-		return 0, 0
-	}
-	var cx, cy int64
-	for _, n := range neighbors {
-		cx += n[0]
-		cy += n[1]
-	}
-	cx = cx / int64(len(neighbors))
-	cy = cy / int64(len(neighbors))
-	fx = (cx - self[0]) >> 4
-	fy = (cy - self[1]) >> 4
-	return
-}
-
-func AlignmentForce(selfVel [2]int64, neighborVels [][2]int64) (fx, fy int64) {
-	if len(neighborVels) == 0 {
-		return 0, 0
-	}
-	var avgVx, avgVy int64
-	for _, v := range neighborVels {
-		avgVx += v[0]
-		avgVy += v[1]
-	}
-	avgVx /= int64(len(neighborVels))
-	avgVy /= int64(len(neighborVels))
-	fx = (avgVx - selfVel[0]) >> 3
-	fy = (avgVy - selfVel[1]) >> 3
-	return
-}
-
-// CommanderForce returns a steering force toward the target position.
-// The force is proportional to distance (scaled by 1/16) and zero when at the target.
-func CommanderForce(self, target [2]int64) (fx, fy int64) {
+// AttractionForce steers toward a target position (v1: replaces CommanderForce/CohesionForce/AlignmentForce).
+func AttractionForce(self, target [2]int64) (fx, fy int64) {
 	dx := target[0] - self[0]
 	dy := target[1] - self[1]
 	if dx == 0 && dy == 0 {

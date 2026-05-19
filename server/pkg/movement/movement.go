@@ -121,18 +121,13 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 
 		neighborPos := s.queryNeighborPositions(pos.X, pos.Y, bc.NeighborRange, uint64(e))
 		sepFX, sepFY := boid.SeparationForce([2]int64{pos.X, pos.Y}, neighborPos, bc.NeighborRange)
-		cohFX, cohFY := boid.CohesionForce([2]int64{pos.X, pos.Y}, neighborPos)
 
-		var aliFX, aliFY int64
-		if hasVel {
-			neighborVels := s.queryNeighborVelocities(pos.X, pos.Y, bc.NeighborRange, uint64(e))
-			aliFX, aliFY = boid.AlignmentForce([2]int64{vel.Vx, vel.Vy}, neighborVels)
-		}
+		// Attraction force (toward commander/beacon/flow field target)
+		var attrFX, attrFY int64
 
 		// Commander-following force (or beacon steering for player units)
-		var cmdFX, cmdFY int64
 		if useBeacon {
-			cmdFX, cmdFY = boid.CommanderForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
+			attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
 		} else if bc.Role != component.RoleCommander {
 			if cpos, ok := commanderPos[bc.SquadID]; ok {
 				target := [2]int64{cpos[0], cpos[1]}
@@ -142,20 +137,16 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 						target[1] += fr.OffsetY
 					}
 				}
-				cmdFX, cmdFY = boid.CommanderForce([2]int64{pos.X, pos.Y}, target)
+				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, target)
 			}
 		}
 
 		totalFX := flowFX +
 			fixed.Mul(sepFX, bc.SeparationW) +
-			fixed.Mul(cohFX, bc.CohesionW) +
-			fixed.Mul(aliFX, bc.AlignmentW) +
-			fixed.Mul(cmdFX, bc.FormationW)
+			fixed.Mul(attrFX, bc.FormationW)
 		totalFY := flowFY +
 			fixed.Mul(sepFY, bc.SeparationW) +
-			fixed.Mul(cohFY, bc.CohesionW) +
-			fixed.Mul(aliFY, bc.AlignmentW) +
-			fixed.Mul(cmdFY, bc.FormationW)
+			fixed.Mul(attrFY, bc.FormationW)
 
 		maxForce := fixed.FromFloat(5.0)
 		if hasVel && vel.Speed > maxForce {
@@ -191,20 +182,6 @@ func (s *MovementSystem) queryNeighborPositions(x, y, range_ int64, exclude uint
 		}
 		if pos, ok := s.posPool.Get(ecs.Entity(id)); ok {
 			result = append(result, [2]int64{pos.X, pos.Y})
-		}
-	}
-	return result
-}
-
-func (s *MovementSystem) queryNeighborVelocities(x, y, range_ int64, exclude uint64) [][2]int64 {
-	ids := s.Sh.Query(x, y, range_)
-	var result [][2]int64
-	for _, id := range ids {
-		if id == exclude {
-			continue
-		}
-		if vel, ok := s.velPool.Get(ecs.Entity(id)); ok {
-			result = append(result, [2]int64{vel.Vx, vel.Vy})
 		}
 	}
 	return result

@@ -135,7 +135,7 @@ func TestSquadMovesTogether(t *testing.T) {
 		})
 	}
 
-	for tick := uint32(1); tick <= 10; tick++ {
+	for tick := uint32(1); tick <= 20; tick++ {
 		w.Tick(tick)
 	}
 

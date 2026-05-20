@@ -16,12 +16,14 @@ const (
 )
 
 type AttackComponent struct {
-	Range      int64
-	Damage     int32
-	Cooldown   uint8
-	LastAttack uint32
-	TargetID   uint32
-	AttackType AttackType
+	Range         int64
+	Damage        int32
+	Cooldown      uint8
+	LastAttack    uint32
+	TargetID      uint32
+	AttackType    AttackType
+	GroundTargetX int64 // set by CmdAttackGround
+	GroundTargetY int64 // set by CmdAttackGround
 }
 
 type ProjectileComponent struct {

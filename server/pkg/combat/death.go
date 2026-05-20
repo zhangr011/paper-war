@@ -21,6 +21,10 @@ type DeathSystem struct {
 	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
 	killPointsPool    *ecs.ComponentPool[component.KillPointsComponent]
 	unitTypePool      *ecs.ComponentPool[component.UnitTypeComponent]
+
+	// GoldBounties collects {playerID: bounty} for each tick.
+	// Cleared at start of each Tick. Session reads this after Tick().
+	GoldBounties map[uint32]int32
 }
 
 func (s *DeathSystem) Name() string  { return "DeathSystem" }
@@ -56,6 +60,8 @@ func (s *DeathSystem) Init(w *ecs.World) {
 }
 
 func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
+	s.GoldBounties = make(map[uint32]int32)
+
 	var dead []ecs.Entity
 	s.healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
 		if hp.HP <= 0 {
@@ -72,6 +78,18 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 			if killerHP, ok := s.healthPool.Get(killerEntity); ok && killerHP.HP > 0 {
 				if kp, ok := s.killPointsPool.GetPtr(killerEntity); ok {
 					kp.Points += s.killPointValue(e)
+				}
+
+				// Award Gold bounty to killer's player
+				if s.ownerPool != nil && s.unitTypePool != nil {
+					if killerOwner, ok := s.ownerPool.Get(killerEntity); ok {
+						if deadUT, ok := s.unitTypePool.Get(e); ok {
+							bounty := component.CombatUnitTypeTable[deadUT.Type].KillBounty
+							if bounty > 0 {
+								s.GoldBounties[killerOwner.PlayerID] += bounty
+							}
+						}
+					}
 				}
 			}
 		}

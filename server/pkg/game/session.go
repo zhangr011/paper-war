@@ -41,6 +41,7 @@ type GameSession struct {
 	AISys         *ai.AISystem
 	Lifecycle     *MatchLifecycle              // v1
 	PlayerGold    map[uint32]int32             // v1: gold per player
+	lastSentGold  map[uint32]int32             // track what was last sent to client
 
 	tickCount uint32
 }
@@ -208,6 +209,18 @@ func (gs *GameSession) Tick() {
 	gs.tickCount++
 	gs.World.Tick(gs.tickCount)
 
+	// Award Gold bounties from DeathSystem
+	if gs.deathSys != nil {
+		for playerID, bounty := range gs.deathSys.GoldBounties {
+			if bounty > 0 {
+				gs.PlayerGold[playerID] += bounty
+				if gs.lastSentGold == nil {
+					gs.lastSentGold = make(map[uint32]int32)
+				}
+			}
+		}
+	}
+
 	// Fog of war: compute per-player visibility from commander positions
 	gs.updateFog()
 
@@ -330,7 +343,12 @@ func (gs *GameSession) Reset() {
 
 // SpawnTeam creates the standard team composition for the given level.
 func (gs *GameSession) SpawnTeam(playerID uint32, squadID uint32, cx, cy int64, level uint8) {
-	gs.SpawnSquad(playerID, squadID, cx, cy, CombatUnitCountForTeamLevel(level))
+	gs.SpawnTeamWithType(playerID, squadID, cx, cy, level, component.UnitLightInfantry)
+}
+
+// SpawnTeamWithType creates a team with a specific commander type.
+func (gs *GameSession) SpawnTeamWithType(playerID uint32, squadID uint32, cx, cy int64, level uint8, cmdType component.CombatUnitType) {
+	gs.SpawnSquadWithType(playerID, squadID, cx, cy, CombatUnitCountForTeamLevel(level), cmdType)
 	// Initialize gold for this player if not set
 	if _, ok := gs.PlayerGold[playerID]; !ok {
 		gs.PlayerGold[playerID] = StartGold
@@ -339,6 +357,11 @@ func (gs *GameSession) SpawnTeam(playerID uint32, squadID uint32, cx, cy int64, 
 
 // SpawnSquad creates a commander + N combat units for a given player.
 func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64, unitCount int) {
+	gs.SpawnSquadWithType(playerID, squadID, cx, cy, unitCount, component.UnitLightInfantry)
+}
+
+// SpawnSquadWithType creates a commander of the given type + N combat units.
+func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, cy int64, unitCount int, cmdType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 
@@ -368,18 +391,31 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
+	// Commander stats from type table, scaled up (3x HP, 2x dmg)
+	cmdStats := component.CombatUnitTypeTable[cmdType]
+	cmdHP := cmdStats.HP * 3
+	cmdDmg := cmdStats.Damage * 2
+	cmdRange := cmdStats.Range
+
 	gs.addComponent(cmdEntity, component.HealthComponent{
-		HP:     200,
-		MaxHP:  200,
+		HP:     cmdHP,
+		MaxHP:  cmdHP,
 		Armor:  5,
 		Morale: 100,
 	})
 
 	gs.addComponent(cmdEntity, component.AttackComponent{
-		Range:      fixed.FromFloat(1.5),
-		Damage:     30,
-		Cooldown:   3,
+		Range:      cmdRange,
+		Damage:     cmdDmg,
+		Cooldown:   cmdStats.Cooldown,
 		AttackType: component.AttackMelee,
+	})
+
+	gs.addComponent(cmdEntity, component.UnitTypeComponent{
+		Type:   cmdType,
+		Weapon: cmdStats.Weapon,
+		Armor:  cmdStats.Armor,
+		Level:  1,
 	})
 
 	gs.addComponent(cmdEntity, component.CommanderComponent{
@@ -795,7 +831,6 @@ func (gs *GameSession) handleAIRecruit(unitType component.CombatUnitType) {
 
 func (gs *GameSession) handleAttackGround(squadID uint32, targetX, targetY int64) {
 	squadID = gs.resolveSquadID(squadID)
-	// and set attack target to 0 (ground attack mode handled differently)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	attackPool := gs.World.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])
@@ -809,7 +844,9 @@ func (gs *GameSession) handleAttackGround(squadID uint32, targetX, targetY int64
 			path.TargetY = targetY
 		}
 		if attack, ok := attackPool.GetPtr(e); ok {
-			attack.TargetID = 0
+			attack.TargetID = 0 // clear entity target
+			attack.GroundTargetX = targetX
+			attack.GroundTargetY = targetY
 		}
 	})
 }
@@ -888,4 +925,17 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 	case *ecs.ComponentPool[component.ProjectileComponent]:
 		p.Add(e, comp.(component.ProjectileComponent))
 	}
+}
+
+// GetGoldUpdates returns player→gold pairs that changed since last call.
+// Used by the network layer to send MsgGoldUpdate only when gold changed.
+func (gs *GameSession) GetGoldUpdates() map[uint32]int32 {
+	result := make(map[uint32]int32)
+	for pid, gold := range gs.PlayerGold {
+		if last, ok := gs.lastSentGold[pid]; !ok || last != gold {
+			result[pid] = gold
+			gs.lastSentGold[pid] = gold
+		}
+	}
+	return result
 }

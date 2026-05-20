@@ -61,6 +61,21 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		}
 
 		if ac.TargetID == 0 {
+			// Ground attack: if GroundTarget is set and weapon is Cannon/Missile,
+			// fire at the ground position (deals splash to any unit in area)
+			if ac.GroundTargetX != 0 || ac.GroundTargetY != 0 {
+				if weapon == component.WeaponCannon || weapon == component.WeaponMissile {
+					dx := ac.GroundTargetX - pos.X
+					dy := ac.GroundTargetY - pos.Y
+					distSq := (dx*dx + dy*dy) >> 12
+					rangeSq := (ac.Range * ac.Range) >> 12
+					if distSq <= rangeSq {
+						groundPos := component.PositionComponent{X: ac.GroundTargetX, Y: ac.GroundTargetY}
+						s.applySplash(groundPos, ac.Damage, e, ecs.Entity(0))
+						ac.LastAttack = tick
+					}
+				}
+			}
 			return
 		}
 

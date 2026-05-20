@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	"math/rand"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/user/paper-war/server/pkg/network"
 	"github.com/user/paper-war/server/pkg/objective"
 	"github.com/user/paper-war/server/pkg/pathfinding"
+	"github.com/user/paper-war/server/pkg/persist"
 	"github.com/user/paper-war/server/pkg/spatial"
 	"github.com/user/paper-war/server/pkg/terrain"
 	"github.com/user/paper-war/server/pkg/tilemap"
@@ -42,6 +44,7 @@ type GameSession struct {
 	Lifecycle     *MatchLifecycle              // v1
 	PlayerGold    map[uint32]int32             // v1: gold per player
 	lastSentGold  map[uint32]int32             // track what was last sent to client
+	Store         persist.Store                // v1: persistence (nil = no persistence)
 
 	tickCount uint32
 }
@@ -953,4 +956,112 @@ func (gs *GameSession) GetGoldUpdates() map[uint32]int32 {
 		}
 	}
 	return result
+}
+
+// FlushRoster collects surviving entities and saves them to the Store.
+// Dead units are permanently removed (Permadeath). If a player has zero
+// commanders, they get a starter roster.
+// This is called on match end and periodically during the match.
+func (gs *GameSession) FlushRoster() {
+	if gs.Store == nil {
+		return
+	}
+
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
+	kpPool := gs.World.Pool(component.KillPointsComponent{}).(*ecs.ComponentPool[component.KillPointsComponent])
+
+	// Collect commanders per player
+	type cmdInfo struct {
+		entity ecs.Entity
+		squad  uint32
+		owner  uint32
+	}
+	playerCmds := make(map[uint32][]cmdInfo)
+
+	cmdPool.Each(func(e ecs.Entity, cc *component.CommanderComponent) {
+		if !cc.IsAlive {
+			return
+		}
+		owner, _ := ownerPool.Get(e)
+		bc, _ := boidPool.Get(e)
+		playerCmds[owner.PlayerID] = append(playerCmds[owner.PlayerID], cmdInfo{
+			entity: e, squad: bc.SquadID, owner: owner.PlayerID,
+		})
+	})
+
+	ctx := context.Background()
+
+	for playerID, cmds := range playerCmds {
+		for _, ci := range cmds {
+			ut, _ := unitTypePool.Get(ci.entity)
+
+			// Collect surviving combat units in this squad
+			var units []persist.CombatUnit
+			boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+				if bc.SquadID != ci.squad || bc.Role == component.RoleCommander {
+					return
+				}
+				if u, ok := unitTypePool.Get(e); ok {
+					var ukp int32
+					if kpc, ok := kpPool.Get(e); ok {
+						ukp = kpc.Points
+					}
+					units = append(units, persist.CombatUnit{
+						Type:       unitTypeName(u.Type),
+						Level:      u.Level,
+						KillPoints: ukp,
+					})
+				}
+			})
+
+			cmd := persist.Commander{
+				Type:  unitTypeName(ut.Type),
+				Level: ut.Level,
+				Gold:  gs.PlayerGold[playerID],
+				Formation: persist.FormationTemplate{
+					LeadingSkill: 5 + int32(ut.Level)*2,
+				},
+				Units: units,
+			}
+
+			gs.Store.SaveCommander(ctx, playerID, cmd)
+		}
+
+		// Check if player has zero commanders → grant starter roster
+		if len(cmds) == 0 {
+			gs.Store.CreateStarterRoster(ctx, playerID)
+		}
+	}
+
+	// Handle players with no commanders at all (all dead)
+	for playerID := range gs.PlayerGold {
+		if _, ok := playerCmds[playerID]; !ok {
+			gs.Store.CreateStarterRoster(ctx, playerID)
+		}
+	}
+}
+
+// unitTypeName converts a CombatUnitType to its string name.
+func unitTypeName(ut component.CombatUnitType) string {
+	switch ut {
+	case component.UnitLightInfantry:
+		return "LightInfantry"
+	case component.UnitHeavyInfantry:
+		return "HeavyInfantry"
+	case component.UnitSniper:
+		return "Sniper"
+	case component.UnitAntiArmorInfantry:
+		return "AntiArmorInfantry"
+	case component.UnitMotorGun:
+		return "MotorGun"
+	case component.UnitMotorArtillery:
+		return "MotorArtillery"
+	case component.UnitMotorMissile:
+		return "MotorMissile"
+	default:
+		return "LightInfantry"
+	}
 }

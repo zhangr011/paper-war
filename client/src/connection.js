@@ -300,6 +300,12 @@ export class Connection {
         unit.squadID = view.getUint32(off, true); off += 4;
       }
 
+      // New unit (mask 0xFF): UnitType + Team appended after all masked fields
+      if (mask === 0xFF) {
+        unit.unitType = view.getUint8(off); off += 1;
+        unit.team = view.getUint8(off); off += 1;
+      }
+
       units.push(unit);
     }
 

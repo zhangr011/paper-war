@@ -24,9 +24,41 @@ const FIXED_ONE = 1 << FRAC_BITS;
 const GRASS_A = { r: 0.18, g: 0.38, b: 0.14 };
 const GRASS_B = { r: 0.20, g: 0.42, b: 0.16 };
 
-// Default unit sprite size in screen pixels (placeholder)
-const UNIT_SPRITE_W = 20;
-const UNIT_SPRITE_H = 24;
+// Default unit sprite sizes per CombatUnitType (0-6)
+// LI=small, HI=medium, Sniper=small, AAI=small, MG=medium, MA=large, MM=large
+const UNIT_SIZES = [
+  { w: 18, h: 22 }, // 0 Light Infantry
+  { w: 22, h: 26 }, // 1 Heavy Infantry
+  { w: 16, h: 24 }, // 2 Sniper
+  { w: 18, h: 22 }, // 3 Anti-Armor Infantry
+  { w: 26, h: 22 }, // 4 Motor Gun
+  { w: 30, h: 24 }, // 5 Motor Artillery
+  { w: 28, h: 24 }, // 6 Motor Missile
+];
+
+// Unit type colors (team-tinted): each type has a base hue
+const UNIT_TYPE_COLORS = [
+  { r: 0.3, g: 0.6, b: 0.9 }, // 0 LI  — blue
+  { r: 0.4, g: 0.5, b: 0.7 }, // 1 HI  — steel blue
+  { r: 0.5, g: 0.8, b: 0.5 }, // 2 Sniper — green
+  { r: 0.6, g: 0.6, b: 0.3 }, // 3 AAI — olive
+  { r: 0.8, g: 0.5, b: 0.3 }, // 4 MG  — orange
+  { r: 0.7, g: 0.3, b: 0.3 }, // 5 MA  — red
+  { r: 0.5, g: 0.3, b: 0.7 }, // 6 MM  — purple
+];
+
+// Team tint: player 1 is warm (shift red), player 2 is cool (shift blue)
+function teamTint(base, team) {
+  if (team === 2) {
+    // Cool team: shift toward cyan
+    return {
+      r: base.r * 0.7,
+      g: Math.min(1.0, base.g * 1.1),
+      b: Math.min(1.0, base.b * 1.3),
+    };
+  }
+  return base; // team 1 or 0: use base color
+}
 
 // Selection highlight color
 const SELECTION_COLOR = { r: 0.2, g: 0.8, b: 1.0, a: 0.25 };
@@ -164,6 +196,8 @@ export class Game {
         if (u.morale !== undefined) converted.morale = u.morale;
         if (u.state !== undefined) converted.state = u.state;
         if (u.squadID !== undefined) converted.squadID = u.squadID;
+        if (u.unitType !== undefined) converted.unitType = u.unitType;
+        if (u.team !== undefined) converted.team = u.team;
         return converted;
       });
 
@@ -566,15 +600,24 @@ export class Game {
       const sx = unit.renderX * TILE_WIDTH * zoom;
       const sy = unit.renderY * TILE_HEIGHT * zoom;
 
-      // Scale sprite size by zoom
-      const w = UNIT_SPRITE_W * zoom;
-      const h = UNIT_SPRITE_H * zoom;
+      // Size based on unit type
+      const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
+      const size = UNIT_SIZES[sizeIdx];
+      const w = size.w * zoom;
+      const h = size.h * zoom;
 
-      // Color based on state: idle=blue, moving=green, attacking=red
-      let r = 0.3, g = 0.5, b = 0.8;
-      if (unit.currState === 1) { r = 0.2; g = 0.7; b = 0.3; }      // moving
-      else if (unit.currState === 2) { r = 0.9; g = 0.2; b = 0.2; } // attacking
-      else if (unit.currState === 3) { r = 0.6; g = 0.6; b = 0.2; } // retreating
+      // Color: base type color, tinted by team
+      const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
+      let color = teamTint(baseColor, unit.team || 0);
+
+      let r = color.r;
+      let g = color.g;
+      let b = color.b;
+
+      // State overlay: darken idle, brighten moving, redden attacking
+      if (unit.currState === 1) { r *= 1.2; g *= 1.1; b *= 1.0; }      // moving: brighter
+      else if (unit.currState === 2) { r = Math.min(1.0, r + 0.3); g *= 0.7; b *= 0.5; } // attacking: redder
+      else if (unit.currState === 3) { r *= 0.8; g *= 0.8; b *= 0.8; } // retreating: darker
 
       // Check if this unit is selected -> brighten
       const isSelected = this.selectedEntityIDs.has(unit.entityID);
@@ -627,8 +670,10 @@ export class Game {
       // Raw world-pixel position (same formula as terrain tiles).
       const sx = unit.renderX * TILE_WIDTH * zoom;
       const sy = unit.renderY * TILE_HEIGHT * zoom;
-      const w = UNIT_SPRITE_W * zoom;
-      const h = UNIT_SPRITE_H * zoom;
+      const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
+      const size = UNIT_SIZES[sizeIdx];
+      const w = size.w * zoom;
+      const h = size.h * zoom;
 
       // Selection circle/highlight below the unit
       highlights.push({
@@ -705,10 +750,13 @@ export class Game {
 
       const [px, py] = projectToMinimap(unit.renderX, unit.renderY);
 
-      // Color based on state
-      let color = '#4488cc';
-      if (unit.currState === 2) color = '#cc4444';
-      else if (unit.currState === 1) color = '#44cc44';
+      // Color based on team and state
+      const sizeIdx = Math.min(unit.unitType || 0, UNIT_TYPE_COLORS.length - 1);
+      const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
+      const tc = teamTint(baseColor, unit.team || 0);
+      let color = `rgb(${Math.round(tc.r*255)},${Math.round(tc.g*255)},${Math.round(tc.b*255)})`;
+
+      if (unit.currState === 2) color = '#cc4444'; // attacking override
 
       // Highlight selected units
       if (this.selectedEntityIDs.has(unit.entityID)) {

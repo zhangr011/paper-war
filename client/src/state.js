@@ -131,6 +131,10 @@ class UnitState {
     // Non-interpolated fields (use curr directly)
     this.targetID = 0;
 
+    // Unit classification (sent once at creation, never changes)
+    this.unitType = 0; // CombatUnitType: 0=LI, 1=HI, 2=Sniper, 3=AAI, 4=MG, 5=MA, 6=MM
+    this.team = 0;     // player/faction ID
+
     // Lifecycle
     this.alive = true;
   }
@@ -267,6 +271,12 @@ export class StateManager {
         }
         if (u.changedMask & CHANGED_SQUAD_ID) {
           unit.squadID = u.squadID;
+        }
+        if (u.unitType !== undefined) {
+          unit.unitType = u.unitType;
+        }
+        if (u.team !== undefined) {
+          unit.team = u.team;
         }
 
         this.units.set(u.entityID, unit);

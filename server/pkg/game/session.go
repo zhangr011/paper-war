@@ -604,6 +604,8 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	ownCommanders := make(map[uint32]bool)
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
+	utPool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+
 	posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		id := uint32(e)
 
@@ -646,6 +648,12 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		}
 		if attack, ok := attackPool.Get(e); ok {
 			state.TargetID = attack.TargetID
+		}
+		if ut, ok := utPool.Get(e); ok {
+			state.UnitType = uint8(ut.Type)
+		}
+		if owner, hasOwner := ownerPool.Get(e); hasOwner {
+			state.Team = uint8(owner.PlayerID)
 		}
 		units = append(units, ui)
 		allStates = append(allStates, state)

@@ -15,6 +15,9 @@ const (
 	ChangedSquadID
 )
 
+// MaskFull is sent for brand-new units to indicate all fields are present.
+const MaskFull uint8 = 0xFF
+
 type UnitSnapshot struct {
 	EntityID    uint32
 	ChangedMask uint8
@@ -26,6 +29,8 @@ type UnitSnapshot struct {
 	Morale      int32
 	State       uint8
 	SquadID     uint32
+	UnitType    uint8 // 0-6: one of 7 CombatUnitType values (always sent for new units)
+	Team        uint8 // player/faction ID (always sent for new units)
 }
 
 type EventType uint8
@@ -59,6 +64,8 @@ type EntityState struct {
 	Morale   int32
 	State    uint8
 	SquadID  uint32
+	UnitType uint8
+	Team     uint8
 }
 
 type SnapshotGenerator struct {
@@ -106,7 +113,7 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 			// New unit — send all fields
 			snap.Units = append(snap.Units, UnitSnapshot{
 				EntityID:    id,
-				ChangedMask: 0xFF, // all bits set
+				ChangedMask: MaskFull,
 				X:           cur.X, Y: cur.Y,
 				Vx: cur.Vx, Vy: cur.Vy,
 				Angle:    cur.Angle,
@@ -115,6 +122,8 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 				Morale:   cur.Morale,
 				State:    cur.State,
 				SquadID:  cur.SquadID,
+				UnitType: cur.UnitType,
+				Team:     cur.Team,
 			})
 		} else {
 			mask := uint8(0)
@@ -214,6 +223,10 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 		if u.ChangedMask&ChangedSquadID != 0 {
 			size += 4
 		}
+		// UnitType+Team: only for new units (MaskFull = 0xFF)
+		if u.ChangedMask == MaskFull {
+			size += 2
+		}
 	}
 
 	buf := make([]byte, 0, size)
@@ -250,6 +263,10 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 		}
 		if u.ChangedMask&ChangedSquadID != 0 {
 			buf = appendUint32(buf, u.SquadID)
+		}
+		// UnitType+Team: only for new units
+		if u.ChangedMask == MaskFull {
+			buf = append(buf, u.UnitType, u.Team)
 		}
 	}
 	return buf

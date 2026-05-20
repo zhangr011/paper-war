@@ -233,8 +233,21 @@ export class Game {
     };
 
     this.connection.onRosterUpdate = (rosterData) => {
-      // TODO: parse roster data for lobby screen (issue 16)
-      console.log('Roster update received:', rosterData.length, 'bytes');
+      // Parse roster binary: commanderLevel(uint8) + unitCount(uint8) + [unitType(uint8)+count(uint8)]*N
+      try {
+        const view = new DataView(rosterData.buffer, rosterData.byteOffset, rosterData.byteLength);
+        let off = 0;
+        const cmdLevel = view.getUint8(off); off += 1;
+        const unitCount = view.getUint8(off); off += 1;
+        const units = [];
+        for (let i = 0; i < unitCount; i++) {
+          units.push({ type: view.getUint8(off), count: view.getUint8(off + 1) });
+          off += 2;
+        }
+        console.log(`Roster: cmd Lv${cmdLevel}, ${unitCount} unit types`);
+      } catch (e) {
+        console.warn('Failed to parse roster data:', e);
+      }
     };
 
     // --- Input: single-click selection ---

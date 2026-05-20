@@ -33,6 +33,9 @@ export class App {
     this.lobbyStatus = document.getElementById('lobby-status');
     this.lobbySpinner = document.getElementById('lobby-spinner');
 
+    // Roster data (from server roster_update messages)
+    this.roster = null;
+
     this.wireUI();
   }
 
@@ -51,12 +54,15 @@ export class App {
       this.handleLogin(name);
     });
 
-    // Solo game button
+    // Solo / Start Match button
     this.soloBtn.addEventListener('click', () => {
       this.lobbyStatus.textContent = 'Starting game...';
       this.soloBtn.disabled = true;
       this.findMatchBtn.disabled = true;
-      this.connection.sendJSON({ type: 'start_solo' });
+      this.connection.sendJSON({
+        type: 'start_solo',
+        commander_type: this.selectedCmdType,
+      });
     });
 
     // Find match button
@@ -75,6 +81,17 @@ export class App {
       this.cancelQueueBtn.style.display = 'none';
       this.lobbyStatus.textContent = 'Ready for battle';
       this.lobbySpinner.style.display = 'none';
+    });
+
+    // Commander type selection
+    this.selectedCmdType = 0; // default: LI (Gun)
+    document.querySelectorAll('.cmd-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.cmd-type-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        this.selectedCmdType = parseInt(btn.dataset.cmdType, 10);
+        this.updateRosterDisplay();
+      });
     });
   }
 
@@ -147,6 +164,51 @@ export class App {
       case 'match_found':
         this.startGame(msg);
         break;
+
+      case 'roster_update':
+        this.roster = msg.roster;
+        this.updateRosterDisplay();
+        break;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Roster display
+  // -----------------------------------------------------------------------
+
+  updateRosterDisplay() {
+    const cmdNames = ['Light Infantry (Gun)', 'Heavy Infantry (Cannon)', 'Sniper', 'AAI (Missile)'];
+    const cmdNameEl = document.getElementById('roster-cmd-name');
+    if (cmdNameEl) {
+      cmdNameEl.textContent = cmdNames[this.selectedCmdType] || cmdNames[0];
+    }
+
+    const cmdLevelEl = document.getElementById('roster-cmd-level');
+    if (cmdLevelEl && this.roster && this.roster.cmd_level) {
+      cmdLevelEl.textContent = 'Lv ' + this.roster.cmd_level;
+    } else if (cmdLevelEl) {
+      cmdLevelEl.textContent = 'Lv 1';
+    }
+
+    // Update unit list if roster data available
+    const unitsEl = document.getElementById('roster-units');
+    if (unitsEl && this.roster && this.roster.units) {
+      const unitNames = ['Light Infantry', 'Heavy Infantry', 'Sniper', 'AAI', 'MG Team', 'Mobile Artillery', 'Missile Launcher'];
+      const unitColors = ['#8BC34A', '#42A5F5', '#00BCD4', '#FF9800', '#AB47BC', '#EF5350', '#E040FB'];
+      unitsEl.innerHTML = '';
+      for (const entry of this.roster.units) {
+        const row = document.createElement('div');
+        row.className = 'roster-unit-row';
+        const icon = document.createElement('span');
+        icon.className = 'roster-unit-icon';
+        icon.style.color = unitColors[entry.type] || '#fff';
+        icon.textContent = '\u25A0'; // ■
+        const label = document.createElement('span');
+        label.textContent = `${unitNames[entry.type] || 'Unknown'} x${entry.count}`;
+        row.appendChild(icon);
+        row.appendChild(label);
+        unitsEl.appendChild(row);
+      }
     }
   }
 

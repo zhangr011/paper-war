@@ -28,9 +28,37 @@
         <span class="lobby-player-avatar">P</span>
         <span class="lobby-player-name" id="lobby-player-name">Player</span>
       </div>
+
+      <!-- Roster panel -->
+      <div class="lobby-roster" id="lobby-roster">
+        <h3 class="lobby-roster-title">Your Roster</h3>
+        <div class="roster-commander" id="roster-commander">
+          <span class="roster-label">Commander:</span>
+          <span class="roster-value" id="roster-cmd-name">Light Infantry (Gun)</span>
+          <span class="roster-cmd-level" id="roster-cmd-level">Lv 1</span>
+        </div>
+        <div class="roster-units" id="roster-units">
+          <div class="roster-unit-row">
+            <span class="roster-unit-icon" style="color:#8BC34A">&#9632;</span>
+            <span>Light Infantry x5</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commander selection -->
+      <div class="lobby-cmd-select" id="lobby-cmd-select">
+        <h3 class="lobby-roster-title">Select Commander Type</h3>
+        <div class="cmd-type-buttons">
+          <button class="cmd-type-btn selected" data-cmd-type="0">LI (Gun)</button>
+          <button class="cmd-type-btn" data-cmd-type="1">HI (Cannon)</button>
+          <button class="cmd-type-btn" data-cmd-type="2">Sniper</button>
+          <button class="cmd-type-btn" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
       <div class="lobby-queue" id="lobby-queue">
         <p class="lobby-status" id="lobby-status">Ready for battle</p>
-        <button class="lobby-btn lobby-btn-solo" id="solo-btn">Solo Game</button>
+        <button class="lobby-btn lobby-btn-solo" id="solo-btn">Start Match</button>
         <button class="lobby-btn" id="find-match-btn">Find Match</button>
         <button class="lobby-btn lobby-btn-cancel" id="cancel-queue-btn" style="display:none">Cancel</button>
       </div>

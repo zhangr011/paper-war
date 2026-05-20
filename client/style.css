@@ -774,3 +774,83 @@ body {
   font-size: 9px;
   color: var(--text-muted);
 }
+
+/* Lobby roster */
+.lobby-roster {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.lobby-roster-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 0 0 8px 0;
+}
+.roster-commander {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.roster-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.roster-value {
+  color: #FFD700;
+  font-weight: 600;
+}
+.roster-cmd-level {
+  color: #8BC34A;
+  font-size: 12px;
+}
+.roster-units {
+  font-size: 13px;
+}
+.roster-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+.roster-unit-icon {
+  font-size: 14px;
+}
+
+/* Commander type selection */
+.lobby-cmd-select {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.cmd-type-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cmd-type-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.cmd-type-btn:hover {
+  border-color: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.1);
+}
+.cmd-type-btn.selected {
+  border-color: #FFD700;
+  background: rgba(255,215,0,0.15);
+  color: #FFD700;
+}

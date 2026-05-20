@@ -234,6 +234,15 @@ export class Connection {
    *   [EventCount x events]
    */
   handleMessage(data) {
+    const view = new DataView(data);
+
+    // Server messages start with type byte >= 0x80; snapshots start with tick uint32 (small values)
+    if (view.byteLength >= 1 && view.getUint8(0) >= 0x80) {
+      this.handleServerMessage(data);
+      return;
+    }
+
+    // --- Snapshot handling (existing code) ---
     // Check for appended fog data (marker 0xFF 0xFD)
     let fogData = null;
     let snapshotEnd = data.byteLength;
@@ -362,6 +371,40 @@ export class Connection {
 
     if (this.onSnapshot) {
       this.onSnapshot({ tick, prevTick, units, events, fog: fogData });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Server messages (Gold, MatchResult, Roster)
+  // -----------------------------------------------------------------------
+
+  handleServerMessage(data) {
+    const view = new DataView(data);
+    const type = view.getUint8(0);
+    let off = 1;
+
+    switch (type) {
+      case 0x80: { // MsgGoldUpdate
+        const gold = view.getInt32(off, true);
+        if (this.onGoldUpdate) this.onGoldUpdate(gold);
+        break;
+      }
+      case 0x81: { // MsgMatchResult
+        const winner = view.getUint8(off); off += 1;
+        const reasonLen = view.getUint16(off, true); off += 2;
+        const reasonBytes = new Uint8Array(data, off, reasonLen);
+        const reason = new TextDecoder().decode(reasonBytes);
+        if (this.onMatchResult) this.onMatchResult({ winner, reason });
+        break;
+      }
+      case 0x82: { // MsgRosterUpdate
+        const dataLen = view.getUint16(off, true); off += 2;
+        const rosterData = new Uint8Array(data, off, dataLen);
+        if (this.onRosterUpdate) this.onRosterUpdate(rosterData);
+        break;
+      }
+      default:
+        console.warn(`Unknown server message type 0x${type.toString(16)}`);
     }
   }
 

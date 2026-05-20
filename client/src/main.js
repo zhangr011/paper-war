@@ -135,8 +135,14 @@ export class Game {
     this.gameTimeSeconds = 0;
 
     // Player resources (updated from server or placeholder)
-    this.gold = 0;
+    this.gold = 50; // v1 starting gold
     this.score = 0;
+
+    // AttackGround mode
+    this.attackGroundMode = false;
+
+    // Unit costs (must match server CombatUnitTypeTable)
+    this.unitCosts = [15, 25, 50, 30, 25, 50, 60];
 
     // Currently selected units for the selection panel
     this.selectedUnits = [];
@@ -216,6 +222,21 @@ export class Game {
       this.updateConnectionStatus(false);
     };
 
+    // --- Server messages ---
+    this.connection.onGoldUpdate = (gold) => {
+      this.gold = gold;
+    };
+
+    this.connection.onMatchResult = ({ winner, reason }) => {
+      console.log(`Match ended: winner=${winner}, reason=${reason}`);
+      this.showMatchResult(winner, reason);
+    };
+
+    this.connection.onRosterUpdate = (rosterData) => {
+      // TODO: parse roster data for lobby screen (issue 16)
+      console.log('Roster update received:', rosterData.length, 'bytes');
+    };
+
     // --- Input: single-click selection ---
     this.input.onSelect = (worldX, worldY) => {
       this.handleSelect(worldX, worldY);
@@ -241,6 +262,42 @@ export class Game {
     if (testMoveBtn) {
       testMoveBtn.addEventListener('click', () => this.handleTestMove());
     }
+
+    // --- Recruit buttons ---
+    document.querySelectorAll('.recruit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const unitType = parseInt(btn.dataset.unitType, 10);
+        this.handleRecruit(unitType);
+      });
+    });
+
+    // --- Attack Ground toggle ---
+    const agBtn = document.getElementById('attack-ground-btn');
+    if (agBtn) {
+      agBtn.addEventListener('click', () => this.toggleAttackGround());
+    }
+
+    // --- Keyboard shortcut: A for Attack Ground ---
+    this.input.onKeyDown = (key) => {
+      if (key === 'a' || key === 'A') {
+        this.toggleAttackGround();
+      } else if (key === 'q') {
+        this.handleTactic('charge');
+      } else if (key === 'w') {
+        this.handleTactic('retreat');
+      } else if (key === 'e') {
+        this.handleTactic('defend');
+      } else if (key === 'r') {
+        this.handleTactic('rally');
+      }
+    };
+
+    // --- Tactic buttons ---
+    document.querySelectorAll('[data-tactic]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.handleTactic(btn.dataset.tactic);
+      });
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -375,6 +432,136 @@ export class Game {
     const fixedY = Math.round(worldY * FIXED_ONE);
     for (const squadID of this.input.selectedSquads) {
       this.connection.sendMoveSquad(squadID, fixedX, fixedY, 0);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Tactic handling
+  // -----------------------------------------------------------------------
+
+  handleTactic(tactic) {
+    if (this.input.selectedSquads.size === 0) return;
+
+    const units = this.state.getRenderUnits();
+    const myUnits = units.filter(u => u.team === 1); // player team
+
+    switch (tactic) {
+      case 'charge': {
+        // Move selected squads toward center of mass of visible enemies, attack-ground style
+        const enemies = units.filter(u => u.team !== 1);
+        if (enemies.length === 0) return;
+        let cx = 0, cy = 0;
+        for (const e of enemies) { cx += e.renderX; cy += e.renderY; }
+        cx /= enemies.length; cy /= enemies.length;
+        const fixedX = Math.round(cx * FIXED_ONE);
+        const fixedY = Math.round(cy * FIXED_ONE);
+        for (const squadID of this.input.selectedSquads) {
+          this.connection.sendAttackGround(squadID, fixedX, fixedY, 0);
+        }
+        break;
+      }
+      case 'retreat': {
+        // Move selected squads away from center of enemies (opposite direction)
+        const enemies = units.filter(u => u.team !== 1);
+        let centerX = 0, centerY = 0;
+        for (const u of myUnits) { centerX += u.renderX; centerY += u.renderY; }
+        centerX /= myUnits.length; centerY /= myUnits.length;
+
+        if (enemies.length > 0) {
+          let ecx = 0, ecy = 0;
+          for (const e of enemies) { ecx += e.renderX; ecy += e.renderY; }
+          ecx /= enemies.length; ecy /= enemies.length;
+          // Move 10 world units in opposite direction
+          const dx = centerX - ecx;
+          const dy = centerY - ecy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const targetX = Math.round((centerX + (dx / dist) * 10) * FIXED_ONE);
+          const targetY = Math.round((centerY + (dy / dist) * 10) * FIXED_ONE);
+          for (const squadID of this.input.selectedSquads) {
+            this.connection.sendMoveSquad(squadID, targetX, targetY, 0);
+          }
+        }
+        break;
+      }
+      case 'defend': {
+        // Hold position: send move to current positions (effectively stops them)
+        for (const squadID of this.input.selectedSquads) {
+          const squadUnits = myUnits.filter(u => u.squadID === squadID);
+          if (squadUnits.length > 0) {
+            const fx = Math.round(squadUnits[0].renderX * FIXED_ONE);
+            const fy = Math.round(squadUnits[0].renderY * FIXED_ONE);
+            this.connection.sendMoveSquad(squadID, fx, fy, 0);
+          }
+        }
+        break;
+      }
+      case 'rally': {
+        // Move selected squads to the commander's position
+        const commander = myUnits.find(u => u.unitType === 0 && u.hp > u.maxHP * 2);
+        if (!commander) return;
+        const fx = Math.round(commander.renderX * FIXED_ONE);
+        const fy = Math.round(commander.renderY * FIXED_ONE);
+        for (const squadID of this.input.selectedSquads) {
+          if (squadID !== commander.squadID) {
+            this.connection.sendMoveSquad(squadID, fx, fy, 0);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Resize handling
+  // -----------------------------------------------------------------------
+
+  handleRecruit(unitType) {
+    const cost = this.unitCosts[unitType] || 0;
+    if (this.gold < cost) return; // not enough gold
+
+    // Send recruit command: use first selected squad as the commander's squad
+    let squadID = 0;
+    if (this.input.selectedSquads.size > 0) {
+      squadID = this.input.selectedSquads.values().next().value;
+    }
+
+    // Build binary command: Type(0x06) + Seq(uint32) + PredictedTick(uint32) + SquadID(uint32) + RecruitType(uint8) = 14
+    const CMD_RECRUIT = 0x06;
+    const buf = new ArrayBuffer(13 + 1);
+    const view = new DataView(buf);
+    let off = 0;
+    view.setUint8(off, CMD_RECRUIT); off += 1;
+    view.setUint32(off, this.connection.seq++, true); off += 4;
+    view.setUint32(off, 0, true); off += 4; // predictedTick
+    view.setUint32(off, squadID, true); off += 4;
+    view.setUint8(off, unitType); off += 1;
+    this.connection.send(buf);
+  }
+
+  // -----------------------------------------------------------------------
+  // Attack Ground mode
+  // -----------------------------------------------------------------------
+
+  toggleAttackGround() {
+    this.attackGroundMode = !this.attackGroundMode;
+    const btn = document.getElementById('attack-ground-btn');
+    if (btn) {
+      btn.classList.toggle('active', this.attackGroundMode);
+    }
+    // Override right-click behavior: next right-click sends AttackGround
+    if (this.attackGroundMode) {
+      this.input.onRightClick = (worldX, worldY) => {
+        const fixedX = Math.round(worldX * FIXED_ONE);
+        const fixedY = Math.round(worldY * FIXED_ONE);
+        for (const squadID of this.input.selectedSquads) {
+          this.connection.sendAttackGround(squadID, fixedX, fixedY, 0);
+        }
+        this.attackGroundMode = false;
+        const btn = document.getElementById('attack-ground-btn');
+        if (btn) btn.classList.remove('active');
+      };
+    } else {
+      this.input.onRightClick = () => {};
     }
   }
 
@@ -809,6 +996,13 @@ export class Game {
 
     const scoreEl = document.querySelector('#score .resource-value');
     if (scoreEl) scoreEl.textContent = this.score;
+
+    // Update recruit button disabled state based on gold
+    document.querySelectorAll('.recruit-btn').forEach(btn => {
+      const unitType = parseInt(btn.dataset.unitType, 10);
+      const cost = this.unitCosts[unitType] || 0;
+      btn.classList.toggle('disabled', this.gold < cost);
+    });
   }
 
   updateTimer() {
@@ -859,6 +1053,27 @@ export class Game {
       selStatusEl.textContent =
         stateNames[first.currState] || 'Unknown';
     }
+  }
+
+  showMatchResult(winner, reason) {
+    // Show a simple overlay with the result
+    let overlay = document.getElementById('match-result-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'match-result-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+        'background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;' +
+        'z-index:9999;color:#fff;font-family:sans-serif;';
+      document.body.appendChild(overlay);
+    }
+    const isWin = winner === 1; // player is always faction 1 in PvAI
+    overlay.innerHTML =
+      '<div style="text-align:center">' +
+      '<h1 style="font-size:48px;margin:0">' + (isWin ? 'Victory!' : 'Defeat') + '</h1>' +
+      '<p style="font-size:20px;margin:16px 0">' + reason + '</p>' +
+      '<button onclick="this.parentElement.parentElement.remove()" ' +
+      'style="padding:12px 32px;font-size:18px;cursor:pointer">OK</button>' +
+      '</div>';
   }
 
   updateConnectionStatus(connected) {

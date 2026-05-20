@@ -32,6 +32,13 @@ type RecruitmentSystem struct {
 
 	// Pending recruit requests for this tick
 	pending []RecruitRequest
+
+	// PlayerGold is set by Session before each tick. Maps playerID → current gold.
+	PlayerGold map[uint32]int32
+
+	// GoldDeductions collects {playerID: amount} for each successful recruit.
+	// Cleared at start of each Tick. Session reads this after Tick().
+	GoldDeductions map[uint32]int32
 }
 
 func (s *RecruitmentSystem) Name() string  { return "RecruitmentSystem" }
@@ -64,6 +71,7 @@ func (s *RecruitmentSystem) Recruit(req RecruitRequest) error {
 }
 
 func (s *RecruitmentSystem) Tick(w *ecs.World, tick uint32) {
+	s.GoldDeductions = make(map[uint32]int32)
 	for _, req := range s.pending {
 		s.processRecruit(req)
 	}
@@ -88,42 +96,45 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 		return
 	}
 
-	// Validate weapon slot (Formation Template)
-	if s.unitTypePool != nil {
-		if cmdUT, ok := s.unitTypePool.Get(req.CommanderEntity); ok {
-			// Check that the requested unit's weapon category matches the formation slot
-			unitWeapon := typeStats.Weapon
-			cmdWeaponSlot := cmdUT.Weapon
-
-			// Light weapons: Gun, Sniper
-			// Heavy weapons: Cannon, Missile
-			unitCategory := weaponCategory(unitWeapon)
-			slotCategory := weaponCategory(cmdWeaponSlot)
-			if unitCategory != slotCategory {
-				return // weapon doesn't match formation slot
-			}
+	// Get player ID and check Gold
+	var playerID uint32
+	if s.ownerPool != nil {
+		if owner, ok := s.ownerPool.Get(req.CommanderEntity); ok {
+			playerID = owner.PlayerID
+		}
+	}
+	recruitCost := typeStats.RecruitCost
+	if s.PlayerGold != nil {
+		gold, hasGold := s.PlayerGold[playerID]
+		// Account for already-deducted gold this tick
+		alreadyDeducted := s.GoldDeductions[playerID]
+		if !hasGold || gold-alreadyDeducted < recruitCost {
+			return // not enough gold
 		}
 	}
 
-	// Count current squad size
+	// Get commander's squad and Leading Skill budget
 	squadID := uint32(0)
+	leadingSkill := int32(10) // default budget
+	if s.unitTypePool != nil {
+		if cmdUT, ok := s.unitTypePool.Get(req.CommanderEntity); ok {
+			leadingSkill = 5 + int32(cmdUT.Level)*2 // v1 formula: 5 + (level * 2)
+		}
+	}
 	if bc, ok := s.boidPool.Get(req.CommanderEntity); ok {
 		squadID = bc.SquadID
 	}
-	squadSize := 0
-	s.currentSquadCost(squadID, &squadSize)
 
-	// Check Leading Skill budget (total squad cost <= Leading Skill)
-	// For v1: Leading Skill = commander cost budget from Formation Template
-	// Simplified: max squad size based on commander level
-	maxSquadSize := 10 // base
-	if s.unitTypePool != nil {
-		if ut, ok := s.unitTypePool.Get(req.CommanderEntity); ok {
-			maxSquadSize = int(10 + ut.Level*2)
-		}
+	// Count current squad cost (sum of CombatUnitTypeTable[].Cost for each unit)
+	currentCost := s.currentSquadCost(squadID)
+	newUnitCost := typeStats.Cost
+	if currentCost+newUnitCost > leadingSkill {
+		return // over budget
 	}
-	if squadSize >= maxSquadSize {
-		return // squad is full
+
+	// Deduct gold
+	if s.PlayerGold != nil && recruitCost > 0 {
+		s.GoldDeductions[playerID] += recruitCost
 	}
 
 	// Spawn the unit at commander position with small offset
@@ -162,15 +173,21 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 	}
 }
 
-func (s *RecruitmentSystem) currentSquadCost(squadID uint32, count *int) {
-	if s.boidPool == nil {
-		return
+func (s *RecruitmentSystem) currentSquadCost(squadID uint32) int32 {
+	total := int32(0)
+	if s.boidPool == nil || s.unitTypePool == nil {
+		return total
 	}
 	s.boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
 		if bc.SquadID == squadID && bc.Role != component.RoleCommander {
-			*count++
+			if ut, ok := s.unitTypePool.Get(e); ok {
+				total += component.CombatUnitTypeTable[ut.Type].Cost
+			} else {
+				total++ // default cost 1
+			}
 		}
 	})
+	return total
 }
 
 // weaponCategory returns "Light" or "Heavy" for a weapon type.

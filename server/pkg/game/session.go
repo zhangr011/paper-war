@@ -207,7 +207,22 @@ func (gs *GameSession) Tick() {
 	}
 
 	gs.tickCount++
+
+	// Set gold on recruit system before tick
+	if gs.recruitSys != nil {
+		gs.recruitSys.PlayerGold = gs.PlayerGold
+	}
+
 	gs.World.Tick(gs.tickCount)
+
+	// Deduct Gold from successful recruits
+	if gs.recruitSys != nil {
+		for playerID, deducted := range gs.recruitSys.GoldDeductions {
+			if deducted > 0 {
+				gs.PlayerGold[playerID] -= deducted
+			}
+		}
+	}
 
 	// Award Gold bounties from DeathSystem
 	if gs.deathSys != nil {

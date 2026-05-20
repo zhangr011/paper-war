@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/game"
 	"github.com/user/paper-war/server/pkg/network"
@@ -92,14 +93,19 @@ func main() {
 				mm.Leave(clientID)
 				hub.SendJSON(clientID, map[string]string{"type": "queue_left"})
 				log.Printf("client %d left queue", clientID)
-			case "start_solo":
-				name := hub.GetClientName(clientID)
-				log.Printf("client %d (%s) starting solo game", clientID, name)
-				gs.Reset()
-				hub.SetClientPlayerID(clientID, 1)
-				spawnSquadsForPlayer(gs, 1, 0, 2)
-				spawnSquadsForPlayer(gs, 2, 1, 2)
-				mw, mh := gs.MapSize()
+		case "start_solo":
+			name := hub.GetClientName(clientID)
+			// Read commander type selection (0=LI, 1=HI, 2=Sniper, 3=AAI)
+			cmdType := uint8(0) // default LightInfantry
+			if ct, ok := msg["commander_type"].(float64); ok && ct >= 0 && ct <= 3 {
+				cmdType = uint8(ct)
+			}
+			log.Printf("client %d (%s) starting solo game (cmdType=%d)", clientID, name, cmdType)
+			gs.Reset()
+			hub.SetClientPlayerID(clientID, 1)
+			spawnSquadsForPlayerWithCmdType(gs, 1, 0, 2, cmdType)
+			spawnSquadsForPlayer(gs, 2, 1, 2) // AI uses default
+			mw, mh := gs.MapSize()
 				hub.SendJSON(clientID, map[string]interface{}{
 					"type":      "match_found",
 					"player_id": uint32(1),
@@ -131,16 +137,28 @@ func main() {
 				H: fixed.FromFloat(float64(mh)),
 			}
 
+		for _, cid := range hub.ClientIDs() {
+			pid := hub.GetClientPlayerID(cid)
+			if pid == 0 {
+				continue
+			}
+			data := gs.GenerateSnapshot(pid, fullView)
+			if data != nil {
+				hub.SendToClient(cid, data)
+			}
+		}
+
+		// Send GoldUpdate messages for any changed gold values
+		for pid, gold := range gs.GetGoldUpdates() {
 			for _, cid := range hub.ClientIDs() {
-				pid := hub.GetClientPlayerID(cid)
-				if pid == 0 {
-					continue
-				}
-				data := gs.GenerateSnapshot(pid, fullView)
-				if data != nil {
-					hub.SendToClient(cid, data)
+				if hub.GetClientPlayerID(cid) == pid {
+					hub.SendToClient(cid, network.EncodeServerMessage(&network.ServerMessage{
+						Type:  network.MsgGoldUpdate,
+						Gold:  gold,
+					}))
 				}
 			}
+		}
 		}
 	}()
 
@@ -166,6 +184,10 @@ func main() {
 }
 
 func spawnSquadsForPlayer(gs *game.GameSession, playerID uint32, playerIndex, playerCount int) {
+	spawnSquadsForPlayerWithCmdType(gs, playerID, playerIndex, playerCount, 0)
+}
+
+func spawnSquadsForPlayerWithCmdType(gs *game.GameSession, playerID uint32, playerIndex, playerCount int, cmdType uint8) {
 	mw, mh := gs.MapSize()
 	x1 := float64(mw) * 0.42
 	x2 := float64(mw) * 0.58
@@ -175,6 +197,7 @@ func spawnSquadsForPlayer(gs *game.GameSession, playerID uint32, playerIndex, pl
 	}
 
 	baseSquadID := uint32(playerIndex*2 + 1)
-	gs.SpawnTeam(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 1)
-	gs.SpawnTeam(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 1)
+	ct := component.CombatUnitType(cmdType)
+	gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 1, ct)
+	gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 1, ct)
 }

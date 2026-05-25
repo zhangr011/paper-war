@@ -465,7 +465,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 	}
 
 	// --- Combat units ---
-	gs.spawnCombatUnits(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction)
+	gs.spawnCombatUnitsWithType(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction, cmdType)
 }
 
 // UpgradeTeam grows a team to the combat unit count for the requested level.
@@ -503,9 +503,16 @@ func (gs *GameSession) UpgradeTeam(squadID uint32, level uint8) int {
 }
 
 func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8) {
+	gs.spawnCombatUnitsWithType(squadID, cx, cy, startIndex, count, formationCount, playerID, faction, component.UnitLightInfantry)
+}
+
+func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
 	spacing := fixed.FromFloat(0.3)
+
+	stats := component.CombatUnitTypeTable[unitType]
+
 	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
@@ -549,17 +556,24 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 		})
 
 		gs.addComponent(unitEntity, component.HealthComponent{
-			HP:     80,
-			MaxHP:  80,
+			HP:     stats.HP,
+			MaxHP:  stats.HP,
 			Armor:  2,
 			Morale: 100,
 		})
 
 		gs.addComponent(unitEntity, component.AttackComponent{
-			Range:      fixed.FromFloat(3.0),
-			Damage:     15,
-			Cooldown:   3,
+			Range:      stats.Range,
+			Damage:     stats.Damage,
+			Cooldown:   stats.Cooldown,
 			AttackType: attackType,
+		})
+
+		gs.addComponent(unitEntity, component.UnitTypeComponent{
+			Type:   unitType,
+			Weapon: stats.Weapon,
+			Armor:  stats.Armor,
+			Level:  1,
 		})
 
 		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: 0})
@@ -942,6 +956,10 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 		p.Add(e, comp.(component.OwnerComponent))
 	case *ecs.ComponentPool[component.ProjectileComponent]:
 		p.Add(e, comp.(component.ProjectileComponent))
+	case *ecs.ComponentPool[component.UnitTypeComponent]:
+		p.Add(e, comp.(component.UnitTypeComponent))
+	case *ecs.ComponentPool[component.KillPointsComponent]:
+		p.Add(e, comp.(component.KillPointsComponent))
 	}
 }
 

@@ -2,12 +2,12 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=drag-pan-1';
-import { Camera } from './camera.js?v=drag-pan-1';
-import { StateManager } from './state.js?v=drag-pan-1';
-import { Connection } from './connection.js?v=drag-pan-1';
-import { InputHandler } from './input.js?v=drag-pan-1';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=drag-pan-1';
+import { Renderer } from './gl.js?v=fix-view-2';
+import { Camera } from './camera.js?v=fix-view-2';
+import { StateManager } from './state.js?v=fix-view-2';
+import { Connection } from './connection.js?v=fix-view-2';
+import { InputHandler } from './input.js?v=fix-view-2';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=fix-view-2';
 
 // ---------------------------------------------------------------------------
 // Constants

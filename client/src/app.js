@@ -2,8 +2,8 @@
 // Manages UI screens, server communication for login/matchmaking,
 // and delegates to Game when a match is found.
 
-import { Connection } from './connection.js?v=drag-pan-1';
-import { Game } from './main.js?v=drag-pan-1';
+import { Connection } from './connection.js?v=fix-view-2';
+import { Game } from './main.js?v=fix-view-2';
 
 const LAST_USERNAME_KEY = 'paper-war:last-username';
 

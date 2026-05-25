@@ -234,10 +234,10 @@ export class Connection {
    *   [EventCount x events]
    */
   handleMessage(data) {
-    const view = new DataView(data);
+    const checkView = new DataView(data);
 
     // Server messages start with type byte >= 0x80; snapshots start with tick uint32 (small values)
-    if (view.byteLength >= 1 && view.getUint8(0) >= 0x80) {
+    if (checkView.byteLength >= 1 && checkView.getUint8(0) >= 0x80) {
       this.handleServerMessage(data);
       return;
     }

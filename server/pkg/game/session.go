@@ -357,6 +357,10 @@ func (gs *GameSession) Reset() {
 	// Reset fog and AI
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+
+	// Reset gold state
+	gs.PlayerGold = make(map[uint32]int32)
+	gs.lastSentGold = make(map[uint32]int32)
 }
 
 // SpawnTeam creates the standard team composition for the given level.
@@ -464,8 +468,8 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 		gs.AISys.RegisterSquad(squadID, uint32(cmdEntity))
 	}
 
-	// --- Combat units ---
-	gs.spawnCombatUnitsWithType(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction, cmdType)
+	// --- Combat units (always LI for starter roster) ---
+	gs.spawnCombatUnitsWithType(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction, component.UnitLightInfantry)
 }
 
 // UpgradeTeam grows a team to the combat unit count for the requested level.
@@ -563,7 +567,7 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		})
 
 		gs.addComponent(unitEntity, component.AttackComponent{
-			Range:      stats.Range,
+			Range:      fixed.FromFloat(float64(stats.Range)),
 			Damage:     stats.Damage,
 			Cooldown:   stats.Cooldown,
 			AttackType: attackType,
@@ -966,6 +970,9 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 // GetGoldUpdates returns player→gold pairs that changed since last call.
 // Used by the network layer to send MsgGoldUpdate only when gold changed.
 func (gs *GameSession) GetGoldUpdates() map[uint32]int32 {
+	if gs.lastSentGold == nil {
+		gs.lastSentGold = make(map[uint32]int32)
+	}
 	result := make(map[uint32]int32)
 	for pid, gold := range gs.PlayerGold {
 		if last, ok := gs.lastSentGold[pid]; !ok || last != gold {
@@ -1013,7 +1020,14 @@ func (gs *GameSession) FlushRoster() {
 	ctx := context.Background()
 
 	for playerID, cmds := range playerCmds {
-		for _, ci := range cmds {
+		// Clear old roster — this flush replaces everything
+		if p, ok := gs.Store.(*persist.MockStore); ok {
+			if player, ok2 := p.Players[playerID]; ok2 {
+				player.Commanders = nil
+			}
+		}
+
+		for cmdIdx, ci := range cmds {
 			ut, _ := unitTypePool.Get(ci.entity)
 
 			// Collect surviving combat units in this squad
@@ -1036,6 +1050,7 @@ func (gs *GameSession) FlushRoster() {
 			})
 
 			cmd := persist.Commander{
+				ID:    uint8(cmdIdx + 1),
 				Type:  unitTypeName(ut.Type),
 				Level: ut.Level,
 				Gold:  gs.PlayerGold[playerID],

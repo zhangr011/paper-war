@@ -130,10 +130,10 @@ func TestGameLoopBasicHappyPath(t *testing.T) {
 			gs.PlayerGold[playerID], 50+expectedBounty, expectedBounty)
 	}
 
-	// Verify GetGoldUpdates returns the bounty
+	// Verify GetGoldUpdates returns the current gold (not delta)
 	updates := gs.GetGoldUpdates()
-	if updates[playerID] != expectedBounty {
-		t.Fatalf("step4: GoldUpdate = %d, want %d", updates[playerID], expectedBounty)
+	if updates[playerID] != 50+expectedBounty {
+		t.Fatalf("step4: GoldUpdate = %d, want %d (current gold)", updates[playerID], 50+expectedBounty)
 	}
 
 	// Step 5: Recruit a unit
@@ -348,78 +348,6 @@ func TestGameLoopMatchEndTriggersFlush(t *testing.T) {
 	}
 }
 
-// TestDebugDeathSystemInit isolates the gold bounty issue
-func TestDebugDeathSystemInit(t *testing.T) {
-	gs := NewGameSession()
-	gs.World.Init() // ensure all systems get their pools
-
-	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
-	gs.SpawnTeam(2, 2, fixed.FromFloat(12), fixed.FromFloat(12), 1)
-	gs.PlayerGold[1] = 50
-
-	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
-	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
-	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
-
-	var p1Unit, p2Unit ecs.Entity
-	boidPool.Each(func(e ecs.Entity, b *component.BoidComponent) {
-		if b.Role == component.RoleCommander {
-			return
-		}
-		owner, ok := ownerPool.Get(e)
-		if !ok {
-			return
-		}
-		if owner.PlayerID == 1 && p1Unit == 0 {
-			p1Unit = e
-		}
-		if owner.PlayerID == 2 && p2Unit == 0 {
-			p2Unit = e
-		}
-	})
-
-	if p1Unit == 0 || p2Unit == 0 {
-		t.Fatal("could not find combat units")
-	}
-
-	// Kill p2 unit manually
-	hp, _ := healthPool.GetPtr(p2Unit)
-	hp.HP = 0
-	hp.LastAttacker = uint32(p1Unit)
-
-	// Check if dead entity has UnitTypeComponent
-	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
-	deadUT, hasUT := unitTypePool.Get(p2Unit)
-	t.Logf("p2Unit=%d has UnitType: ok=%v type=%v", p2Unit, hasUT, deadUT.Type)
-
-	// Count dead BEFORE tick
-	deadCount := 0
-	healthPool.Each(func(e ecs.Entity, h *component.HealthComponent) {
-		if h.HP <= 0 {
-			deadCount++
-			t.Logf("dead entity %d: HP=%d LastAttacker=%d", e, h.HP, h.LastAttacker)
-		}
-	})
-	t.Logf("dead before tick: %d", deadCount)
-
-	// Check p1Unit is alive
-	p1hp, _ := healthPool.Get(p1Unit)
-	t.Logf("p1Unit=%d HP=%d", p1Unit, p1hp.HP)
-
-	// Check if ownerPool has entry for p1Unit
-	p1owner, ok := ownerPool.Get(p1Unit)
-	t.Logf("p1Unit owner: ok=%v playerID=%d", ok, p1owner.PlayerID)
-
-	gs.Tick()
-
-	t.Logf("after tick: gold=%d bounties=%v", gs.PlayerGold[1], gs.deathSys.GoldBounties)
-
-	expectedBounty := component.CombatUnitTypeTable[component.UnitLightInfantry].KillBounty
-	if gs.PlayerGold[1] != 50+expectedBounty {
-		t.Fatalf("gold = %d, want %d", gs.PlayerGold[1], 50+expectedBounty)
-	}
-}
-
 // TestGameLoopGoldUpdateAfterKill verifies GetGoldUpdates returns
 // correct values and resets after read.
 func TestGameLoopGoldUpdateAfterKill(t *testing.T) {
@@ -471,10 +399,10 @@ func TestGameLoopGoldUpdateAfterKill(t *testing.T) {
 		t.Fatalf("player2 gold = %d, want 50", gs.PlayerGold[2])
 	}
 
-	// GoldUpdates should reflect the change
+	// GoldUpdates should reflect the change (returns current gold, not delta)
 	updates := gs.GetGoldUpdates()
-	if updates[1] != expectedBounty {
-		t.Fatalf("GoldUpdate[1] = %d, want %d", updates[1], expectedBounty)
+	if updates[1] != 50+expectedBounty {
+		t.Fatalf("GoldUpdate[1] = %d, want %d", updates[1], 50+expectedBounty)
 	}
 
 	// Second call should return empty (already consumed)

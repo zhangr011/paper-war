@@ -174,7 +174,7 @@ func main() {
 	}
 
 	// 7. Start server — Serve() registers /ws and calls http.ListenAndServe
-	addr := ":8090"
+	addr := ":9091"
 	log.Printf("Paper War server starting on %s", addr)
 	log.Printf("WebSocket endpoint: ws://localhost%s/ws", addr)
 	log.Printf("Client files served from: %s", clientDir)

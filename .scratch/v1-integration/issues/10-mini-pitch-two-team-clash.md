@@ -1,5 +1,5 @@
 Title: Mini pitch: automated 2-team clash test
-Status: ready-for-agent
+Status: done
 Labels: feature, test
 Priority: P2
 Area: server/game

@@ -9,6 +9,7 @@ import (
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/movement"
 	"github.com/user/paper-war/server/pkg/network"
+	"github.com/user/paper-war/server/pkg/persist"
 )
 
 func TestDefaultCombatUnitSpeedUsesFiveTimesMovement(t *testing.T) {
@@ -320,4 +321,75 @@ func snapshotHasMovingUnit(t *testing.T, data []byte) bool {
 	}
 
 	return false
+}
+
+func TestSpawnTeamFromRoster(t *testing.T) {
+	gs := NewGameSession()
+
+	cmd := persist.Commander{
+		ID:    1,
+		Name:  "Test Sniper Commander",
+		Type:  "Sniper",
+		Level: 3,
+		Gold:  75,
+		Formation: persist.FormationTemplate{
+			WeaponSlot:   "Light",
+			ArmorSlot:    "Light",
+			LeadingSkill: 100,
+		},
+		Units: []persist.CombatUnit{
+			{ID: 1, Type: "HeavyInfantry", Level: 2},
+			{ID: 2, Type: "HeavyInfantry", Level: 1},
+		},
+	}
+
+	gs.SpawnTeamFromRoster(1, 1, fixed.FromFloat(20), fixed.FromFloat(30), cmd)
+
+	// Count commanders and combat units
+	commanders, combatUnits := countSquadRoles(t, gs, 1)
+	if commanders != 1 {
+		t.Fatalf("commander count = %d, want 1", commanders)
+	}
+	if combatUnits != 2 {
+		t.Fatalf("combat unit count = %d, want 2", combatUnits)
+	}
+
+	// Verify commander type and level
+	utPool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	var cmdUT *component.UnitTypeComponent
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.SquadID == 1 && bc.Role == component.RoleCommander {
+			if ut, ok := utPool.Get(e); ok {
+				cmdUT = &ut
+			}
+		}
+	})
+	if cmdUT == nil {
+		t.Fatal("commander UnitTypeComponent not found")
+	}
+	if cmdUT.Type != component.UnitSniper {
+		t.Errorf("commander type = %d, want Sniper (%d)", cmdUT.Type, component.UnitSniper)
+	}
+	if cmdUT.Level != 3 {
+		t.Errorf("commander level = %d, want 3", cmdUT.Level)
+	}
+
+	// Verify combat unit types
+	var cuTypes []component.CombatUnitType
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.SquadID == 1 && bc.Role != component.RoleCommander {
+			if ut, ok := utPool.Get(e); ok {
+				cuTypes = append(cuTypes, ut.Type)
+			}
+		}
+	})
+	if len(cuTypes) != 2 || cuTypes[0] != component.UnitHeavyInfantry || cuTypes[1] != component.UnitHeavyInfantry {
+		t.Errorf("combat unit types = %v, want [HI, HI]", cuTypes)
+	}
+
+	// Verify gold was initialized from roster
+	if gs.PlayerGold[1] != 75 {
+		t.Errorf("player gold = %d, want 75", gs.PlayerGold[1])
+	}
 }

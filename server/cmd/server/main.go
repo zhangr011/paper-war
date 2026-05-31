@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -104,18 +105,25 @@ func main() {
 			log.Printf("client %d (%s) starting solo game (cmdType=%d)", clientID, name, cmdType)
 			gs.Reset()
 			hub.SetClientPlayerID(clientID, 1)
-			spawnSquadsForPlayerWithCmdType(gs, 1, 0, 2, cmdType)
-			spawnSquadsForPlayer(gs, 2, 1, 2) // AI uses default
-			mw, mh := gs.MapSize()
-				hub.SendJSON(clientID, map[string]interface{}{
-					"type":      "match_found",
-					"player_id": uint32(1),
-					"players":   1,
-					"map_w":     mw,
-					"map_h":     mh,
-				})
-				hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+
+			// Player 1: spawn from roster if Store is available
+			if gs.Store != nil {
+				spawnFromStore(gs, 1, 0, 2, cmdType)
+			} else {
+				spawnSquadsForPlayerWithCmdType(gs, 1, 0, 2, cmdType)
 			}
+			// AI player (player 2): always default spawn
+			spawnSquadsForPlayer(gs, 2, 1, 2)
+			mw, mh := gs.MapSize()
+			hub.SendJSON(clientID, map[string]interface{}{
+				"type":      "match_found",
+				"player_id": uint32(1),
+				"players":   1,
+				"map_w":     mw,
+				"map_h":     mh,
+			})
+			hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+		}
 		},
 	)
 
@@ -191,6 +199,49 @@ func main() {
 
 func spawnSquadsForPlayer(gs *game.GameSession, playerID uint32, playerIndex, playerCount int) {
 	spawnSquadsForPlayerWithCmdType(gs, playerID, playerIndex, playerCount, 0)
+}
+
+// spawnFromStore loads the player's roster from the persistence Store and spawns from it.
+// Falls back to CreateStarterRoster for new players, then uses the selected commander type.
+func spawnFromStore(gs *game.GameSession, playerID uint32, playerIndex, playerCount int, cmdType uint8) {
+	mw, mh := gs.MapSize()
+	x1 := float64(mw) * 0.42
+	x2 := float64(mw) * 0.58
+	y := 10.0
+	if playerCount > 1 {
+		y = 10.0 + float64(mh-20)*float64(playerIndex)/float64(playerCount-1)
+	}
+
+	baseSquadID := uint32(playerIndex*2 + 1)
+
+	ctx := context.Background()
+	roster, err := gs.Store.LoadRoster(ctx, playerID)
+	if err != nil || len(roster) == 0 {
+		// New player — create starter roster, then reload
+		gs.Store.CreateStarterRoster(ctx, playerID)
+		roster, err = gs.Store.LoadRoster(ctx, playerID)
+		if err != nil || len(roster) == 0 {
+			// Fallback to default spawn
+			ct := component.CombatUnitType(cmdType)
+			gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 1, ct)
+			gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 1, ct)
+			return
+		}
+	}
+
+	// Use first commander from roster
+	cmd := roster[0]
+
+	// Override commander type if player selected a different one
+	if cmdType > 0 {
+		typeName := component.CombatUnitTypeName(component.CombatUnitType(cmdType))
+		cmd.Type = typeName
+	}
+
+	gs.SpawnTeamFromRoster(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), cmd)
+
+	// Second squad with same commander (mirror)
+	gs.SpawnTeamFromRoster(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), cmd)
 }
 
 func spawnSquadsForPlayerWithCmdType(gs *game.GameSession, playerID uint32, playerIndex, playerCount int, cmdType uint8) {

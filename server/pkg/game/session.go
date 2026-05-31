@@ -385,9 +385,17 @@ func (gs *GameSession) Reset() {
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 
+	// Reset objective system (recreate with new map)
+	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
+
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)
 	gs.lastSentGold = make(map[uint32]int32)
+
+	// Reset lifecycle back to playing so the game loop keeps ticking
+	if gs.Lifecycle != nil {
+		gs.Lifecycle.Phase = PhasePlaying
+	}
 }
 
 // SpawnTeam creates the standard team composition for the given level.
@@ -497,6 +505,162 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 
 	// --- Combat units (always LI for starter roster) ---
 	gs.spawnCombatUnitsWithType(squadID, cx, cy, 0, unitCount, unitCount, playerID, faction, component.UnitLightInfantry)
+}
+
+// SpawnTeamFromRoster creates a commander + combat units from a persisted Commander roster entry.
+// If the roster has no commanders (new player), it calls CreateStarterRoster first.
+// Returns the spawned commander entity.
+func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, cy int64, cmd persist.Commander) ecs.Entity {
+	em := gs.World.Entities()
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
+
+	// Parse commander type
+	cmdType, _ := component.ParseCombatUnitType(cmd.Type)
+	cmdStats := component.CombatUnitTypeTable[cmdType]
+
+	// --- Commander ---
+	cmdEntity := em.Create()
+
+	gs.addComponent(cmdEntity, component.PositionComponent{
+		X:     cx,
+		Y:     cy,
+		Angle: 0,
+	})
+
+	gs.addComponent(cmdEntity, component.VelocityComponent{
+		Speed: unitSpeed,
+	})
+
+	gs.addComponent(cmdEntity, component.BoidComponent{
+		SquadID:       squadID,
+		Role:          component.RoleCommander,
+		SeparationW:   fixed.FromFloat(1.5),
+		CohesionW:     fixed.FromFloat(0.8),
+		AlignmentW:    fixed.FromFloat(1.0),
+		FormationW:    fixed.FromFloat(2.0),
+		NeighborRange: fixed.FromFloat(2.0),
+	})
+
+	// Commander stats: HP and Damage scale with level
+	cmdHP := cmdStats.HP * 3 // base 3x HP for commanders
+	if cmd.Level > 1 {
+		cmdHP = cmdHP + cmdHP*int32(cmd.Level-1)/4 // +25% per level above 1
+	}
+	cmdDmg := cmdStats.Damage * 2 // base 2x dmg for commanders
+	if cmd.Level > 1 {
+		cmdDmg = cmdDmg + cmdDmg*int32(cmd.Level-1)/4
+	}
+
+	gs.addComponent(cmdEntity, component.HealthComponent{
+		HP:     cmdHP,
+		MaxHP:  cmdHP,
+		Armor:  5,
+		Morale: 100,
+	})
+
+	gs.addComponent(cmdEntity, component.AttackComponent{
+		Range:      cmdStats.Range,
+		Damage:     cmdDmg,
+		Cooldown:   cmdStats.Cooldown,
+		AttackType: component.AttackMelee,
+	})
+
+	gs.addComponent(cmdEntity, component.UnitTypeComponent{
+		Type:   cmdType,
+		Weapon: cmdStats.Weapon,
+		Armor:  cmdStats.Armor,
+		Level:  cmd.Level,
+	})
+
+	gs.addComponent(cmdEntity, component.CommanderComponent{
+		SquadID:         squadID,
+		AuraRadius:      fixed.FromFloat(3.0),
+		AuraMoraleBonus: 20,
+		TacticalState:   component.TacticalFollow,
+		IsAlive:         true,
+	})
+
+	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: 0})
+	gs.addComponent(cmdEntity, component.PathfindingComponent{})
+	gs.addComponent(cmdEntity, component.FormationRoleComponent{
+		Role: component.RoleCommander,
+	})
+
+	faction := component.FactionPlayer
+	if playerID == 2 {
+		faction = component.FactionEnemy
+	}
+	gs.addComponent(cmdEntity, component.OwnerComponent{
+		PlayerID: playerID,
+		Faction:  faction,
+	})
+
+	// Register with AI system if this is an AI player
+	if gs.AISys != nil && playerID == gs.AISys.AIPlayerID {
+		gs.AISys.RegisterSquad(squadID, uint32(cmdEntity))
+	}
+
+	// --- Spawn CombatUnits from roster ---
+	for i, cu := range cmd.Units {
+		cuType, ok := component.ParseCombatUnitType(cu.Type)
+		if !ok {
+			cuType = component.UnitLightInfantry
+		}
+		cuStats := component.CombatUnitTypeTable[cuType]
+
+		// Offset position: spread units around commander
+		offsetX := int64((i%5 - 2) * 15)
+		offsetY := int64((i/5 + 1) * 15)
+
+		cuEntity := em.Create()
+		gs.addComponent(cuEntity, component.PositionComponent{
+			X: cx + fixed.FromFloat(float64(offsetX)),
+			Y: cy + fixed.FromFloat(float64(offsetY)),
+		})
+		gs.addComponent(cuEntity, component.VelocityComponent{
+			Speed: unitSpeed,
+		})
+		gs.addComponent(cuEntity, component.BoidComponent{
+			SquadID:       squadID,
+			Role:          component.RoleMelee,
+			SeparationW:   fixed.FromFloat(1.5),
+			NeighborRange: fixed.FromFloat(5.0),
+		})
+
+		// Scale HP by level (each level adds ~15% HP)
+		cuHP := cuStats.HP
+		if cu.Level > 1 {
+			cuHP = cuHP + cuHP*int32(cu.Level-1)*15/100
+		}
+		gs.addComponent(cuEntity, component.HealthComponent{
+			HP:    cuHP,
+			MaxHP: cuHP,
+		})
+		gs.addComponent(cuEntity, component.AttackComponent{
+			Damage:  cuStats.Damage,
+			Range:   fixed.FromFloat(float64(cuStats.Range)),
+			Cooldown: cuStats.Cooldown,
+		})
+		gs.addComponent(cuEntity, component.UnitTypeComponent{
+			Type:   cuType,
+			Weapon: cuStats.Weapon,
+			Armor:  cuStats.Armor,
+			Level:  cu.Level,
+		})
+		gs.addComponent(cuEntity, component.MovementComponent{})
+		gs.addComponent(cuEntity, component.PathfindingComponent{})
+		gs.addComponent(cuEntity, component.OwnerComponent{
+			PlayerID: playerID,
+			Faction:  faction,
+		})
+	}
+
+	// Initialize gold from roster
+	if _, ok := gs.PlayerGold[playerID]; !ok {
+		gs.PlayerGold[playerID] = cmd.Gold
+	}
+
+	return cmdEntity
 }
 
 // UpgradeTeam grows a team to the combat unit count for the requested level.

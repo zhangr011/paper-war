@@ -117,3 +117,35 @@ type UnitTypeComponent struct {
 	Armor  ArmorType
 	Level  uint8 // 1-6 for CombatUnits, 1-10 for Commanders
 }
+
+// CombatUnitTypeNames maps string names to CombatUnitType values.
+// Used for roster JSON persistence.
+var CombatUnitTypeNames = map[string]CombatUnitType{
+	"LightInfantry":     UnitLightInfantry,
+	"HeavyInfantry":     UnitHeavyInfantry,
+	"Sniper":            UnitSniper,
+	"AntiArmorInfantry": UnitAntiArmorInfantry,
+	"MotorGun":          UnitMotorGun,
+	"MotorArtillery":    UnitMotorArtillery,
+	"MotorMissile":      UnitMotorMissile,
+}
+
+// CombatUnitTypeName maps CombatUnitType back to string.
+func CombatUnitTypeName(t CombatUnitType) string {
+	for name, val := range CombatUnitTypeNames {
+		if val == t {
+			return name
+		}
+	}
+	return "LightInfantry"
+}
+
+// ParseCombatUnitType converts a string name to a CombatUnitType.
+// Returns UnitLightInfantry and false if not found.
+func ParseCombatUnitType(name string) (CombatUnitType, bool) {
+	t, ok := CombatUnitTypeNames[name]
+	if !ok {
+		return UnitLightInfantry, false
+	}
+	return t, true
+}

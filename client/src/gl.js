@@ -464,6 +464,7 @@ export class Renderer {
     // Batches
     this.terrainBatch = new SpriteBatch(gl, spriteProgram);
     this.objectBatch = new SpriteBatch(gl, spriteProgram);
+    this.fogBatch = new SpriteBatch(gl, spriteProgram);
     this.effectsBatch = new SpriteBatch(gl, spriteProgram);
     this.unitBatch = new InstancedBatch(gl, instancedProgram);
 
@@ -496,6 +497,7 @@ export class Renderer {
 
     this.terrainBatch.reset();
     this.objectBatch.reset();
+    this.fogBatch.reset();
     this.unitBatch.reset();
     this.effectsBatch.reset();
   }
@@ -595,6 +597,25 @@ export class Renderer {
     }
   }
 
+  /**
+   * Batch fog overlay quads.
+   * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number, a:number}>} fogTiles
+   * @param {{ x:number, y:number }} camera
+   */
+  drawFog(fogTiles, camera) {
+    const batch = this.fogBatch;
+    for (let i = 0; i < fogTiles.length; i++) {
+      const t = fogTiles[i];
+      batch.pushColorQuad(
+        t.x - camera.x,
+        t.y - camera.y,
+        t.w,
+        t.h,
+        t.r, t.g, t.b, t.a
+      );
+    }
+  }
+
   /** Flush all batches in the correct render order. */
   endFrame() {
     // Use CSS pixel dimensions so all game coords are in CSS pixels
@@ -610,6 +631,9 @@ export class Renderer {
 
     // Pass 2: terrain objects (already Y-sorted)
     this.objectBatch.flush(proj, tex);
+
+    // Pass 2.5: fog overlay (between terrain and units)
+    this.fogBatch.flush(proj, tex);
 
     // Pass 3: units (instanced)
     this.unitBatch.flush(proj, tex, aw, ah);

@@ -677,7 +677,7 @@ export class Game {
     // Pass 1.5: Fog overlay
     const fogTiles = this.buildFogTiles(visible);
     if (fogTiles.length > 0) {
-      this.renderer.drawEffects(fogTiles, cameraOffset);
+      this.renderer.drawFog(fogTiles, cameraOffset);
     }
 
     // Pass 2: Terrain objects (none yet)

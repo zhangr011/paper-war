@@ -259,7 +259,7 @@ export class Connection {
             height: fogH,
             visible: new Uint8Array(data.slice(i + 5, i + 5 + fogSize)),
           };
-          snapshotEnd = i;
+          snapshotEnd = i - 1; // exclude 0xFF marker byte
         }
         break;
       }

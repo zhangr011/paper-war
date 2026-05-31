@@ -921,7 +921,9 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: 0})
 		gs.addComponent(unitEntity, component.PathfindingComponent{})
 		gs.addComponent(unitEntity, component.FormationRoleComponent{
-			Role: role,
+			Role:    role,
+			OffsetX: ox,
+			OffsetY: oy,
 		})
 		gs.addComponent(unitEntity, component.OwnerComponent{
 			PlayerID: playerID,

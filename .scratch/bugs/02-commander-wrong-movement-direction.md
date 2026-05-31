@@ -1,5 +1,5 @@
 Title: Commander steers in wrong direction from pathfinding target
-Status: ready-for-agent
+Status: done
 Labels: bug
 Priority: P2
 Area: server/movement

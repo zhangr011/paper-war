@@ -120,6 +120,14 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		}
 
 		neighborPos := s.queryNeighborPositions(pos.X, pos.Y, bc.NeighborRange, uint64(e))
+
+		// Commanders should not be repelled by their own squad members —
+		// they need to lead, not flee from their own units. Filter out
+		// same-squad neighbors so only enemies/obstacles cause repulsion.
+		if bc.Role == component.RoleCommander {
+			neighborPos = s.queryNeighborPositionsExcludeSquad(pos.X, pos.Y, bc.NeighborRange, uint64(e), bc.SquadID)
+		}
+
 		sepFX, sepFY := boid.SeparationForce([2]int64{pos.X, pos.Y}, neighborPos, bc.NeighborRange)
 
 		// Attraction force (toward commander/beacon/flow field target)
@@ -181,6 +189,27 @@ func (s *MovementSystem) queryNeighborPositions(x, y, range_ int64, exclude uint
 			continue
 		}
 		if pos, ok := s.posPool.Get(ecs.Entity(id)); ok {
+			result = append(result, [2]int64{pos.X, pos.Y})
+		}
+	}
+	return result
+}
+
+// queryNeighborPositionsExcludeSquad returns neighbor positions, skipping any
+// entity that shares the given squadID (used by commanders to avoid being
+// repelled by their own squad members).
+func (s *MovementSystem) queryNeighborPositionsExcludeSquad(x, y, range_ int64, exclude uint64, squadID uint32) [][2]int64 {
+	ids := s.Sh.Query(x, y, range_)
+	var result [][2]int64
+	for _, id := range ids {
+		if id == exclude {
+			continue
+		}
+		ent := ecs.Entity(id)
+		if bc, ok := s.boidPool.Get(ent); ok && bc.SquadID == squadID {
+			continue
+		}
+		if pos, ok := s.posPool.Get(ent); ok {
 			result = append(result, [2]int64{pos.X, pos.Y})
 		}
 	}

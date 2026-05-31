@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/user/paper-war/server/pkg/component"
@@ -120,6 +121,11 @@ func main() {
 
 	// 5. Start game loop
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("GAME LOOP PANIC: %v\n%s", r, debug.Stack())
+			}
+		}()
 		ticker := time.NewTicker(time.Second / game.ServerTicksPerSecond)
 		defer ticker.Stop()
 

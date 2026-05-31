@@ -142,7 +142,7 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 	s.healthPool.Add(newEntity, component.HealthComponent{HP: typeStats.HP, MaxHP: typeStats.HP})
 	s.attackPool.Add(newEntity, component.AttackComponent{
 		Damage:  typeStats.Damage,
-		Range:   typeStats.Range,
+		Range:   fixed.FromFloat(float64(typeStats.Range)),
 		Cooldown: typeStats.Cooldown,
 	})
 	s.posPool.Add(newEntity, component.PositionComponent{

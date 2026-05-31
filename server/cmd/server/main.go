@@ -13,6 +13,7 @@ import (
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/game"
 	"github.com/user/paper-war/server/pkg/network"
+	"github.com/user/paper-war/server/pkg/persist"
 )
 
 // resolveClientDir tries several paths to find the client directory.
@@ -41,6 +42,21 @@ func resolveClientDir() string {
 func main() {
 	// 1. Initialize game session (portrait map, ECS world, all systems)
 	gs := game.NewGameSession()
+
+	// 1b. Persistence: connect to PostgreSQL if DATABASE_URL is set
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		ctx := context.Background()
+		pgStore, err := persist.NewPostgresStore(ctx, dbURL)
+		if err != nil {
+			log.Fatalf("Failed to connect to database: %v", err)
+		}
+		gs.Store = pgStore
+		log.Printf("Connected to PostgreSQL (DATABASE_URL set)")
+	} else {
+		// Dev mode: in-memory store
+		gs.Store = persist.NewMockStore()
+		log.Printf("No DATABASE_URL — using in-memory MockStore")
+	}
 
 	// 2. Declare hub early so callbacks can reference it
 	var hub *network.Hub

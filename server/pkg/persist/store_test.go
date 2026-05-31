@@ -187,3 +187,65 @@ func TestStarterRosterFormationTemplate(t *testing.T) {
 		t.Error("starter leading skill should not be 0")
 	}
 }
+
+func TestSaveCommanderPersistsFormationAndCombatUnits(t *testing.T) {
+	store := NewMockStore()
+	ctx := context.Background()
+
+	p, _ := store.FindOrCreatePlayer(ctx, "token-jsonb")
+
+	// Save a commander with non-trivial formation + mixed combat units
+	cmd := Commander{
+		ID:    p.Commanders[0].ID,
+		Name:  "Veteran Commander",
+		Type:  "Sniper",
+		Level: 5,
+		Gold:  200,
+		Formation: FormationTemplate{
+			WeaponSlot:   "Light",
+			ArmorSlot:    "Light",
+			LeadingSkill: 150,
+		},
+		Units: []CombatUnit{
+			{ID: 1, Type: "Sniper", Level: 4, KillPoints: 30},
+			{ID: 2, Type: "HeavyInfantry", Level: 3, KillPoints: 10},
+			{ID: 3, Type: "MissileArtillery", Level: 2, KillPoints: 5},
+		},
+	}
+
+	err := store.SaveCommander(ctx, p.ID, cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and verify round-trip
+	roster, _ := store.LoadRoster(ctx, p.ID)
+	if len(roster) != 1 {
+		t.Fatalf("expected 1 commander, got %d", len(roster))
+	}
+
+	saved := roster[0]
+	if saved.Name != "Veteran Commander" {
+		t.Errorf("name = %q, want %q", saved.Name, "Veteran Commander")
+	}
+	if saved.Formation.WeaponSlot != "Light" {
+		t.Errorf("formation weapon = %q, want Light", saved.Formation.WeaponSlot)
+	}
+	if saved.Formation.LeadingSkill != 150 {
+		t.Errorf("formation leading_skill = %d, want 150", saved.Formation.LeadingSkill)
+	}
+	if len(saved.Units) != 3 {
+		t.Fatalf("expected 3 combat units, got %d", len(saved.Units))
+	}
+	if saved.Units[0].Type != "Sniper" || saved.Units[0].Level != 4 || saved.Units[0].KillPoints != 30 {
+		t.Errorf("unit[0] = %+v, want Sniper/4/30", saved.Units[0])
+	}
+	if saved.Units[2].Type != "MissileArtillery" {
+		t.Errorf("unit[2] type = %q, want MissileArtillery", saved.Units[2].Type)
+	}
+}
+
+func TestStoreInterfaceTypeSafety(t *testing.T) {
+	// Verify MockStore satisfies Store interface at compile time
+	var _ Store = NewMockStore()
+}

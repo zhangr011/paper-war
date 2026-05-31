@@ -257,7 +257,7 @@ export class Connection {
           fogData = {
             width: fogW,
             height: fogH,
-            visible: new Uint8Array(data, i + 5, fogSize),
+            visible: new Uint8Array(data.slice(i + 5, i + 5 + fogSize)),
           };
           snapshotEnd = i;
         }

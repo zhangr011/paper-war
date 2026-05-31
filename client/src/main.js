@@ -754,7 +754,8 @@ export class Game {
 
   /**
    * Build fog overlay tile descriptors for fogged areas.
-   * Returns dark semi-transparent quads for tiles NOT visible in the fog grid.
+   * 3-state fog: 0=unexplored (fully black), 1=explored (dimmed), 2=visible (skip).
+   * Returns dark semi-transparent quads for non-visible tiles.
    */
   buildFogTiles(visible) {
     const fog = this.state.fogVisible;
@@ -770,15 +771,19 @@ export class Game {
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
-        if (fog[ty * fogW + tx]) continue; // visible, skip
+        const state = fog[ty * fogW + tx];
+        if (state === 2) continue; // visible — skip
         const sx = tx * TILE_WIDTH * zoom;
         const sy = ty * TILE_HEIGHT * zoom;
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
-        tiles.push({
-          x: sx, y: sy, w: tw, h: th,
-          r: 0.0, g: 0.0, b: 0.0, a: 0.55,
-        });
+        if (state === 0) {
+          // Unexplored — fully black
+          tiles.push({ x: sx, y: sy, w: tw, h: th, r: 0.0, g: 0.0, b: 0.0, a: 0.92 });
+        } else {
+          // Explored but not currently visible — dimmed
+          tiles.push({ x: sx, y: sy, w: tw, h: th, r: 0.0, g: 0.0, b: 0.0, a: 0.45 });
+        }
       }
     }
     return tiles;

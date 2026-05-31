@@ -1,0 +1,67 @@
+Status: ready-for-agent
+
+## Parent
+
+`.scratch/v1-integration/PRD.md`
+
+## What to build
+
+Fix the fog of war system — currently it has multiple correctness, performance, and design issues that make it unreliable and incomplete.
+
+### Problems identified
+
+**1. No explored/fog-of-war memory (only binary visible/hidden)**
+The current `FogGrid` uses a flat `[]uint8` with values 0 or 1. Real fog of war needs 3 states:
+- **Unexplored** (never seen — fully black)
+- **Explored** (previously seen but not currently in vision — dimmed/terrain-only)
+- **Visible** (currently in vision — full detail with units)
+
+Right now, `Clear()` zeros everything each tick, so previously-seen areas revert to full fog. The client has no way to show "last seen" state.
+
+**2. Clear-then-reveal race per tick**
+`updateFog()` calls `grid.Clear()` on ALL grids, then reveals around each commander. If a commander dies mid-tick (between clear and reveal), that player's grid stays fully fogged for one tick. Should use double-buffering (write new grid, swap) or only clear tiles that are no longer in vision.
+
+**3. Vision source is only commanders**
+Per CONTEXT.md: "anchors vision (fog of war)". Currently only `CommanderComponent` entities provide vision. But combat units in the squad should also contribute vision — at minimum they should extend the visible area around the commander. Without unit vision, a lone surviving combat unit (after commander death) is blind.
+
+**4. Vision radius is hardcoded circle**
+`VisionRadiusTiles = 12` applies uniformly. The design spec mentions terrain can block vision (walls, forests). No terrain-based vision blocking exists. Units behind a wall can see (and be seen) through it.
+
+**5. Client fog overlay is full-bandwidth**
+The server appends the entire `Visible` byte array (48*96 = 4608 bytes) to EVERY snapshot for EVERY player. At 10 Hz that's 46 KB/s per player just for fog data. Should use delta encoding or run-length encoding.
+
+**6. No fog-aware AI**
+The AI system (`AISystem`) does not use fog data. AI can "see" all player units regardless of fog state. For v1 (PvAI), this is acceptable but should be documented as a known limitation.
+
+**7. Fog grid sent to client uses shared ArrayBuffer**
+In `connection.js`, `new Uint8Array(data, i + 5, fogSize)` creates a view into the WebSocket message's ArrayBuffer. If the message buffer is reused or detached, the fog data becomes garbage. Should copy the data.
+
+**8. Missing fog unit hiding in combat**
+`GenerateSnapshot` filters enemy units not in fog-visible tiles. But `CombatSystem` can still target units that the player can't see (no fog check in target acquisition). AI benefits from full vision while players can't even see what's hitting them.
+
+## Acceptance criteria
+
+- [ ] FogGrid supports 3 states: unexplored (0), explored (1), visible (2)
+- [ ] `Clear()` only downgrades visible→explored, never loses explored memory
+- [ ] Combat units contribute vision (at least squad members near commander)
+- [ ] Fog data uses RLE or delta encoding to reduce bandwidth (target: <500 bytes typical)
+- [ ] Client copies fog data instead of sharing ArrayBuffer
+- [ ] Double-buffer or atomic swap for fog grid updates (no fully-black frames)
+- [ ] Fog-aware AI documented as v1 limitation (not fixed, just acknowledged)
+- [ ] Existing fog tests still pass
+- [ ] New tests: explored memory, multi-source vision, bounds edge cases
+
+## Files to modify
+
+- `server/pkg/fog/fog.go` — 3-state grid, RLE encode, explored memory
+- `server/pkg/fog/fog_test.go` — new test cases
+- `server/pkg/game/session.go` — `updateFog()` rewrite, double-buffer, unit vision
+- `client/src/connection.js` — copy fog data, decode RLE
+- `client/src/state.js` — handle 3-state fog
+- `client/src/main.js` — render 3 fog states (black/dimmed/clear)
+
+## Notes
+
+- Terrain-based vision blocking (walls, forests) is **out of scope** for this issue — track as separate follow-up
+- AI fog awareness is **out of scope** for v1 — document as known limitation
+- The processRecruit Range fixed-point bug (pitfall #32 in SKILL.md) is a separate issue

@@ -258,17 +258,20 @@ func (gs *GameSession) updateFog() {
 	if gs.FogSys == nil {
 		return
 	}
-	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 
-	// Collect alive commander positions per player
-	type cmdInfo struct {
-		playerID    uint32
+	// Vision source: playerID + tile position + radius
+	type visionSrc struct {
+		pid        uint32
 		tileX, tileY int32
+		radius     int32
 	}
-	var commanders []cmdInfo
+	var sources []visionSrc
+
+	// --- Commander vision (radius 12) ---
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 	cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
 		if !cmd.IsAlive {
 			return
@@ -285,20 +288,44 @@ func (gs *GameSession) updateFog() {
 		if !hasOwner {
 			return
 		}
-		commanders = append(commanders, cmdInfo{
-			playerID: owner.PlayerID,
-			tileX:    int32(pos.X >> 12),
-			tileY:    int32(pos.Y >> 12),
+		sources = append(sources, visionSrc{
+			pid:    owner.PlayerID,
+			tileX:  int32(pos.X >> 12),
+			tileY:  int32(pos.Y >> 12),
+			radius: fog.VisionRadiusTiles,
 		})
 	})
 
-	// Clear all grids and reveal around each commander
+	// --- Combat unit vision (radius 6) ---
+	utPool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+	utPool.Each(func(e ecs.Entity, ut *component.UnitTypeComponent) {
+		hp, hasHP := healthPool.Get(e)
+		if hasHP && hp.HP <= 0 {
+			return
+		}
+		pos, hasPos := posPool.Get(e)
+		if !hasPos {
+			return
+		}
+		owner, hasOwner := ownerPool.Get(e)
+		if !hasOwner {
+			return
+		}
+		sources = append(sources, visionSrc{
+			pid:    owner.PlayerID,
+			tileX:  int32(pos.X >> 12),
+			tileY:  int32(pos.Y >> 12),
+			radius: fog.UnitVisionRadiusTiles,
+		})
+	})
+
+	// Single-pass: clear all grids, then reveal from every source
 	for pid := range gs.FogSys.Grids {
 		gs.FogSys.Grids[pid].Clear()
 	}
-	for _, c := range commanders {
-		grid := gs.FogSys.GetOrCreateGrid(c.playerID)
-		grid.Reveal(c.tileX, c.tileY)
+	for _, s := range sources {
+		grid := gs.FogSys.GetOrCreateGrid(s.pid)
+		grid.RevealRadius(s.tileX, s.tileY, s.radius)
 	}
 }
 

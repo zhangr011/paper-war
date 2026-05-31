@@ -36,7 +36,7 @@ Level-ups are applied immediately — HP is increased, MaxHP is increased, damag
 - Issue 01 (needs CombatUnitType for base stats)
 - Issue 04 (needs kill points from DeathSystem)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

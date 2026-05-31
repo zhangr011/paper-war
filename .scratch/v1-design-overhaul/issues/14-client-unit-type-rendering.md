@@ -39,7 +39,7 @@ Remove Morale-based rendering (no morale bar, no morale color tinting). Remove a
 
 - Issue 13 (needs protocol with CombatUnitType field)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

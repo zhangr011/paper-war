@@ -34,7 +34,7 @@ Key changes:
 
 - Issue 01 (needs DamageMultiplier, CombatUnitType, WeaponType, ArmorType)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

@@ -36,7 +36,7 @@ The system sets a MatchResult flag on the session when a win condition is met. T
 - Issue 04 (needs DeathSystem to track alive entities for Elimination)
 - Issue 08 (needs Objective types on GameMap)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

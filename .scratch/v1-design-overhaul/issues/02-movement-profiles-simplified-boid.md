@@ -33,7 +33,7 @@ The UnitTypeComponent (from issue 01) determines which profile a unit uses: Armo
 
 - Issue 01 (needs ArmorType enum to determine profile assignment)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

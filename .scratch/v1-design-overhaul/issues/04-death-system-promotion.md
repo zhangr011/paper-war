@@ -32,7 +32,7 @@ Remove the old handleCommanderDeath Boid weight adjustment (cohesion/separation 
 
 - Issue 01 (needs CombatUnitType, UnitTypeComponent)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

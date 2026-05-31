@@ -38,7 +38,7 @@ AI behavior:
 - Issue 07 (needs RecruitmentSystem for AI recruitment)
 - Issue 08 (needs Objective types for patrol behavior)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

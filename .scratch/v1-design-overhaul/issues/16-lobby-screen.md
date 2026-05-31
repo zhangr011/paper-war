@@ -36,7 +36,7 @@ This is a HITL issue because the lobby UX layout needs human review before imple
 - Issue 14 (needs unit type rendering for roster display)
 - Issue 11 (needs match lifecycle for start-match flow)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

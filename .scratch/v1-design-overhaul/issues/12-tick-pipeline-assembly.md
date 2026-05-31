@@ -46,7 +46,7 @@ The ServerTicksPerSecond constant changes from 5 to 10. Speed calculations that 
 
 - Issue 11 (needs all systems assembled in match lifecycle)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

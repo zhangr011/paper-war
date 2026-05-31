@@ -46,7 +46,7 @@ Lobby changes (Commander selection, unit adjustments) use immediate write with 1
 - Issue 07 (needs RecruitmentSystem)
 - Issue 09 (needs ObjectiveSystem for match end detection)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

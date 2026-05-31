@@ -40,7 +40,7 @@ Each generated map randomly picks an objective type. Map generator tests verify 
 
 None - can start immediately.
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

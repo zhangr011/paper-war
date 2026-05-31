@@ -44,7 +44,7 @@ Remove EventProjectile from EventType.
 
 - Issue 01 (needs CombatUnitType enum)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

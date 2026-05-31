@@ -48,7 +48,7 @@ Sniper/Heavy does not exist as a CombatUnitType.
 
 None - can start immediately.
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

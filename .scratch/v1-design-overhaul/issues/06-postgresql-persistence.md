@@ -38,7 +38,7 @@ Tests use a real PostgreSQL connection (test database) to verify round-trip fide
 
 - Issue 01 (needs CombatUnitType, WeaponType, ArmorType for JSONB types)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

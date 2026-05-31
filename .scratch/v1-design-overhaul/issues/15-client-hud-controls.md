@@ -37,7 +37,7 @@ The HUD is rendered as a simple HTML overlay on top of the WebGL canvas — no c
 - Issue 14 (needs unit type rendering)
 - Issue 13 (needs protocol with Gold field)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

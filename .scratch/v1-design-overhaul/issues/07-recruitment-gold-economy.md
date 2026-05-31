@@ -37,7 +37,7 @@ Starting Gold per match: 50. Unspent Gold is lost at match end.
 - Issue 05 (needs LevelingSystem for Leading Skill growth)
 - Issue 06 (needs persistence for Formation Template loading)
 
-Status: ready-for-agent
+Status: done
 
 **Labels:** `enhancement`, `ready-for-agent`
 

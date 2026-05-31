@@ -1,5 +1,5 @@
 Title: Combat units collapse to commander position — FormationRoleComponent offsets always zero
-Status: ready-for-agent
+Status: done (commit 918c5ed)
 Labels: bug
 Priority: P1
 Area: server/movement, server/game

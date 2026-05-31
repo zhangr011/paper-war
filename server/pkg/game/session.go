@@ -183,7 +183,10 @@ func NewGameSession() *GameSession {
 	gs.World.AddSystem(gs.recruitSys)
 
 	// v1: lifecycle and gold
-	gs.Lifecycle = NewMatchLifecycle(nil, nil)
+	gs.Lifecycle = NewMatchLifecycle(nil, func(winnerFaction uint8, reason string) {
+		// Final roster flush on match end
+		gs.FlushRosters(context.Background())
+	})
 	gs.Lifecycle.Start() // start immediately for PvAI
 	gs.PlayerGold = make(map[uint32]int32)
 
@@ -251,6 +254,11 @@ func (gs *GameSession) Tick() {
 		if result.Finished {
 			gs.Lifecycle.End(result.WinnerFaction, result.Reason)
 		}
+	}
+
+	// v1: Periodic mid-match roster flush (every 300 ticks = 30s at 10Hz)
+	if gs.tickCount%300 == 0 && gs.Store != nil {
+		gs.FlushRosters(context.Background())
 	}
 }
 
@@ -395,6 +403,7 @@ func (gs *GameSession) Reset() {
 	// Reset lifecycle back to playing so the game loop keeps ticking
 	if gs.Lifecycle != nil {
 		gs.Lifecycle.Phase = PhasePlaying
+		gs.Lifecycle.MatchResultSent = false
 	}
 }
 
@@ -661,6 +670,144 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	}
 
 	return cmdEntity
+}
+
+// FlushRosters collects all living entities per player and saves them back to the Store.
+// Dead units are permanently removed (Permadeath). If a player has zero commanders,
+// a starter roster is granted.
+// Call this on match end (final flush) or periodically during match.
+func (gs *GameSession) FlushRosters(ctx context.Context) {
+	if gs.Store == nil {
+		return
+	}
+
+	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	kpPool := gs.World.Pool(component.KillPointsComponent{}).(*ecs.ComponentPool[component.KillPointsComponent])
+
+	// Group living entities by playerID
+	type playerCmd struct {
+		entity    ecs.Entity
+		squadID   uint32
+		cmdComp   component.CommanderComponent
+		unitType  component.UnitTypeComponent
+	}
+	// playerID -> commander data
+	playerCmds := make(map[uint32]playerCmd)
+	// playerID -> squadID -> []CombatUnit
+	playerUnits := make(map[uint32]map[uint32][]persist.CombatUnit)
+
+	// Collect living commanders
+	cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
+		if !cmd.IsAlive {
+			return
+		}
+		hp, hasHP := healthPool.Get(e)
+		if hasHP && hp.HP <= 0 {
+			return
+		}
+		owner, hasOwner := ownerPool.Get(e)
+		if !hasOwner {
+			return
+		}
+		ut, hasUT := unitTypePool.Get(e)
+		if !hasUT {
+			return
+		}
+		playerCmds[owner.PlayerID] = playerCmd{
+			entity:   e,
+			squadID:  cmd.SquadID,
+			cmdComp:  *cmd,
+			unitType: ut,
+		}
+		if _, ok := playerUnits[owner.PlayerID]; !ok {
+			playerUnits[owner.PlayerID] = make(map[uint32][]persist.CombatUnit)
+		}
+	})
+
+	// Collect living combat units (non-commander entities with BoidComponent)
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.Role == component.RoleCommander {
+			return
+		}
+		hp, hasHP := healthPool.Get(e)
+		if !hasHP || hp.HP <= 0 {
+			return
+		}
+		owner, hasOwner := ownerPool.Get(e)
+		if !hasOwner {
+			return
+		}
+		ut, hasUT := unitTypePool.Get(e)
+		if !hasUT {
+			return
+		}
+
+		pid := owner.PlayerID
+		sid := bc.SquadID
+		if _, ok := playerUnits[pid]; !ok {
+			playerUnits[pid] = make(map[uint32][]persist.CombatUnit)
+		}
+
+		kp := int32(0)
+		if kpComp, ok := kpPool.Get(e); ok {
+			kp = kpComp.Points
+		}
+
+		playerUnits[pid][sid] = append(playerUnits[pid][sid], persist.CombatUnit{
+			ID:         uint8(len(playerUnits[pid][sid]) + 1),
+			Type:       component.CombatUnitTypeName(ut.Type),
+			Level:      ut.Level,
+			KillPoints: kp,
+		})
+	})
+
+	// Save each player's roster
+	for pid, pc := range playerCmds {
+		units := playerUnits[pid][pc.squadID]
+		if units == nil {
+			units = []persist.CombatUnit{}
+		}
+
+		kp := int32(0)
+		if kpComp, ok := kpPool.Get(pc.entity); ok {
+			kp = kpComp.Points
+		}
+
+		cmd := persist.Commander{
+			ID:    1, // v1: single commander per player
+			Name:  "Commander",
+			Type:  component.CombatUnitTypeName(pc.unitType.Type),
+			Level: pc.unitType.Level,
+			Gold:  gs.PlayerGold[pid],
+			Formation: persist.FormationTemplate{
+				WeaponSlot:   "Light",
+				ArmorSlot:    "Light",
+				LeadingSkill: 100,
+			},
+			Units: units,
+		}
+		_ = kp // kill points tracked in units already
+
+		if err := gs.Store.SaveCommander(ctx, pid, cmd); err != nil {
+			// Log but don't crash — persistence failures shouldn't kill the match
+			continue
+		}
+	}
+
+	// Check for eliminated players (had entities at some point but now have none)
+	// These are players who had gold assigned but no living commanders
+	for pid := range gs.PlayerGold {
+		if _, ok := playerCmds[pid]; ok {
+			continue // still has a living commander
+		}
+		// Player eliminated — delete commander and grant starter roster
+		_ = gs.Store.DeleteCommander(ctx, pid, 1)
+		_ = gs.Store.CreateStarterRoster(ctx, pid)
+	}
 }
 
 // UpgradeTeam grows a team to the combat unit count for the requested level.

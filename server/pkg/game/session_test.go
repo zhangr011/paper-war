@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
 
@@ -392,4 +393,125 @@ func TestSpawnTeamFromRoster(t *testing.T) {
 	if gs.PlayerGold[1] != 75 {
 		t.Errorf("player gold = %d, want 75", gs.PlayerGold[1])
 	}
+}
+
+func TestFlushRostersSurvivors(t *testing.T) {
+	gs := NewGameSession()
+	store := persist.NewMockStore()
+	gs.Store = store
+
+	// Create a player in the mock store
+	ctx := context.Background()
+	p, err := store.FindOrCreatePlayer(ctx, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playerID := p.ID
+
+	// Spawn team with 2 HI units
+	cmd := persist.Commander{
+		ID:    1,
+		Name:  "Test Cmd",
+		Type:  "LightInfantry",
+		Level: 1,
+		Gold:  50,
+		Units: []persist.CombatUnit{
+			{ID: 1, Type: "HeavyInfantry", Level: 2},
+			{ID: 2, Type: "HeavyInfantry", Level: 1},
+			{ID: 3, Type: "LightInfantry", Level: 1},
+		},
+	}
+	gs.SpawnTeamFromRoster(playerID, 1, 100<<16, 100<<16, cmd)
+	gs.Lifecycle.Start()
+
+	// Tick once to let systems settle
+	gs.Tick()
+
+	// Flush rosters
+	gs.FlushRosters(ctx)
+
+	// Load roster from store and verify
+	roster, err := store.LoadRoster(ctx, playerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roster) != 1 {
+		t.Fatalf("expected 1 commander, got %d", len(roster))
+	}
+
+	savedCmd := roster[0]
+	if len(savedCmd.Units) != 3 {
+		t.Errorf("expected 3 surviving units, got %d", len(savedCmd.Units))
+	}
+	if savedCmd.Type != "LightInfantry" {
+		t.Errorf("commander type = %s, want LightInfantry", savedCmd.Type)
+	}
+}
+
+func TestFlushRostersAllDeadGrantsStarter(t *testing.T) {
+	gs := NewGameSession()
+	store := persist.NewMockStore()
+	gs.Store = store
+
+	ctx := context.Background()
+	p, err := store.FindOrCreatePlayer(ctx, "test-token-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playerID := p.ID
+
+	// Spawn team
+	cmd := persist.Commander{
+		ID:    1,
+		Name:  "Doomed Cmd",
+		Type:  "LightInfantry",
+		Level: 1,
+		Gold:  50,
+		Units: []persist.CombatUnit{
+			{ID: 1, Type: "LightInfantry", Level: 1},
+		},
+	}
+	gs.SpawnTeamFromRoster(playerID, 1, 100<<16, 100<<16, cmd)
+	gs.Lifecycle.Start()
+
+	// Kill all entities for this player by setting HP to 0
+	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	ownerPool.Each(func(e ecs.Entity, owner *component.OwnerComponent) {
+		if owner.PlayerID == playerID {
+			if hp, ok := healthPool.GetPtr(e); ok {
+				hp.HP = 0
+			}
+		}
+	})
+
+	// Run tick so DeathSystem processes the dead
+	gs.Tick()
+
+	// Now flush — should detect eliminated player and grant starter roster
+	gs.FlushRosters(ctx)
+
+	// Verify: player should have a starter roster (1 commander + 5 LI)
+	roster, err := store.LoadRoster(ctx, playerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roster) != 1 {
+		t.Fatalf("expected 1 starter commander, got %d", len(roster))
+	}
+	starterCmd := roster[0]
+	if starterCmd.Type != "LightInfantry" {
+		t.Errorf("starter commander type = %s, want LightInfantry", starterCmd.Type)
+	}
+	if len(starterCmd.Units) != 5 {
+		t.Errorf("starter roster should have 5 units, got %d", len(starterCmd.Units))
+	}
+}
+
+func TestFlushRostersNilStoreNoop(t *testing.T) {
+	gs := NewGameSession()
+	gs.Store = nil // no persistence
+
+	// Should not panic
+	gs.FlushRosters(context.Background())
 }

@@ -173,6 +173,19 @@ func main() {
 				}
 			}
 		}
+
+		// Send MatchResult to all clients when match ends
+		if gs.Lifecycle.Phase == game.PhaseEnded && !gs.Lifecycle.MatchResultSent {
+			gs.Lifecycle.MatchResultSent = true
+			result := network.EncodeServerMessage(&network.ServerMessage{
+				Type:   network.MsgMatchResult,
+				Winner: gs.Lifecycle.WinnerFaction,
+				Reason: gs.Lifecycle.WinReason,
+			})
+			for _, cid := range hub.ClientIDs() {
+				hub.SendToClient(cid, result)
+			}
+		}
 		}
 	}()
 

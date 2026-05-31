@@ -851,7 +851,7 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
-	spacing := fixed.FromFloat(1.2)
+	spacing := fixed.FromFloat(0.6)
 
 	stats := component.CombatUnitTypeTable[unitType]
 

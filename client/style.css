@@ -732,6 +732,46 @@ body {
 .lobby-btn-clash:hover {
   background: #E74C3C;
 }
+
+/* Clash config panel */
+.clash-config {
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid #C0392B;
+  border-radius: 4px;
+  background: rgba(192, 57, 43, 0.08);
+}
+.clash-team-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+.clash-team-label {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 100px;
+}
+.clash-team-blue { color: #4488FF; }
+.clash-team-red { color: #FF4444; }
+.clash-size-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  background: var(--paper-light);
+  cursor: pointer;
+}
+.clash-size-btn.selected {
+  background: #4A6B8A;
+  color: #fff;
+  border-color: #4A6B8A;
+}
+.clash-size-btn:hover {
+  background: #5A7B9A;
+  color: #fff;
+}
+
 .lobby-btn-cancel {
   background: #8A4A3A;
 }

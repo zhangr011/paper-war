@@ -67,13 +67,33 @@ export class App {
 
     // Clash Test button — AI vs AI spectator mode
     this.clashBtn = document.getElementById('clash-btn');
+    this.clashConfig = document.getElementById('clash-config');
+    this.clashTeam1Size = 5;
+    this.clashTeam2Size = 10;
     if (this.clashBtn) {
+      // Wire clash config size buttons
+      document.querySelectorAll('.clash-size-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const team = parseInt(btn.dataset.team);
+          const size = parseInt(btn.dataset.size);
+          // Toggle selected within same team row
+          document.querySelectorAll(`.clash-size-btn[data-team="${team}"]`).forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          if (team === 1) this.clashTeam1Size = size;
+          else this.clashTeam2Size = size;
+        });
+      });
+
       this.clashBtn.addEventListener('click', () => {
         this.lobbyStatus.textContent = 'Starting clash test...';
         this.soloBtn.disabled = true;
         this.clashBtn.disabled = true;
         this.findMatchBtn.disabled = true;
-        this.connection.sendJSON({ type: 'start_clash' });
+        this.connection.sendJSON({
+          type: 'start_clash',
+          team1_units: this.clashTeam1Size,
+          team2_units: this.clashTeam2Size,
+        });
       });
     }
 
@@ -239,9 +259,11 @@ export class App {
         break;
       case 'lobby':
         this.lobbyScreen.classList.add('active');
+        if (this.clashConfig) this.clashConfig.style.display = 'block';
         break;
       case 'game':
         this.gameScreen.classList.add('active');
+        if (this.clashConfig) this.clashConfig.style.display = 'none';
         break;
     }
   }

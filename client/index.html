@@ -56,6 +56,24 @@
         </div>
       </div>
 
+      <!-- Clash config -->
+      <div class="clash-config" id="clash-config" style="display:none">
+        <div class="clash-team-row">
+          <span class="clash-team-label clash-team-blue">Team 1 (Blue):</span>
+          <button class="clash-size-btn selected" data-team="1" data-size="5">5</button>
+          <button class="clash-size-btn" data-team="1" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="1" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="1" data-size="20">20</button>
+        </div>
+        <div class="clash-team-row">
+          <span class="clash-team-label clash-team-red">Team 2 (Red):</span>
+          <button class="clash-size-btn" data-team="2" data-size="5">5</button>
+          <button class="clash-size-btn selected" data-team="2" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="2" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="2" data-size="20">20</button>
+        </div>
+      </div>
+
       <div class="lobby-queue" id="lobby-queue">
         <p class="lobby-status" id="lobby-status">Ready for battle</p>
         <button class="lobby-btn lobby-btn-solo" id="solo-btn">Start Match</button>
@@ -220,6 +238,6 @@
 
   </div><!-- /game-screen -->
 
-  <script type="module" src="src/app.js?v=fix-view-2"></script>
+  <script type="module" src="src/app.js?v=clash-v1"></script>
 </body>
 </html>

@@ -142,6 +142,21 @@ func main() {
 			hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
 		case "start_clash":
 			log.Printf("client %d starting clash test", clientID)
+
+			// Parse team sizes from message
+			t1Units := 10
+			t2Units := 10
+			if v, ok := msg["team1_units"]; ok {
+				if f, ok := v.(float64); ok && f >= 1 && f <= 40 {
+					t1Units = int(f)
+				}
+			}
+			if v, ok := msg["team2_units"]; ok {
+				if f, ok := v.(float64); ok && f >= 1 && f <= 40 {
+					t2Units = int(f)
+				}
+			}
+
 			gs.Reset()
 			gs.EnableClashMode()
 
@@ -150,17 +165,30 @@ func main() {
 			hub.SetClientInGame(clientID, true)
 
 			mw, mh := gs.MapSize()
-			// Two teams close together in the center — 4 tiles apart
 			cx1 := fixed.FromFloat(float64(mw)/2 - 2)
 			cx2 := fixed.FromFloat(float64(mw)/2 + 2)
 			cy := fixed.FromFloat(float64(mh) / 2)
 
-			// Player 1: 2 squads × 5 LI (level 3 = 10 units per team)
-			gs.SpawnTeamWithType(1, 1, cx1, cy, 3, component.UnitLightInfantry)
-			gs.SpawnTeamWithType(1, 2, cx1, cy, 3, component.UnitLightInfantry)
-			// Player 2: mirror
-			gs.SpawnTeamWithType(2, 3, cx2, cy, 3, component.UnitLightInfantry)
-			gs.SpawnTeamWithType(2, 4, cx2, cy, 3, component.UnitLightInfantry)
+			// Spawn teams, splitting into squads of max 10
+			squadID := uint32(1)
+			for t1Units > 0 {
+				n := t1Units
+				if n > 10 {
+					n = 10
+				}
+				gs.SpawnSquadWithType(1, squadID, cx1, cy, n, component.UnitLightInfantry)
+				t1Units -= n
+				squadID++
+			}
+			for t2Units > 0 {
+				n := t2Units
+				if n > 10 {
+					n = 10
+				}
+				gs.SpawnSquadWithType(2, squadID, cx2, cy, n, component.UnitLightInfantry)
+				t2Units -= n
+				squadID++
+			}
 
 			hub.SendJSON(clientID, map[string]interface{}{
 				"type":      "match_found",

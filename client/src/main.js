@@ -47,17 +47,25 @@ const UNIT_TYPE_COLORS = [
   { r: 0.5, g: 0.3, b: 0.7 }, // 6 MM  — purple
 ];
 
-// Team tint: player 1 is warm (shift red), player 2 is cool (shift blue)
+// Team tint: team 1 is blue, team 2 is red
 function teamTint(base, team) {
-  if (team === 2) {
-    // Cool team: shift toward cyan
+  if (team === 1) {
+    // Blue team: shift toward blue, reduce red
     return {
-      r: base.r * 0.7,
-      g: Math.min(1.0, base.g * 1.1),
-      b: Math.min(1.0, base.b * 1.3),
+      r: base.r * 0.5,
+      g: base.g * 0.7,
+      b: Math.min(1.0, base.b * 1.4 + 0.2),
     };
   }
-  return base; // team 1 or 0: use base color
+  if (team === 2) {
+    // Red team: shift toward red, reduce blue
+    return {
+      r: Math.min(1.0, base.r * 1.4 + 0.2),
+      g: base.g * 0.6,
+      b: base.b * 0.4,
+    };
+  }
+  return base; // team 0 or other: use base color
 }
 
 // Selection highlight color
@@ -1004,6 +1012,11 @@ export class Game {
     }
     this.updateTimer();
 
+    // Spectator scoreboard for clash mode (playerID=0)
+    if (this.connection.playerID === 0) {
+      this.updateSpectatorScoreboard();
+    }
+
     // Update resource displays
     const units = this.state.getRenderUnits();
     const unitCountEl = document.querySelector('#unit-count .resource-value');
@@ -1071,6 +1084,31 @@ export class Game {
       selStatusEl.textContent =
         stateNames[first.currState] || 'Unknown';
     }
+  }
+
+  updateSpectatorScoreboard() {
+    let board = document.getElementById('spectator-scoreboard');
+    if (!board) {
+      board = document.createElement('div');
+      board.id = 'spectator-scoreboard';
+      board.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
+        'z-index:100;font-family:sans-serif;display:flex;align-items:center;gap:12px;' +
+        'background:rgba(0,0,0,0.6);padding:6px 16px;border-radius:6px;color:#fff;font-size:14px;';
+      document.body.appendChild(board);
+    }
+
+    const units = this.state.getRenderUnits();
+    let blue = 0, red = 0;
+    for (const u of units) {
+      if (!u.alive) continue;
+      if (u.team === 1) blue++;
+      else if (u.team === 2) red++;
+    }
+
+    board.innerHTML =
+      `<span style="color:#4488FF;font-weight:bold">BLUE ${blue}</span>` +
+      `<span style="color:#888">vs</span>` +
+      `<span style="color:#FF4444;font-weight:bold">RED ${red}</span>`;
   }
 
   showMatchResult(winner, reason) {

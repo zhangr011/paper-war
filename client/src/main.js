@@ -1084,10 +1084,21 @@ export class Game {
         'z-index:9999;color:#fff;font-family:sans-serif;';
       document.body.appendChild(overlay);
     }
-    const isWin = winner === 1; // player is always faction 1 in PvAI
+    const pid = this.connection.playerID;
+    let heading, headingColor;
+    if (pid === 0) {
+      // Spectator: show neutral result
+      const teamName = winner === 1 ? 'Blue' : 'Red';
+      heading = `Team ${teamName} Wins!`;
+      headingColor = winner === 1 ? '#4488FF' : '#FF4444';
+    } else {
+      const isWin = winner === pid;
+      heading = isWin ? 'Victory!' : 'Defeat';
+      headingColor = isWin ? '#4CAF50' : '#FF4444';
+    }
     overlay.innerHTML =
       '<div style="text-align:center">' +
-      '<h1 style="font-size:48px;margin:0">' + (isWin ? 'Victory!' : 'Defeat') + '</h1>' +
+      `<h1 style="font-size:48px;margin:0;color:${headingColor}">${heading}</h1>` +
       '<p style="font-size:20px;margin:16px 0">' + reason + '</p>' +
       '<button onclick="this.parentElement.parentElement.remove()" ' +
       'style="padding:12px 32px;font-size:18px;cursor:pointer">OK</button>' +

@@ -1,6 +1,6 @@
 ---
 Title: Enhance clash test — configurable team size + blue vs red colors
-Status: needs-triage
+Status: done
 Severity: enhancement
 Type: frontend+server
 Created: 2026-05-31

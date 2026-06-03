@@ -1,6 +1,6 @@
 ---
 Title: Defeat and victory display unexpectedly in clash/spectator mode
-Status: open
+Status: done
 Severity: bug
 Type: frontend
 Created: 2026-05-31

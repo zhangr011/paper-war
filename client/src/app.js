@@ -65,6 +65,18 @@ export class App {
       });
     });
 
+    // Clash Test button — AI vs AI spectator mode
+    this.clashBtn = document.getElementById('clash-btn');
+    if (this.clashBtn) {
+      this.clashBtn.addEventListener('click', () => {
+        this.lobbyStatus.textContent = 'Starting clash test...';
+        this.soloBtn.disabled = true;
+        this.clashBtn.disabled = true;
+        this.findMatchBtn.disabled = true;
+        this.connection.sendJSON({ type: 'start_clash' });
+      });
+    }
+
     // Find match button
     this.findMatchBtn.addEventListener('click', () => {
       this.connection.sendJSON({ type: 'join_queue' });

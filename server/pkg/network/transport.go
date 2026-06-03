@@ -40,6 +40,7 @@ type ClientSession struct {
 	ID       uint32
 	PlayerID uint32
 	Name     string
+	InGame   bool // true once match started (distinguishes spectator from idle)
 	conn     *websocket.Conn
 	mu       sync.Mutex
 	sendCh   chan outgoing
@@ -223,6 +224,25 @@ func (h *Hub) SetClientPlayerID(clientID uint32, playerID uint32) {
 	if ok {
 		session.PlayerID = playerID
 	}
+}
+
+func (h *Hub) SetClientInGame(clientID uint32, inGame bool) {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		session.InGame = inGame
+	}
+}
+
+func (h *Hub) GetClientInGame(clientID uint32) bool {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		return session.InGame
+	}
+	return false
 }
 
 func (h *Hub) GetClientPlayerID(clientID uint32) uint32 {

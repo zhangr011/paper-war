@@ -724,6 +724,14 @@ body {
 .lobby-btn-solo:hover {
   background: #D4B83A;
 }
+.lobby-btn-clash {
+  background: #C0392B;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.lobby-btn-clash:hover {
+  background: #E74C3C;
+}
 .lobby-btn-cancel {
   background: #8A4A3A;
 }

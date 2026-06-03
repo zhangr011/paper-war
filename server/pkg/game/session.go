@@ -41,6 +41,7 @@ type GameSession struct {
 	recruitSys    *combat.RecruitmentSystem    // v1
 	FogSys        *fog.FogSystem
 	AISys         *ai.AISystem
+	AISys2        *ai.AISystem // second AI for clash mode (player 1)
 	Lifecycle     *MatchLifecycle              // v1
 	PlayerGold    map[uint32]int32             // v1: gold per player
 	lastSentGold  map[uint32]int32             // track what was last sent to client
@@ -338,26 +339,31 @@ func (gs *GameSession) updateFog() {
 }
 
 func (gs *GameSession) runAI() {
-	if gs.AISys == nil {
-		return
-	}
 	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 
-	aiCmds := gs.AISys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool)
-	for _, cmd := range aiCmds {
-		switch cmd.Type {
-		case ai.CmdMove:
-			gs.handleMoveSquad(cmd.SquadID, cmd.TargetX, cmd.TargetY)
-		case ai.CmdAttack:
-			gs.handleAttackTarget(cmd.SquadID, cmd.TargetID)
-		case ai.CmdRecruit:
-			// v1: handle AI recruitment
-			gs.handleAIRecruit(cmd.UnitType)
+	runAISys := func(aiSys *ai.AISystem) {
+		if aiSys == nil {
+			return
+		}
+		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool)
+		for _, cmd := range aiCmds {
+			switch cmd.Type {
+			case ai.CmdMove:
+				gs.handleMoveSquad(cmd.SquadID, cmd.TargetX, cmd.TargetY)
+			case ai.CmdAttack:
+				gs.handleAttackTarget(cmd.SquadID, cmd.TargetID)
+			case ai.CmdRecruit:
+				// v1: handle AI recruitment
+				gs.handleAIRecruit(cmd.UnitType)
+			}
 		}
 	}
+
+	runAISys(gs.AISys)
+	runAISys(gs.AISys2)
 }
 
 // Reset clears all entities, generates a new random map, and resets state.
@@ -392,6 +398,7 @@ func (gs *GameSession) Reset() {
 	// Reset fog and AI
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys2 = nil // reset clash AI
 
 	// Reset objective system (recreate with new map)
 	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
@@ -405,6 +412,12 @@ func (gs *GameSession) Reset() {
 		gs.Lifecycle.Phase = PhasePlaying
 		gs.Lifecycle.MatchResultSent = false
 	}
+}
+
+// EnableClashMode activates AI for player 1 as well, creating a second AI system.
+// Both teams are fully AI-controlled. The spectator (playerID=0) sees everything.
+func (gs *GameSession) EnableClashMode() {
+	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
 }
 
 // SpawnTeam creates the standard team composition for the given level.

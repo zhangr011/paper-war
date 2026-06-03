@@ -121,6 +121,7 @@ func main() {
 			log.Printf("client %d (%s) starting solo game (cmdType=%d)", clientID, name, cmdType)
 			gs.Reset()
 			hub.SetClientPlayerID(clientID, 1)
+			hub.SetClientInGame(clientID, true)
 
 			// Player 1: spawn from roster if Store is available
 			if gs.Store != nil {
@@ -135,6 +136,36 @@ func main() {
 				"type":      "match_found",
 				"player_id": uint32(1),
 				"players":   1,
+				"map_w":     mw,
+				"map_h":     mh,
+			})
+			hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+		case "start_clash":
+			log.Printf("client %d starting clash test", clientID)
+			gs.Reset()
+			gs.EnableClashMode()
+
+			// Spectator: playerID=0 means no fog, full map visibility
+			hub.SetClientPlayerID(clientID, 0)
+			hub.SetClientInGame(clientID, true)
+
+			mw, mh := gs.MapSize()
+			// Two teams close together in the center — 4 tiles apart
+			cx1 := fixed.FromFloat(float64(mw)/2 - 2)
+			cx2 := fixed.FromFloat(float64(mw)/2 + 2)
+			cy := fixed.FromFloat(float64(mh) / 2)
+
+			// Player 1: 2 squads × 5 LI (level 3 = 10 units per team)
+			gs.SpawnTeamWithType(1, 1, cx1, cy, 3, component.UnitLightInfantry)
+			gs.SpawnTeamWithType(1, 2, cx1, cy, 3, component.UnitLightInfantry)
+			// Player 2: mirror
+			gs.SpawnTeamWithType(2, 3, cx2, cy, 3, component.UnitLightInfantry)
+			gs.SpawnTeamWithType(2, 4, cx2, cy, 3, component.UnitLightInfantry)
+
+			hub.SendJSON(clientID, map[string]interface{}{
+				"type":      "match_found",
+				"player_id": uint32(0), // spectator
+				"players":   2,
 				"map_w":     mw,
 				"map_h":     mh,
 			})
@@ -169,7 +200,8 @@ func main() {
 
 		for _, cid := range hub.ClientIDs() {
 			pid := hub.GetClientPlayerID(cid)
-			if pid == 0 {
+			// Only send snapshots to clients that have started a game
+			if !hub.GetClientInGame(cid) {
 				continue
 			}
 			data := gs.GenerateSnapshot(pid, fullView)
@@ -190,7 +222,7 @@ func main() {
 			}
 		}
 
-		// Send MatchResult to all clients when match ends
+		// Send MatchResult to all in-game clients when match ends
 		if gs.Lifecycle.Phase == game.PhaseEnded && !gs.Lifecycle.MatchResultSent {
 			gs.Lifecycle.MatchResultSent = true
 			result := network.EncodeServerMessage(&network.ServerMessage{
@@ -199,7 +231,9 @@ func main() {
 				Reason: gs.Lifecycle.WinReason,
 			})
 			for _, cid := range hub.ClientIDs() {
-				hub.SendToClient(cid, result)
+				if hub.GetClientInGame(cid) {
+					hub.SendToClient(cid, result)
+				}
 			}
 		}
 		}

@@ -189,6 +189,53 @@ func (as *AISystem) Update(
 				})
 			}
 		} else {
+			// No enemy commander visible — fall back to nearest enemy unit
+			healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
+				if hp.HP <= 0 {
+					return
+				}
+				owner, hasOwner := ownerPool.Get(e)
+				if !hasOwner || owner.PlayerID == as.AIPlayerID {
+					return
+				}
+				ePos, hasEPos := posPool.Get(e)
+				if !hasEPos {
+					return
+				}
+				dx := ePos.X - pos.X
+				dy := ePos.Y - pos.Y
+				dist := dx*dx + dy*dy
+				if bestDist < 0 || dist < bestDist {
+					bestDist = dist
+					bestEnemyID = uint32(e)
+					bestEnemyX = ePos.X
+					bestEnemyY = ePos.Y
+				}
+			})
+		}
+
+		if bestEnemyID != 0 {
+			// Found an enemy (commander or regular unit) — approach or attack
+			state.TargetUnitID = bestEnemyID
+			attackRange := fixed.FromFloat(5.0)
+			attackRangeSq := attackRange * attackRange
+			if bestDist <= attackRangeSq {
+				state.State = StateAttack
+				cmds = append(cmds, AICommand{
+					Type:     CmdAttack,
+					SquadID:  squadID,
+					TargetID: bestEnemyID,
+				})
+			} else {
+				state.State = StateApproach
+				cmds = append(cmds, AICommand{
+					Type:    CmdMove,
+					SquadID: squadID,
+					TargetX: bestEnemyX,
+					TargetY: bestEnemyY,
+				})
+			}
+		} else {
 			state.State = StatePatrol
 			cmds = append(cmds, AICommand{
 				Type:    CmdMove,

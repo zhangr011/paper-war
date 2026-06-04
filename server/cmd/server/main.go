@@ -180,6 +180,8 @@ func main() {
 				gs.ResetWithSeed(seed)
 			}
 			gs.EnableClashMode()
+			// Force elimination objective for clash mode
+			gs.Map.Objective.Type = 0 // ObjectiveElimination = 0
 
 			// Spectator: playerID=0 means no fog, full map visibility
 			hub.SetClientPlayerID(clientID, 0)

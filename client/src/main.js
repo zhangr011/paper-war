@@ -1132,10 +1132,10 @@ export class Game {
     const pid = this.connection.playerID;
     let heading, headingColor;
     if (pid === 0) {
-      // Spectator: show neutral result
-      const teamName = winner === 1 ? 'Blue' : 'Red';
+      // Spectator: show neutral result (winner=0 is FactionPlayer/Blue, winner=1 is FactionEnemy/Red)
+      const teamName = winner === 0 ? 'Blue' : 'Red';
       heading = `Team ${teamName} Wins!`;
-      headingColor = winner === 1 ? '#4488FF' : '#FF4444';
+      headingColor = winner === 0 ? '#4488FF' : '#FF4444';
     } else {
       const isWin = winner === pid;
       heading = isWin ? 'Victory!' : 'Defeat';

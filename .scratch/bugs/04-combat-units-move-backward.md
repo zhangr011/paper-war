@@ -1,7 +1,7 @@
 ---
 ID: 04
 Type: bug
-Status: open
+Status: done
 Severity: high
 Component: movement
 ---

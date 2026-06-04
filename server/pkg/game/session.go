@@ -623,6 +623,14 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	}
 
 	// --- Spawn CombatUnits from roster ---
+	// Formation grid: same layout as spawnCombatUnitsWithType
+	unitCount := len(cmd.Units)
+	formCols := 1
+	for formCols*formCols < unitCount {
+		formCols++
+	}
+	formSpacing := fixed.FromFloat(0.6)
+
 	for i, cu := range cmd.Units {
 		cuType, ok := component.ParseCombatUnitType(cu.Type)
 		if !ok {
@@ -630,23 +638,36 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		}
 		cuStats := component.CombatUnitTypeTable[cuType]
 
-		// Offset position: spread units around commander
-		offsetX := int64((i%5 - 2) * 15)
-		offsetY := int64((i/5 + 1) * 15)
+		// Formation offset: grid around commander
+		col := i % formCols
+		row := i / formCols
+		ox := int64(col-(formCols-1)/2) * formSpacing
+		oy := int64(row+1) * formSpacing
+
+		// Alternate melee/ranged roles
+		role := component.RoleMelee
+		attackType := component.AttackMelee
+		if i%2 == 1 {
+			role = component.RoleRanged
+			attackType = component.AttackRanged
+		}
 
 		cuEntity := em.Create()
 		gs.addComponent(cuEntity, component.PositionComponent{
-			X: cx + fixed.FromFloat(float64(offsetX)),
-			Y: cy + fixed.FromFloat(float64(offsetY)),
+			X: cx + ox,
+			Y: cy + oy,
 		})
 		gs.addComponent(cuEntity, component.VelocityComponent{
 			Speed: unitSpeed,
 		})
 		gs.addComponent(cuEntity, component.BoidComponent{
 			SquadID:       squadID,
-			Role:          component.RoleMelee,
+			Role:          role,
 			SeparationW:   fixed.FromFloat(1.5),
-			NeighborRange: fixed.FromFloat(5.0),
+			CohesionW:     fixed.FromFloat(0.8),
+			AlignmentW:    fixed.FromFloat(1.0),
+			FormationW:    fixed.FromFloat(2.0),
+			NeighborRange: fixed.FromFloat(2.0),
 		})
 
 		// Scale HP by level (each level adds ~15% HP)
@@ -659,9 +680,10 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			MaxHP: cuHP,
 		})
 		gs.addComponent(cuEntity, component.AttackComponent{
-			Damage:  cuStats.Damage,
-			Range:   fixed.FromFloat(float64(cuStats.Range)),
-			Cooldown: cuStats.Cooldown,
+			Damage:     cuStats.Damage,
+			Range:      fixed.FromFloat(float64(cuStats.Range)),
+			Cooldown:   cuStats.Cooldown,
+			AttackType: attackType,
 		})
 		gs.addComponent(cuEntity, component.UnitTypeComponent{
 			Type:   cuType,
@@ -669,8 +691,13 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			Armor:  cuStats.Armor,
 			Level:  cu.Level,
 		})
-		gs.addComponent(cuEntity, component.MovementComponent{})
+		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: 0})
 		gs.addComponent(cuEntity, component.PathfindingComponent{})
+		gs.addComponent(cuEntity, component.FormationRoleComponent{
+			Role:    role,
+			OffsetX: ox,
+			OffsetY: oy,
+		})
 		gs.addComponent(cuEntity, component.OwnerComponent{
 			PlayerID: playerID,
 			Faction:  faction,

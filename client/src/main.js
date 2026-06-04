@@ -2,12 +2,12 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=fix-view-2';
-import { Camera } from './camera.js?v=fix-view-2';
-import { StateManager } from './state.js?v=death-fix';
-import { Connection } from './connection.js?v=msg-fix';
-import { InputHandler } from './input.js?v=fix-view-2';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=fix-view-2';
+import { Renderer } from './gl.js?v=v1';
+import { Camera } from './camera.js?v=v1';
+import { StateManager } from './state.js?v=v1';
+import { Connection } from './connection.js?v=v1';
+import { InputHandler } from './input.js?v=v1';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v1';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1148,6 +1148,9 @@ export class Game {
       overlay.remove();
       const app = window.__paperWarApp;
       if (app) {
+        // Stop old game loop to prevent CPU waste
+        if (app.game) app.game.stop();
+        app.game = null;
         // Mark old connection for clean disconnect
         if (app.connection) app.connection._intentionalClose = true;
         app.lobbyStatus.textContent = 'Ready for battle';

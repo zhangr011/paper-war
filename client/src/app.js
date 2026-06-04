@@ -284,7 +284,6 @@ export class App {
   // -----------------------------------------------------------------------
 
   startGame(matchInfo) {
-    console.log('Starting game:', matchInfo);
     // Update player name in top bar
     const nameEl = document.getElementById('player-name');
     if (nameEl) nameEl.textContent = this.username;

@@ -92,7 +92,6 @@ export class Connection {
 
     this.ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
-        console.log('WS text:', event.data.substring(0, 100));
         // JSON text message
         try {
           const msg = JSON.parse(event.data);
@@ -436,7 +435,6 @@ export class Connection {
 
   scheduleReconnect() {
     this.reconnectTimer = setTimeout(() => {
-      console.log('Reconnecting...');
       this.connect();
     }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);

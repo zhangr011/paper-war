@@ -224,13 +224,11 @@ export class Game {
 
     // --- Connection status ---
     this.connection.onConnect = () => {
-      console.log('Connected to server');
       this.updateConnectionStatus(true);
       this.gameStartTime = performance.now();
     };
 
     this.connection.onDisconnect = () => {
-      console.log('Disconnected from server');
       this.updateConnectionStatus(false);
     };
 
@@ -240,7 +238,6 @@ export class Game {
     };
 
     this.connection.onMatchResult = ({ winner, reason }) => {
-      console.log(`Match ended: winner=${winner}, reason=${reason}`);
       this.showMatchResult(winner, reason);
     };
 
@@ -256,7 +253,6 @@ export class Game {
           units.push({ type: view.getUint8(off), count: view.getUint8(off + 1) });
           off += 2;
         }
-        console.log(`Roster: cmd Lv${cmdLevel}, ${unitCount} unit types`);
       } catch (e) {
         console.warn('Failed to parse roster data:', e);
       }
@@ -1154,7 +1150,6 @@ export class Game {
     // Could update a connection indicator in the UI.
     // For now, log to console.
     const status = connected ? 'Connected' : 'Disconnected';
-    console.log('Connection status:', status);
   }
 }
 

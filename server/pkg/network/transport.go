@@ -106,6 +106,8 @@ func (s *ClientSession) readPump(h *Hub) {
 		if err != nil {
 			return
 		}
+		// Reset read deadline on any successful read (keeps text pings alive)
+		s.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		if msgType == websocket.TextMessage {
 			// Parse as JSON

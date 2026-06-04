@@ -417,7 +417,8 @@ export class Connection {
     this.lastPong = Date.now();
     this.pingInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.ping();
+        // Browser WebSocket doesn't support .ping() — send text ping instead
+        this.ws.send(JSON.stringify({ type: 'ping' }));
       }
     }, 15000);
   }

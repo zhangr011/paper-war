@@ -1148,6 +1148,8 @@ export class Game {
       overlay.remove();
       const app = window.__paperWarApp;
       if (app) {
+        // Mark old connection for clean disconnect
+        if (app.connection) app.connection._intentionalClose = true;
         app.lobbyStatus.textContent = 'Ready for battle';
         app.lobbySpinner.style.display = 'none';
         app.soloBtn.disabled = false;

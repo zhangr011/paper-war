@@ -87,7 +87,10 @@ export class Connection {
     };
 
     this.ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
+      // Silence expected errors during intentional disconnect
+      if (!this._intentionalClose) {
+        console.error('WebSocket error:', err);
+      }
     };
 
     this.ws.onmessage = (event) => {

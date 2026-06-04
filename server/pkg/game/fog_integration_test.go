@@ -50,14 +50,15 @@ func TestFogGridSentInSnapshot(t *testing.T) {
 	t.Logf("snapshot size: %d bytes", len(data))
 
 	fogFound := false
-	for i := len(data) - 6; i >= 0; i-- {
-		if data[i] == 0xFF && i+1 < len(data) && data[i+1] == 0xFD {
+	for i := len(data) - 8; i >= 0; i-- {
+		if data[i] == 0xFF && i+3 < len(data) &&
+			data[i+1] == 0xFE && data[i+2] == 0xFD && data[i+3] == 0xFC {
 			fogFound = true
 			break
 		}
 	}
 	if !fogFound {
-		t.Error("fog marker 0xFF 0xFD not found in snapshot binary")
+		t.Error("fog marker 0xFF 0xFE 0xFD 0xFC not found in snapshot binary")
 	}
 }
 

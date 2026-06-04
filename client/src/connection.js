@@ -247,19 +247,21 @@ export class Connection {
     let fogData = null;
     let snapshotEnd = data.byteLength;
     const scanView = new DataView(data);
-    // Search backwards for fog marker
-    for (let i = data.byteLength - 1; i >= 5; i--) {
-      if (scanView.getUint8(i) === 0xFD && scanView.getUint8(i - 1) === 0xFF) {
-        const fogW = scanView.getUint16(i + 1, true);
-        const fogH = scanView.getUint16(i + 3, true);
+    // Search backwards for fog marker 0xFF 0xFE 0xFD 0xFC
+    for (let i = data.byteLength - 4; i >= 7; i--) {
+      if (scanView.getUint8(i) === 0xFC && scanView.getUint8(i - 1) === 0xFD &&
+          scanView.getUint8(i - 2) === 0xFE && scanView.getUint8(i - 3) === 0xFF) {
+        const fogStart = i + 1;
+        const fogW = scanView.getUint16(fogStart, true);
+        const fogH = scanView.getUint16(fogStart + 2, true);
         const fogSize = fogW * fogH;
-        if (i + 5 + fogSize <= data.byteLength) {
+        if (fogStart + 4 + fogSize <= data.byteLength) {
           fogData = {
             width: fogW,
             height: fogH,
-            visible: new Uint8Array(data.slice(i + 5, i + 5 + fogSize)),
+            visible: new Uint8Array(data.slice(fogStart + 4, fogStart + 4 + fogSize)),
           };
-          snapshotEnd = i - 1; // exclude 0xFF marker byte
+          snapshotEnd = i - 3; // exclude 4-byte marker
         }
         break;
       }
@@ -276,7 +278,7 @@ export class Connection {
 
     // --- Unit deltas ---
     const units = [];
-    for (let i = 0; i < unitCount; i++) {
+    for (let i = 0; i < unitCount && off < view.byteLength - 4; i++) {
       const entityID = view.getUint32(off, true); off += 4;
       const mask = view.getUint8(off); off += 1;
 
@@ -320,7 +322,7 @@ export class Connection {
 
     // --- Events ---
     const events = [];
-    for (let i = 0; i < eventCount; i++) {
+    for (let i = 0; i < eventCount && off < view.byteLength - 4; i++) {
       const eventType = view.getUint8(off); off += 1;
       const evt = { type: eventType };
 

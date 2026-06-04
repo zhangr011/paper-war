@@ -1184,10 +1184,10 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	}
 	snapshotBytes := network.EncodeSnapshot(snap)
 
-	// Append fog grid data: marker 0xFF 0xFD + w(uint16) + h(uint16) + visible bytes
+	// Append fog grid data: marker 0xFF 0xFE 0xFD 0xFC + w(uint16) + h(uint16) + visible bytes
 	if fogGrid != nil {
-		fogData := make([]byte, 0, 6+len(fogGrid.Visible))
-		fogData = append(fogData, 0xFF, 0xFD)
+		fogData := make([]byte, 0, 8+len(fogGrid.Visible))
+		fogData = append(fogData, 0xFF, 0xFE, 0xFD, 0xFC)
 		fogData = appendUint16(fogData, uint16(fogGrid.Width))
 		fogData = appendUint16(fogData, uint16(fogGrid.Height))
 		fogData = append(fogData, fogGrid.Visible...)

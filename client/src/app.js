@@ -69,7 +69,7 @@ export class App {
     this.clashBtn = document.getElementById('clash-btn');
     this.clashConfig = document.getElementById('clash-config');
     this.clashTeam1Size = 5;
-    this.clashTeam2Size = 10;
+    this.clashTeam2Size = 5;
     this.clashTerrain = 'random';
     if (this.clashBtn) {
       // Wire clash config size buttons

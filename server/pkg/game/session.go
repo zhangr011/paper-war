@@ -419,8 +419,8 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 	gs.AISys2 = nil // reset clash AI
 
-	// Reset objective system (recreate with new map)
-	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
+	// Reset objective system (reuse existing, update map)
+	gs.objectiveSys.Reset(gs.Map)
 
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)

@@ -35,6 +35,13 @@ func NewObjectiveSystem(gm *tilemap.GameMap) *ObjectiveSystem {
 	return &ObjectiveSystem{gm: gm}
 }
 
+// Reset clears the match result and updates the game map for a new match.
+func (s *ObjectiveSystem) Reset(gm *tilemap.GameMap) {
+	s.gm = gm
+	s.result = nil
+	s.captureHolder = 0
+}
+
 func (s *ObjectiveSystem) Name() string  { return "ObjectiveSystem" }
 func (s *ObjectiveSystem) Priority() int { return 95 } // after Death(90)
 

@@ -105,14 +105,14 @@ export class Connection {
       } else {
         // Binary message — check for map data vs snapshot
         const view = new DataView(event.data);
-        if (view.byteLength >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xFE) {
-          // Map terrain data
+        if (view.byteLength >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xFD) {
+          // Map terrain data (prefix 0xFF 0xFD)
           const terrainData = new Uint8Array(event.data, 2);
           if (this.onMapData) {
             this.onMapData(terrainData);
           }
         } else {
-          // Snapshot data — may contain appended fog grid
+          // Snapshot data or server message — handleMessage handles both
           this.handleMessage(event.data);
         }
       }

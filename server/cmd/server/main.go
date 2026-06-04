@@ -81,7 +81,7 @@ func main() {
 				"map_h":     mh,
 			})
 			// Send map terrain data as binary
-			hub.SendToClient(p.ClientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+			hub.SendToClient(p.ClientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		}
 	})
 
@@ -139,7 +139,7 @@ func main() {
 				"map_w":     mw,
 				"map_h":     mh,
 			})
-			hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		case "start_clash":
 			log.Printf("client %d starting clash test", clientID)
 
@@ -218,7 +218,7 @@ func main() {
 				"map_w":     mw,
 				"map_h":     mh,
 			})
-			hub.SendToClient(clientID, append([]byte{0xFF, 0xFE}, gs.MapData()...))
+			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		}
 		},
 	)

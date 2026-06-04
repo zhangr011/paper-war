@@ -1141,9 +1141,21 @@ export class Game {
       '<div style="text-align:center">' +
       `<h1 style="font-size:48px;margin:0;color:${headingColor}">${heading}</h1>` +
       '<p style="font-size:20px;margin:16px 0">' + reason + '</p>' +
-      '<button onclick="this.parentElement.parentElement.remove()" ' +
+      '<button id="match-result-ok" ' +
       'style="padding:12px 32px;font-size:18px;cursor:pointer">OK</button>' +
       '</div>';
+    document.getElementById('match-result-ok').addEventListener('click', () => {
+      overlay.remove();
+      const app = window.__paperWarApp;
+      if (app) {
+        app.lobbyStatus.textContent = 'Ready for battle';
+        app.lobbySpinner.style.display = 'none';
+        app.soloBtn.disabled = false;
+        app.clashBtn.disabled = false;
+        app.findMatchBtn.disabled = false;
+        app.showScreen('lobby');
+      }
+    });
   }
 
   updateConnectionStatus(connected) {

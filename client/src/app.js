@@ -314,3 +314,4 @@ export class App {
 // ---------------------------------------------------------------------------
 
 const app = new App();
+window.__paperWarApp = app;

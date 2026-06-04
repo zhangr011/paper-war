@@ -1,6 +1,6 @@
 ---
 Title: Show combat unit HP
-Status: open
+Status: done
 Priority: medium
 Component: client
 Type: enhancement

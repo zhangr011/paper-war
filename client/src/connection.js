@@ -236,8 +236,8 @@ export class Connection {
   handleMessage(data) {
     const checkView = new DataView(data);
 
-    // Server messages start with type byte >= 0x80; snapshots start with tick uint32 (small values)
-    if (checkView.byteLength >= 1 && checkView.getUint8(0) >= 0x80) {
+    // Server messages start with 0xFF 0xFE magic prefix; snapshots start with tick uint32
+    if (checkView.byteLength >= 2 && checkView.getUint8(0) === 0xFF && checkView.getUint8(1) === 0xFE) {
       this.handleServerMessage(data);
       return;
     }
@@ -380,8 +380,9 @@ export class Connection {
 
   handleServerMessage(data) {
     const view = new DataView(data);
-    const type = view.getUint8(0);
-    let off = 1;
+    // Skip 0xFF 0xFE magic prefix, then read type
+    const type = view.getUint8(2);
+    let off = 3;
 
     switch (type) {
       case 0x80: { // MsgGoldUpdate

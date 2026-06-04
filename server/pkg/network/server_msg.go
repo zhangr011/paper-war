@@ -23,8 +23,12 @@ type ServerMessage struct {
 }
 
 // EncodeServerMessage serializes a server message.
+// Uses 0xFF magic prefix to distinguish from snapshot data (which starts with tick uint32).
 func EncodeServerMessage(msg *ServerMessage) []byte {
+	// Magic prefix 0xFF 0xFE to distinguish server messages from snapshot data (tick uint32)
 	buf := new(bytes.Buffer)
+	buf.WriteByte(0xFF)
+	buf.WriteByte(0xFE)
 	binary.Write(buf, binary.LittleEndian, msg.Type)
 
 	switch msg.Type {
@@ -42,8 +46,16 @@ func EncodeServerMessage(msg *ServerMessage) []byte {
 }
 
 // DecodeServerMessage deserializes a server message.
+// Expects 0xFF magic prefix byte before the type.
 func DecodeServerMessage(data []byte) (*ServerMessage, error) {
 	r := bytes.NewReader(data)
+	// Skip magic prefix (0xFF 0xFE)
+	if _, err := r.ReadByte(); err != nil {
+		return nil, err
+	}
+	if _, err := r.ReadByte(); err != nil {
+		return nil, err
+	}
 	msg := &ServerMessage{}
 	if err := binary.Read(r, binary.LittleEndian, &msg.Type); err != nil {
 		return nil, err

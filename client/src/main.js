@@ -5,7 +5,7 @@
 import { Renderer } from './gl.js?v=fix-view-2';
 import { Camera } from './camera.js?v=fix-view-2';
 import { StateManager } from './state.js?v=death-fix';
-import { Connection } from './connection.js?v=fix-view-2';
+import { Connection } from './connection.js?v=msg-fix';
 import { InputHandler } from './input.js?v=fix-view-2';
 import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=fix-view-2';
 

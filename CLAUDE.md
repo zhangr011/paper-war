@@ -8,7 +8,7 @@ Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-desig
 
 ### Issue tracker
 
-Issues live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues (repo: `zhangr011/paper-war`). Uses `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

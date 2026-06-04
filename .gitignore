@@ -2,3 +2,13 @@
 node_modules/
 test-results/
 server/server
+
+# Debug test files
+server/pkg/game/combat_flow_test.go
+server/pkg/game/combat_kill_test.go
+server/pkg/game/death_events_test.go
+server/pkg/game/flow_debug_test.go
+server/pkg/game/live_combat_test.go
+server/pkg/game/phase_debug_test.go
+auth-gh.sh
+do-push.sh

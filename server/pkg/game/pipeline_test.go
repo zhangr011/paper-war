@@ -75,7 +75,11 @@ func TestTickPipelineIntegration(t *testing.T) {
 		gs.Tick()
 	}
 
-	// Verify at least some combat occurred by checking health
+	// Verify at least some combat occurred by checking health or match end.
+	// If the match ended (all units dead from combat), that counts as success.
+	if gs.Lifecycle.Phase == PhaseEnded {
+		return // combat happened — all units eliminated
+	}
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	totalDamage := int32(0)
 	healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {

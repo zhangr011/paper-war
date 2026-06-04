@@ -52,6 +52,8 @@ func (s *MovementSystem) Init(w *ecs.World) {
 
 func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 	s.Sh.Clear()
+
+	// 1. Insert all entities into spatial hash
 	s.posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		s.Sh.Insert(uint64(e), pos.X, pos.Y)
 	})

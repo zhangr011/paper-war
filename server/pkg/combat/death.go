@@ -25,6 +25,14 @@ type DeathSystem struct {
 	// GoldBounties collects {playerID: bounty} for each tick.
 	// Cleared at start of each Tick. Session reads this after Tick().
 	GoldBounties map[uint32]int32
+
+	// Promotions collects {squadID: newCommanderEntity} for each tick.
+	// Cleared at start of each Tick. Session reads this to update AI state.
+	Promotions map[uint32]ecs.Entity
+
+	// Deaths collects entityIDs of units that died this tick.
+	// Used by GenerateSnapshot to send death events to clients.
+	Deaths []uint32
 }
 
 func (s *DeathSystem) Name() string  { return "DeathSystem" }
@@ -61,6 +69,8 @@ func (s *DeathSystem) Init(w *ecs.World) {
 
 func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 	s.GoldBounties = make(map[uint32]int32)
+	s.Promotions = make(map[uint32]ecs.Entity)
+	s.Deaths = nil
 
 	var dead []ecs.Entity
 	s.healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
@@ -104,6 +114,7 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 
 		// Clear attack targets referencing this entity
 		targetID := uint32(e)
+		s.Deaths = append(s.Deaths, targetID)
 		s.attackPool.Each(func(other ecs.Entity, ac *component.AttackComponent) {
 			if ac.TargetID == targetID {
 				ac.TargetID = 0
@@ -192,4 +203,7 @@ func (s *DeathSystem) handleCommanderDeath(squadID uint32) {
 			AuraRadius: bc.NeighborRange,
 		})
 	}
+
+	// Record promotion for AI state update
+	s.Promotions[squadID] = bestEntity
 }

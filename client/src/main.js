@@ -24,6 +24,10 @@ const FIXED_ONE = 1 << FRAC_BITS;
 const GRASS_A = { r: 0.18, g: 0.38, b: 0.14 };
 const GRASS_B = { r: 0.20, g: 0.42, b: 0.16 };
 
+// Max HP per CombatUnitType (must match server CombatUnitTypeTable)
+// Commanders get 3x these values
+const UNIT_MAX_HP = [80, 60, 40, 60, 120, 150, 130];
+
 // Default unit sprite sizes per CombatUnitType (0-6)
 // LI=small, HI=medium, Sniper=small, AAI=small, MG=medium, MA=large, MM=large
 const UNIT_SIZES = [
@@ -693,6 +697,9 @@ export class Game {
     // Pass 3: Units (already Y-sorted by buildUnitDescriptors)
     this.renderer.drawUnits(unitDescs, cameraOffset);
 
+    // Pass 3.5: HP bars above units (uses effects batch)
+    this.renderer.drawHPBars(unitDescs, cameraOffset);
+
     // Pass 4: Selection highlights (drawn as effects)
     if (selectionHighlights.length > 0) {
       this.renderer.drawEffects(selectionHighlights, cameraOffset);
@@ -841,15 +848,14 @@ export class Game {
       }
 
       // HP ratio for tinting damaged units
-      if (unit.currHP > 0) {
-        const hpRatio = Math.max(0, Math.min(1, unit.currHP / 100));
-        if (hpRatio < 0.5) {
-          // Blend toward red as HP decreases
-          const dmg = 1 - hpRatio * 2;
-          r = r + (1.0 - r) * dmg * 0.5;
-          g = g * (1 - dmg * 0.3);
-          b = b * (1 - dmg * 0.3);
-        }
+      const maxHP = UNIT_MAX_HP[sizeIdx] || 80;
+      const hpRatio = Math.max(0, Math.min(1, unit.currHP / maxHP));
+      if (hpRatio < 0.5) {
+        // Blend toward red as HP decreases
+        const dmg = 1 - hpRatio * 2;
+        r = r + (1.0 - r) * dmg * 0.5;
+        g = g * (1 - dmg * 0.3);
+        b = b * (1 - dmg * 0.3);
       }
 
       descs.push({
@@ -861,6 +867,7 @@ export class Game {
         g: g,
         b: b,
         sortY: sy, // for Y-sorting
+        hpRatio: hpRatio,
       });
     }
 

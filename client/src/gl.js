@@ -576,6 +576,58 @@ export class Renderer {
   }
 
   /**
+   * Draw HP bars above units using the effects batch (color quads).
+   * Each bar is a thin rectangle: background (dark) + foreground (green/yellow/red).
+   * @param {Array<{x:number, y:number, w:number, hpRatio:number}>} units
+   * @param {{ x:number, y:number }} camera
+   */
+  drawHPBars(units, camera) {
+    const batch = this.effectsBatch;
+    const barH = 2;         // bar height in pixels
+    const barPad = 1;       // gap above unit sprite
+    const barMargin = 2;    // inset from unit edges
+
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.hpRatio === undefined || u.hpRatio >= 1.0) continue; // skip full HP
+
+      const ux = u.x - camera.x;
+      const uy = u.y - camera.y;
+      const bw = u.w - barMargin * 2;
+      const bx = ux + barMargin;
+      const by = uy - barH - barPad;
+
+      // Background (dark)
+      batch.pushColorQuad(bx, by, bw, barH, 0.15, 0.15, 0.15, 0.7);
+
+      // Foreground: green → yellow → red based on hpRatio
+      let fr, fg, fb;
+      if (u.hpRatio > 0.6) {
+        // green to yellow
+        const t = (u.hpRatio - 0.6) / 0.4;
+        fr = 1.0 - t * 0.8;
+        fg = 0.85;
+        fb = 0.1;
+      } else if (u.hpRatio > 0.3) {
+        // yellow to orange
+        const t = (u.hpRatio - 0.3) / 0.3;
+        fr = 1.0;
+        fg = 0.4 + t * 0.45;
+        fb = 0.05;
+      } else {
+        // orange to red
+        const t = u.hpRatio / 0.3;
+        fr = 0.8 + t * 0.2;
+        fg = 0.1 + t * 0.3;
+        fb = 0.05;
+      }
+
+      const fillW = Math.max(1, bw * u.hpRatio);
+      batch.pushColorQuad(bx, by, fillW, barH, fr, fg, fb, 0.85);
+    }
+  }
+
+  /**
    * Batch effects (ground and air).
    * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number, a:number}>} effects
    * @param {{ x:number, y:number }} camera

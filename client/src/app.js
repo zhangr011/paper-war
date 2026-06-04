@@ -70,6 +70,7 @@ export class App {
     this.clashConfig = document.getElementById('clash-config');
     this.clashTeam1Size = 5;
     this.clashTeam2Size = 10;
+    this.clashTerrain = 'random';
     if (this.clashBtn) {
       // Wire clash config size buttons
       document.querySelectorAll('.clash-size-btn').forEach(btn => {
@@ -84,6 +85,15 @@ export class App {
         });
       });
 
+      // Wire terrain preset buttons
+      document.querySelectorAll('.clash-terrain-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.clash-terrain-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          this.clashTerrain = btn.dataset.terrain;
+        });
+      });
+
       this.clashBtn.addEventListener('click', () => {
         this.lobbyStatus.textContent = 'Starting clash test...';
         this.soloBtn.disabled = true;
@@ -93,6 +103,7 @@ export class App {
           type: 'start_clash',
           team1_units: this.clashTeam1Size,
           team2_units: this.clashTeam2Size,
+          terrain: this.clashTerrain,
         });
       });
     }

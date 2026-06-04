@@ -368,6 +368,12 @@ func (gs *GameSession) runAI() {
 
 // Reset clears all entities, generates a new random map, and resets state.
 func (gs *GameSession) Reset() {
+	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	gs.ResetWithSeed(seed)
+}
+
+// ResetWithSeed clears all entities and generates a map with the given seed.
+func (gs *GameSession) ResetWithSeed(seed int64) {
 	// Destroy all entities
 	em := gs.World.Entities()
 	// Collect all entity IDs first
@@ -381,8 +387,7 @@ func (gs *GameSession) Reset() {
 		em.Destroy(e)
 	}
 
-	// Generate new map with random seed
-	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	// Generate new map with given seed
 	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, seed)
 	gs.Cache = pathfinding.NewCache(gs.Map, 64)
 

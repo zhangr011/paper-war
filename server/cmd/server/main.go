@@ -157,7 +157,28 @@ func main() {
 				}
 			}
 
-			gs.Reset()
+			// Parse terrain preset and determine seed
+			terrainPreset := "random"
+			if v, ok := msg["terrain"]; ok {
+				if s, ok := v.(string); ok {
+					terrainPreset = s
+				}
+			}
+			terrainSeeds := map[string]int64{
+				"random":   0, // 0 means use random seed in ResetWithSeed
+				"plains":   42,
+				"fortress": 777,
+				"river":    1337,
+			}
+			seed, ok := terrainSeeds[terrainPreset]
+			if !ok {
+				seed = 0
+			}
+			if seed == 0 {
+				gs.Reset()
+			} else {
+				gs.ResetWithSeed(seed)
+			}
 			gs.EnableClashMode()
 
 			// Spectator: playerID=0 means no fog, full map visibility

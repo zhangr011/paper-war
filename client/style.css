@@ -771,6 +771,23 @@ body {
   background: #5A7B9A;
   color: #fff;
 }
+.clash-terrain-btn {
+  padding: 2px 10px;
+  font-size: 11px;
+  border: 1px solid #6B8A6B;
+  border-radius: 3px;
+  background: var(--paper-light);
+  cursor: pointer;
+}
+.clash-terrain-btn.selected {
+  background: #4A7A4A;
+  color: #fff;
+  border-color: #4A7A4A;
+}
+.clash-terrain-btn:hover {
+  background: #5A8A5A;
+  color: #fff;
+}
 
 .lobby-btn-cancel {
   background: #8A4A3A;

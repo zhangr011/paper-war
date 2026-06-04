@@ -65,6 +65,7 @@ func main() {
 	mm := game.NewMatchmaker(func(players []game.QueuePlayer) {
 		log.Printf("Match found with %d players!", len(players))
 		gs.Reset()
+		gs.Map.Objective.Type = 0 // Force elimination
 		for i, p := range players {
 			playerID := uint32(i + 1)
 			hub.SetClientPlayerID(p.ClientID, playerID)
@@ -120,6 +121,8 @@ func main() {
 			}
 			log.Printf("client %d (%s) starting solo game (cmdType=%d)", clientID, name, cmdType)
 			gs.Reset()
+			// Force elimination objective for all modes
+			gs.Map.Objective.Type = 0 // ObjectiveElimination = 0
 			hub.SetClientPlayerID(clientID, 1)
 			hub.SetClientInGame(clientID, true)
 

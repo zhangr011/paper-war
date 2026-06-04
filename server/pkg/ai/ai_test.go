@@ -101,21 +101,17 @@ func TestAIRetreat(t *testing.T) {
 	posPool.Add(cmd, component.PositionComponent{X: fixed.FromFloat(50), Y: fixed.FromFloat(30)})
 	cmdPool.Add(cmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
 	ownerPool.Add(cmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
-	healthPool.Add(cmd, component.HealthComponent{HP: 30, MaxHP: 200}) // 15% HP
+	healthPool.Add(cmd, component.HealthComponent{HP: 1, MaxHP: 200}) // 0.5% HP
 
 	sys := NewAISystem(2, nil, 64, 64)
 	sys.RegisterSquad(1, uint32(cmd))
 	sys.States[1].State = StateApproach
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool)
-	if len(cmds) != 1 {
-		t.Fatalf("expected 1 retreat command, got %d", len(cmds))
-	}
-	if cmds[0].Type != CmdMove {
-		t.Error("expected move command for retreat")
-	}
-	if sys.States[1].State != StateRetreat {
-		t.Error("state should be retreat")
+	_ = cmds
+	// With RetreatHPThreshold=0.0, retreat is disabled — AI fights to death
+	if sys.States[1].State == StateRetreat {
+		t.Error("retreat should be disabled with threshold 0.0")
 	}
 }
 

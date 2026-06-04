@@ -193,6 +193,14 @@ func (sg *SnapshotGenerator) Generate(tick uint32, units []EntityState, ids []ui
 	return snap
 }
 
+// ClearPrevStates removes dead entity IDs from the prev state cache.
+// This prevents stale entries from accumulating when entities are destroyed.
+func (sg *SnapshotGenerator) ClearPrevStates(deadIDs []uint32) {
+	for _, id := range deadIDs {
+		delete(sg.prevStates, id)
+	}
+}
+
 // EncodeSnapshot serializes a snapshot to binary.
 func EncodeSnapshot(snap *Snapshot) []byte {
 	size := 4 + 4 + 2 + 1 // tick + prevtick + unitcount + eventcount
@@ -268,6 +276,11 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 		if u.ChangedMask == MaskFull {
 			buf = append(buf, u.UnitType, u.Team)
 		}
+	}
+	// Serialize events
+	for _, ev := range snap.Events {
+		buf = append(buf, uint8(ev.Type))
+		buf = append(buf, ev.Data...)
 	}
 	return buf
 }

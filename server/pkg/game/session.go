@@ -57,7 +57,7 @@ const (
 	InitialTeamCombatUnits    = 5  // v1: starter roster is 1 Cmd + 5 LI
 	CombatUnitsPerTeamLevel   = 2
 	DefaultMovementMultiplier = 5
-	combatUnitCrossMapSeconds = 60 * 60
+	combatUnitCrossMapSeconds = 30
 	StartGold                 = 50 // v1: 50 gold start
 )
 
@@ -238,6 +238,20 @@ func (gs *GameSession) Tick() {
 				gs.PlayerGold[playerID] += bounty
 				if gs.lastSentGold == nil {
 					gs.lastSentGold = make(map[uint32]int32)
+				}
+			}
+		}
+
+		// Sync AI states with promoted commanders
+		for squadID, newCmd := range gs.deathSys.Promotions {
+			if gs.AISys != nil {
+				if state, ok := gs.AISys.States[squadID]; ok {
+					state.CommanderID = uint32(newCmd)
+				}
+			}
+			if gs.AISys2 != nil {
+				if state, ok := gs.AISys2.States[squadID]; ok {
+					state.CommanderID = uint32(newCmd)
 				}
 			}
 		}
@@ -422,6 +436,8 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 // EnableClashMode activates AI for player 1 as well, creating a second AI system.
 // Both teams are fully AI-controlled. The spectator (playerID=0) sees everything.
 func (gs *GameSession) EnableClashMode() {
+	// Clash mode: no fog for either AI so they always see each other
+	gs.AISys.FogSystem = nil
 	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
 }
 
@@ -479,7 +495,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 	cmdStats := component.CombatUnitTypeTable[cmdType]
 	cmdHP := cmdStats.HP * 3
 	cmdDmg := cmdStats.Damage * 2
-	cmdRange := cmdStats.Range
+	cmdRange := fixed.FromFloat(float64(cmdStats.Range))
 
 	gs.addComponent(cmdEntity, component.HealthComponent{
 		HP:     cmdHP,
@@ -528,6 +544,9 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 	// Register with AI system if this is an AI player
 	if gs.AISys != nil && playerID == gs.AISys.AIPlayerID {
 		gs.AISys.RegisterSquad(squadID, uint32(cmdEntity))
+	}
+	if gs.AISys2 != nil && playerID == gs.AISys2.AIPlayerID {
+		gs.AISys2.RegisterSquad(squadID, uint32(cmdEntity))
 	}
 
 	// --- Combat units (always LI for starter roster) ---
@@ -1151,6 +1170,18 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	}
 
 	snap := gs.SnapGen.Generate(gs.tickCount, visStates, visIDs)
+
+	// Attach death events from DeathSystem
+	if gs.deathSys != nil && len(gs.deathSys.Deaths) > 0 {
+		for _, entityID := range gs.deathSys.Deaths {
+			snap.Events = append(snap.Events, network.Event{
+				Type: network.EventDeath,
+				Data: []byte{byte(entityID), byte(entityID >> 8), byte(entityID >> 16), byte(entityID >> 24)},
+			})
+		}
+		// Clean up snapshot generator's prevStates for dead entities
+		gs.SnapGen.ClearPrevStates(gs.deathSys.Deaths)
+	}
 	snapshotBytes := network.EncodeSnapshot(snap)
 
 	// Append fog grid data: marker 0xFF 0xFD + w(uint16) + h(uint16) + visible bytes

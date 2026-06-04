@@ -19,7 +19,7 @@ const (
 	StateDefend   uint8 = 5 // v1: defend capture target
 
 	EvalInterval        uint32 = 30
-	RetreatHPThreshold         = 0.3
+	RetreatHPThreshold         = 0.0 // disabled — fight to the death
 )
 
 type AIState struct {
@@ -170,7 +170,7 @@ func (as *AISystem) Update(
 
 		if bestEnemyID != 0 {
 			state.TargetUnitID = bestEnemyID
-			attackRange := fixed.FromFloat(3.0)
+			attackRange := fixed.FromFloat(5.0) // use max unit combat range
 			attackRangeSq := attackRange * attackRange
 			if bestDist <= attackRangeSq {
 				state.State = StateAttack

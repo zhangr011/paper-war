@@ -11,7 +11,8 @@ import (
 
 func TestMovementDebug(t *testing.T) {
 	gs := NewGameSession()
-	gs.Map.Objective = tilemap.Objective{Type: tilemap.ObjectiveElimination}
+	gs.Map.Objective = tilemap.Objective{Type: 0} // no objective — pure movement test
+	gs.objectiveSys = nil
 	if gs.Lifecycle.Phase != PhasePlaying {
 		gs.Lifecycle.Start()
 	}

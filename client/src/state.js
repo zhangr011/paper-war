@@ -517,8 +517,8 @@ export class StateManager {
           if (this.onDamage) this.onDamage(ev.data);
           break;
         case EVENT_DEATH:
-          this._handleDeath(ev.data);
-          if (this.onDeath) this.onDeath(ev.data);
+          this._handleDeath(ev);
+          if (this.onDeath) this.onDeath(ev);
           break;
         case EVENT_TERRAIN_CHANGE:
           if (this.onTerrainChange) this.onTerrainChange(ev.data);
@@ -535,14 +535,19 @@ export class StateManager {
 
   /**
    * Handle a death event — mark the unit as not alive.
-   * The data format is expected to contain a uint32 entityID at offset 0.
-   * @param {Uint8Array} data
+   * Accepts either a parsed event {entityID} or a raw Uint8Array.
+   * @param {{entityID?:number, byteLength?:number, buffer?:ArrayBuffer, byteOffset?:number}} data
    * @private
    */
   _handleDeath(data) {
-    if (data && data.byteLength >= 4) {
+    let entityID;
+    if (data && typeof data.entityID === 'number') {
+      entityID = data.entityID;
+    } else if (data && data.byteLength >= 4) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-      const entityID = view.getUint32(0, true); // little-endian
+      entityID = view.getUint32(0, true);
+    }
+    if (entityID !== undefined) {
       const unit = this.units.get(entityID);
       if (unit) {
         unit.alive = false;

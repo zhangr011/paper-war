@@ -13,7 +13,8 @@ import (
 // the target when given a move command, not backward (bug 04 regression).
 func TestCombatUnitsMoveForward(t *testing.T) {
 	gs := NewGameSession()
-	gs.Map.Objective = tilemap.Objective{Type: tilemap.ObjectiveElimination}
+	gs.Map.Objective = tilemap.Objective{Type: 0} // no objective — pure movement test
+	gs.objectiveSys = nil
 
 	if gs.Lifecycle.Phase != PhasePlaying {
 		gs.Lifecycle.Start()
@@ -120,7 +121,8 @@ func TestCombatUnitsMoveForward(t *testing.T) {
 // force works — combat units should converge toward their commander over time.
 func TestCombatUnitsFollowCommander(t *testing.T) {
 	gs := NewGameSession()
-	gs.Map.Objective = tilemap.Objective{Type: tilemap.ObjectiveElimination}
+	gs.Map.Objective = tilemap.Objective{Type: 0} // no objective — pure movement test
+	gs.objectiveSys = nil
 
 	if gs.Lifecycle.Phase != PhasePlaying {
 		gs.Lifecycle.Start()

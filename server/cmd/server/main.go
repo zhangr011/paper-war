@@ -170,6 +170,8 @@ func main() {
 			terrainSeeds := map[string]int64{
 				"random":   0, // 0 means use random seed in ResetWithSeed
 				"plains":   42,
+				"forest":   314,
+				"road":     271,
 				"fortress": 777,
 				"river":    1337,
 			}
@@ -190,6 +192,20 @@ func main() {
 			hub.SetClientPlayerID(clientID, 0)
 			hub.SetClientInGame(clientID, true)
 
+			// Parse commander types
+			t1Cmd := component.UnitLightInfantry
+			t2Cmd := component.UnitLightInfantry
+			if v, ok := msg["team1_commander"]; ok {
+				if f, ok := v.(float64); ok && f >= 0 && f <= 3 {
+					t1Cmd = component.CombatUnitType(int(f))
+				}
+			}
+			if v, ok := msg["team2_commander"]; ok {
+				if f, ok := v.(float64); ok && f >= 0 && f <= 3 {
+					t2Cmd = component.CombatUnitType(int(f))
+				}
+			}
+
 			mw, mh := gs.MapSize()
 			cx1 := fixed.FromFloat(float64(mw)/2 - 2)
 			cx2 := fixed.FromFloat(float64(mw)/2 + 2)
@@ -202,7 +218,7 @@ func main() {
 				if n > 10 {
 					n = 10
 				}
-				gs.SpawnSquadWithType(1, squadID, cx1, cy, n, component.UnitLightInfantry)
+				gs.SpawnSquadWithType(1, squadID, cx1, cy, n, t1Cmd)
 				t1Units -= n
 				squadID++
 			}
@@ -211,7 +227,7 @@ func main() {
 				if n > 10 {
 					n = 10
 				}
-				gs.SpawnSquadWithType(2, squadID, cx2, cy, n, component.UnitLightInfantry)
+				gs.SpawnSquadWithType(2, squadID, cx2, cy, n, t2Cmd)
 				t2Units -= n
 				squadID++
 			}

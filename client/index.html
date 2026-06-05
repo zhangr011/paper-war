@@ -56,31 +56,6 @@
         </div>
       </div>
 
-      <!-- Clash config -->
-      <div class="clash-config" id="clash-config" style="display:none">
-        <div class="clash-team-row">
-          <span class="clash-team-label clash-team-blue">Team 1 (Blue):</span>
-          <button class="clash-size-btn selected" data-team="1" data-size="5">5</button>
-          <button class="clash-size-btn" data-team="1" data-size="10">10</button>
-          <button class="clash-size-btn" data-team="1" data-size="15">15</button>
-          <button class="clash-size-btn" data-team="1" data-size="20">20</button>
-        </div>
-        <div class="clash-team-row">
-          <span class="clash-team-label clash-team-red">Team 2 (Red):</span>
-          <button class="clash-size-btn selected" data-team="2" data-size="5">5</button>
-          <button class="clash-size-btn" data-team="2" data-size="10">10</button>
-          <button class="clash-size-btn" data-team="2" data-size="15">15</button>
-          <button class="clash-size-btn" data-team="2" data-size="20">20</button>
-        </div>
-        <div class="clash-team-row">
-          <span class="clash-team-label">Terrain:</span>
-          <button class="clash-terrain-btn selected" data-terrain="random">Random</button>
-          <button class="clash-terrain-btn" data-terrain="plains">Plains</button>
-          <button class="clash-terrain-btn" data-terrain="fortress">Fortress</button>
-          <button class="clash-terrain-btn" data-terrain="river">River</button>
-        </div>
-      </div>
-
       <div class="lobby-queue" id="lobby-queue">
         <p class="lobby-status" id="lobby-status">Ready for battle</p>
         <button class="lobby-btn lobby-btn-solo" id="solo-btn">Start Match</button>
@@ -90,6 +65,70 @@
       </div>
       <div class="lobby-spinner" id="lobby-spinner" style="display:none">
         <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clash Config screen -->
+  <div id="clash-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">Clash Test Setup</h2>
+
+      <!-- Team 1 config -->
+      <div class="clash-section">
+        <h3 class="clash-section-title clash-team-blue">Team 1 (Blue)</h3>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Size:</span>
+          <button class="clash-size-btn selected" data-team="1" data-size="5">5</button>
+          <button class="clash-size-btn" data-team="1" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="1" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="1" data-size="20">20</button>
+        </div>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Commander:</span>
+          <button class="clash-cmd-btn selected" data-team="1" data-cmd-type="0">LI (Gun)</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="1">HI (Cannon)</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="2">Sniper</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
+      <!-- Team 2 config -->
+      <div class="clash-section">
+        <h3 class="clash-section-title clash-team-red">Team 2 (Red)</h3>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Size:</span>
+          <button class="clash-size-btn selected" data-team="2" data-size="5">5</button>
+          <button class="clash-size-btn" data-team="2" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="2" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="2" data-size="20">20</button>
+        </div>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Commander:</span>
+          <button class="clash-cmd-btn selected" data-team="2" data-cmd-type="0">LI (Gun)</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="1">HI (Cannon)</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="2">Sniper</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
+      <!-- Terrain -->
+      <div class="clash-section">
+        <h3 class="clash-section-title">Terrain</h3>
+        <div class="clash-team-row">
+          <button class="clash-terrain-btn selected" data-terrain="random">Random</button>
+          <button class="clash-terrain-btn" data-terrain="plains">Plains</button>
+          <button class="clash-terrain-btn" data-terrain="forest">Forest</button>
+          <button class="clash-terrain-btn" data-terrain="road">Road</button>
+          <button class="clash-terrain-btn" data-terrain="fortress">Fortress</button>
+          <button class="clash-terrain-btn" data-terrain="river">River</button>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="clash-actions">
+        <button class="lobby-btn lobby-btn-cancel" id="clash-back-btn">Back</button>
+        <button class="lobby-btn lobby-btn-clash" id="clash-start-btn">Start Battle</button>
       </div>
     </div>
   </div>

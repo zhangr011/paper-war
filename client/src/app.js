@@ -17,6 +17,7 @@ export class App {
     this.loginScreen = document.getElementById('login-screen');
     this.lobbyScreen = document.getElementById('lobby-screen');
     this.gameScreen = document.getElementById('game-screen');
+    this.clashScreen = document.getElementById('clash-screen');
 
     // Login elements
     this.loginForm = document.getElementById('login-form');
@@ -65,23 +66,40 @@ export class App {
       });
     });
 
-    // Clash Test button — AI vs AI spectator mode
+    // Clash Test — config screen + AI vs AI spectator mode
     this.clashBtn = document.getElementById('clash-btn');
-    this.clashConfig = document.getElementById('clash-config');
     this.clashTeam1Size = 5;
     this.clashTeam2Size = 5;
+    this.clashTeam1Cmd = 0;
+    this.clashTeam2Cmd = 0;
     this.clashTerrain = 'random';
     if (this.clashBtn) {
+      // "Clash Test" in lobby -> show config screen
+      this.clashBtn.addEventListener('click', () => {
+        this.showScreen('clash');
+      });
+
       // Wire clash config size buttons
       document.querySelectorAll('.clash-size-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const team = parseInt(btn.dataset.team);
           const size = parseInt(btn.dataset.size);
-          // Toggle selected within same team row
           document.querySelectorAll(`.clash-size-btn[data-team="${team}"]`).forEach(b => b.classList.remove('selected'));
           btn.classList.add('selected');
           if (team === 1) this.clashTeam1Size = size;
           else this.clashTeam2Size = size;
+        });
+      });
+
+      // Wire clash config commander buttons
+      document.querySelectorAll('.clash-cmd-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const team = parseInt(btn.dataset.team);
+          const cmdType = parseInt(btn.dataset.cmdType);
+          document.querySelectorAll(`.clash-cmd-btn[data-team="${team}"]`).forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          if (team === 1) this.clashTeam1Cmd = cmdType;
+          else this.clashTeam2Cmd = cmdType;
         });
       });
 
@@ -94,15 +112,20 @@ export class App {
         });
       });
 
-      this.clashBtn.addEventListener('click', () => {
+      // Back button -> return to lobby
+      document.getElementById('clash-back-btn').addEventListener('click', () => {
+        this.showScreen('lobby');
+      });
+
+      // Start Battle button -> send config and start match
+      document.getElementById('clash-start-btn').addEventListener('click', () => {
         this.lobbyStatus.textContent = 'Starting clash test...';
-        this.soloBtn.disabled = true;
-        this.clashBtn.disabled = true;
-        this.findMatchBtn.disabled = true;
         this.connection.sendJSON({
           type: 'start_clash',
           team1_units: this.clashTeam1Size,
           team2_units: this.clashTeam2Size,
+          team1_commander: this.clashTeam1Cmd,
+          team2_commander: this.clashTeam2Cmd,
           terrain: this.clashTerrain,
         });
       });
@@ -263,6 +286,7 @@ export class App {
     this.loginScreen.classList.remove('active');
     this.lobbyScreen.classList.remove('active');
     this.gameScreen.classList.remove('active');
+    if (this.clashScreen) this.clashScreen.classList.remove('active');
 
     switch (name) {
       case 'login':
@@ -270,11 +294,12 @@ export class App {
         break;
       case 'lobby':
         this.lobbyScreen.classList.add('active');
-        if (this.clashConfig) this.clashConfig.style.display = 'block';
+        break;
+      case 'clash':
+        if (this.clashScreen) this.clashScreen.classList.add('active');
         break;
       case 'game':
         this.gameScreen.classList.add('active');
-        if (this.clashConfig) this.clashConfig.style.display = 'none';
         break;
     }
   }

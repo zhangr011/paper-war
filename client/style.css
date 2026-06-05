@@ -734,12 +734,40 @@ body {
 }
 
 /* Clash config panel */
-.clash-config {
-  margin: 8px 0;
+.clash-section {
+  margin: 10px 0;
   padding: 8px;
-  border: 1px solid #C0392B;
+  border: 1px solid #555;
   border-radius: 4px;
-  background: rgba(192, 57, 43, 0.08);
+  background: rgba(80, 80, 80, 0.15);
+}
+.clash-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.clash-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: center;
+}
+.clash-cmd-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid #996644;
+  border-radius: 3px;
+  background: var(--paper-light);
+  cursor: pointer;
+}
+.clash-cmd-btn.selected {
+  background: #7A5A3A;
+  color: #fff;
+  border-color: #7A5A3A;
+}
+.clash-cmd-btn:hover {
+  background: #8A6A4A;
+  color: #fff;
 }
 .clash-team-row {
   display: flex;

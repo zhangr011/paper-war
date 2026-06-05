@@ -110,7 +110,10 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 				if tileY >= s.Gm.Height {
 					tileY = s.Gm.Height - 1
 				}
-				ff := s.Cache.Get(int32(path.TargetX>>12), int32(path.TargetY>>12), profile)
+				ff := s.Cache.Get(
+				clamp32(int32(path.TargetX>>12), 0, s.Gm.Width-1),
+				clamp32(int32(path.TargetY>>12), 0, s.Gm.Height-1),
+				profile)
 				dir := ff.GetDirection(tileX, tileY)
 				flowW := fixed.FromFloat(2.5)
 				if hasVel && vel.Speed > flowW {
@@ -216,4 +219,14 @@ func (s *MovementSystem) queryNeighborPositionsExcludeSquad(x, y, range_ int64, 
 		}
 	}
 	return result
+}
+
+func clamp32(v, lo, hi int32) int32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }

@@ -527,7 +527,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 	})
 
 	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: 0})
-	gs.addComponent(cmdEntity, component.PathfindingComponent{})
+	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 	gs.addComponent(cmdEntity, component.FormationRoleComponent{
 		Role: component.RoleCommander,
 	})
@@ -627,7 +627,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	})
 
 	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: 0})
-	gs.addComponent(cmdEntity, component.PathfindingComponent{})
+	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 	gs.addComponent(cmdEntity, component.FormationRoleComponent{
 		Role: component.RoleCommander,
 	})
@@ -716,7 +716,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			Level:  cu.Level,
 		})
 		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: 0})
-		gs.addComponent(cuEntity, component.PathfindingComponent{})
+		gs.addComponent(cuEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 		gs.addComponent(cuEntity, component.FormationRoleComponent{
 			Role:    role,
 			OffsetX: ox,
@@ -983,7 +983,7 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		})
 
 		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: 0})
-		gs.addComponent(unitEntity, component.PathfindingComponent{})
+		gs.addComponent(unitEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 		gs.addComponent(unitEntity, component.FormationRoleComponent{
 			Role:    role,
 			OffsetX: ox,

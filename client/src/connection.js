@@ -244,6 +244,11 @@ export class Connection {
       return;
     }
 
+    // Map data starts with 0xFF 0xFD prefix — ignore (handled elsewhere or stale)
+    if (checkView.byteLength >= 2 && checkView.getUint8(0) === 0xFF && checkView.getUint8(1) === 0xFD) {
+      return;
+    }
+
     // --- Snapshot handling (existing code) ---
     // Check for appended fog data (marker 0xFF 0xFD)
     let fogData = null;
@@ -285,7 +290,6 @@ export class Connection {
       const mask = view.getUint8(off); off += 1;
 
       const unit = { entityID, changedMask: mask };
-
       if (mask & CHANGED_POSITION) {
         unit.x = Number(view.getBigInt64(off, true)); off += 8;
         unit.y = Number(view.getBigInt64(off, true)); off += 8;

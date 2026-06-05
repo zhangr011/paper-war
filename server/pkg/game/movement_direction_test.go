@@ -58,8 +58,8 @@ func TestCombatUnitsMoveForward(t *testing.T) {
 	// Issue move command toward +Y
 	gs.handleMoveSquad(1, spawnX, targetY)
 
-	// Tick 30 times (3 seconds)
-	for i := 0; i < 30; i++ {
+	// Tick 300 times (30 seconds) — enough for 300s cross-map speed
+	for i := 0; i < 300; i++ {
 		gs.Tick()
 	}
 

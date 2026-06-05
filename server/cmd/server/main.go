@@ -13,6 +13,7 @@ import (
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/game"
 	"github.com/user/paper-war/server/pkg/network"
+	"github.com/user/paper-war/server/pkg/tilemap"
 	"github.com/user/paper-war/server/pkg/persist"
 )
 
@@ -168,18 +169,16 @@ func main() {
 				}
 			}
 			terrainSeeds := map[string]int64{
-				"random":   0, // 0 means use random seed in ResetWithSeed
-				"plains":   42,
-				"forest":   314,
-				"road":     271,
-				"fortress": 777,
-				"river":    1337,
+				"random": 0,
 			}
 			seed, ok := terrainSeeds[terrainPreset]
 			if !ok {
 				seed = 0
 			}
-			if seed == 0 {
+			// Try dedicated clash map first, then fallback to procedural
+			if clashMap := tilemap.LoadClashMap(terrainPreset); clashMap != nil {
+				gs.ResetWithMap(clashMap)
+			} else if seed == 0 {
 				gs.Reset()
 			} else {
 				gs.ResetWithSeed(seed)

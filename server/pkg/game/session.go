@@ -386,6 +386,47 @@ func (gs *GameSession) Reset() {
 	gs.ResetWithSeed(seed)
 }
 
+// ResetWithMap clears all entities and installs a pre-built map.
+func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
+	// Destroy all entities
+	em := gs.World.Entities()
+	var ids []ecs.Entity
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	posPool.Each(func(e ecs.Entity, _ *component.PositionComponent) {
+		ids = append(ids, e)
+	})
+	for _, e := range ids {
+		gs.removeComponents(e)
+		em.Destroy(e)
+	}
+
+	gs.Map = m
+	gs.Cache = pathfinding.NewCache(gs.Map, 64)
+
+	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, nil)
+	gs.movementSys.Gm = gs.Map
+	gs.movementSys.Cache = gs.Cache
+
+	gs.tickCount = 0
+	gs.SnapGen = network.NewSnapshotGenerator()
+
+	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys2 = nil
+
+	gs.objectiveSys.Reset(gs.Map)
+
+	// Reset gold state
+	gs.PlayerGold = make(map[uint32]int32)
+	gs.lastSentGold = make(map[uint32]int32)
+
+	// Reset lifecycle back to playing so the game loop keeps ticking
+	if gs.Lifecycle != nil {
+		gs.Lifecycle.Phase = PhasePlaying
+		gs.Lifecycle.MatchResultSent = false
+	}
+}
+
 // ResetWithSeed clears all entities and generates a map with the given seed.
 func (gs *GameSession) ResetWithSeed(seed int64) {
 	// Destroy all entities

@@ -81,22 +81,22 @@ const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 
 // Terrain type colors (matching server component.TerrainType)
 const TERRAIN_COLORS = [
-  { r: 0.18, g: 0.38, b: 0.14 }, // 0 Plain (grass)
-  { r: 0.35, g: 0.30, b: 0.22 }, // 1 Road (brown)
-  { r: 0.20, g: 0.38, b: 0.50 }, // 2 Shallow (light blue)
-  { r: 0.10, g: 0.20, b: 0.40 }, // 3 Deep (dark blue)
-  { r: 0.10, g: 0.28, b: 0.10 }, // 4 Forest (dark green)
-  { r: 0.40, g: 0.36, b: 0.28 }, // 5 Hill (tan)
-  { r: 0.25, g: 0.30, b: 0.18 }, // 6 Swamp (murky green)
-  { r: 0.45, g: 0.35, b: 0.20 }, // 7 Bridge (wood brown)
-  { r: 0.45, g: 0.45, b: 0.42 }, // 8 Wall (stone gray)
-  { r: 0.80, g: 0.85, b: 0.90 }, // 9 Snow (white)
-  { r: 0.70, g: 0.60, b: 0.35 }, // 10 Desert (sand)
-  { r: 0.42, g: 0.39, b: 0.34 }, // 11 Stronghold L1
-  { r: 0.48, g: 0.43, b: 0.36 }, // 12 Stronghold L2
-  { r: 0.55, g: 0.47, b: 0.38 }, // 13 Stronghold L3
-  { r: 0.62, g: 0.50, b: 0.39 }, // 14 Stronghold L4
-  { r: 0.70, g: 0.52, b: 0.38 }, // 15 Stronghold L5
+  { r: 0.22, g: 0.48, b: 0.18 }, // 0 Plain (bright grass)
+  { r: 0.50, g: 0.40, b: 0.25 }, // 1 Road (warm brown)
+  { r: 0.25, g: 0.50, b: 0.70 }, // 2 Shallow (light blue)
+  { r: 0.08, g: 0.15, b: 0.45 }, // 3 Deep (dark blue)
+  { r: 0.05, g: 0.18, b: 0.05 }, // 4 Forest (very dark green)
+  { r: 0.60, g: 0.50, b: 0.30 }, // 5 Hill (sandy tan)
+  { r: 0.30, g: 0.38, b: 0.15 }, // 6 Swamp (yellow-green)
+  { r: 0.55, g: 0.42, b: 0.22 }, // 7 Bridge (wood brown)
+  { r: 0.55, g: 0.55, b: 0.52 }, // 8 Wall (light stone gray)
+  { r: 0.85, g: 0.90, b: 0.95 }, // 9 Snow (white)
+  { r: 0.80, g: 0.70, b: 0.40 }, // 10 Desert (bright sand)
+  { r: 0.55, g: 0.35, b: 0.22 }, // 11 Stronghold L1 (brick red)
+  { r: 0.60, g: 0.38, b: 0.22 }, // 12 Stronghold L2
+  { r: 0.65, g: 0.42, b: 0.22 }, // 13 Stronghold L3
+  { r: 0.70, g: 0.45, b: 0.22 }, // 14 Stronghold L4
+  { r: 0.75, g: 0.48, b: 0.22 }, // 15 Stronghold L5
 ];
 
 // ---------------------------------------------------------------------------

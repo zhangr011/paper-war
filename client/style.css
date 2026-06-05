@@ -627,7 +627,7 @@ body {
 /* ============================================
    Lobby Screen — Paper Parchment Style
    ============================================ */
-#lobby-screen {
+#lobby-screen, #clash-screen {
   justify-content: center;
   align-items: center;
   background: radial-gradient(ellipse at center, #3A2A1A 0%, #1A0F05 100%);

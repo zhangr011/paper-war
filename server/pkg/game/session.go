@@ -56,7 +56,7 @@ const (
 	DefaultMapHeight          = 96
 	InitialTeamCombatUnits    = 5  // v1: starter roster is 1 Cmd + 5 LI
 	CombatUnitsPerTeamLevel   = 2
-	DefaultMovementMultiplier = 5
+	DefaultMovementMultiplier = 1
 	combatUnitCrossMapSeconds = 30
 	StartGold                 = 50 // v1: 50 gold start
 )

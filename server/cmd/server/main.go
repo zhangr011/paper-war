@@ -145,8 +145,6 @@ func main() {
 			})
 			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		case "start_clash":
-			log.Printf("client %d starting clash test, terrain=%s", clientID, terrainPreset)
-
 			// Parse team sizes from message
 			t1Units := 10
 			t2Units := 10

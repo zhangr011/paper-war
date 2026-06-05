@@ -1,6 +1,8 @@
 package tilemap
 
 import (
+	"math/rand"
+
 	"github.com/user/paper-war/server/pkg/component"
 )
 
@@ -440,6 +442,12 @@ func LoadClashMap(name string) *GameMap {
 		return ClashStronghold()
 	case "hills":
 		return ClashHills()
+	case "random":
+		maps := []func()*GameMap{
+			ClashPlains, ClashForest, ClashRoad,
+			ClashRiver, ClashStronghold, ClashHills,
+		}
+		return maps[rand.Intn(len(maps))]()
 	default:
 		return nil
 	}

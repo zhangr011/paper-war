@@ -31,6 +31,8 @@ type GameMap struct {
 	Width, Height int32
 	Tiles         []Tile
 	Objective     Objective
+	Spawns        [][2]int32 // generator-placed spawn positions
+	Seed          int64      // seed for debugging/reproducibility
 }
 
 func NewGameMap(w, h int32) *GameMap {

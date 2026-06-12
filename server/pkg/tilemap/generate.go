@@ -1,169 +1,554 @@
 package tilemap
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
 
+	perlin "github.com/aquilax/go-perlin"
 	"github.com/user/paper-war/server/pkg/component"
 )
 
-type strongholdSite struct {
-	X, Y  int32
-	Level int
-}
+// Generation constants — internal tuning knobs for the heightmap pipeline.
+// Not exposed to callers. Extract to config when clash maps need this pipeline.
+const (
+	// Heightmap noise
+	heightFreq    = 0.05  // base frequency for heightmap noise
+	heightStretch = 2.5   // X-axis stretching for elongated ridges
+	heightAlpha   = 2.0   // Perlin persistence
+	heightBeta    = 2.0   // Perlin lacunarity
+	heightOctaves = 1     // single octave
 
-// GenerateMap creates a symmetric natural terrain map for portrait play.
-// Map features: horizontal river with bridges, vertical roads, forests, hills,
-// open plains. The map is horizontally symmetric (mirrored left-right) for
-// fairness while the battlefield advances along the vertical axis.
+	// Forest noise
+	forestFreq  = 0.12  // base frequency for forest noise
+	forestCoord = 1000.0 // coordinate offset for independent noise layer
+
+	// Coverage targets
+	hillFraction   = 0.12 // ~12% of tiles become hill
+	waterFraction  = 0.02 // ~2% of tiles become deep water
+	forestFraction = 0.75 // ~75% of eligible tiles become forest
+
+	// River
+	riverMaxWidth = 3 // max width at downstream end
+
+	// Strongholds
+	strongholdDenom = 2000 // w*h / this = stronghold count
+	strongholdMax   = 3    // cap on stronghold count
+	passThreshold1  = 2    // primary: non-hill with 2+ hill neighbors
+	passThreshold2  = 1    // relaxed: non-hill with 1+ hill neighbor
+
+	// Bridges
+	bridgeHealth = 200
+
+	// Spawns
+	spawnClearRadius = 3 // 6x6 clearing (radius 3)
+	spawnSearchDepth = 12 // max rows inward from edge
+
+	// Objective
+	survivalChance = 15 // 15% of maps roll Survival
+	survivalTicks  = 3000 // 10 minutes at 5Hz... but game runs 10Hz, so 5 minutes
+	captureHold    = 300  // 60 seconds at 5Hz... 30 sec at 10Hz
+)
+
+// GenerateMap creates a procedural terrain map using a heightmap-driven pipeline.
+// The output is fully deterministic: same (w, h, seed) always produces the same map.
+//
+// Pipeline: heightmap → hills → river → lake → forest → strongholds → bridges → spawns → objective → validate
 func GenerateMap(w, h int32, seed int64) *GameMap {
 	gm := NewGameMap(w, h)
 	r := rand.New(rand.NewSource(seed))
+	p := perlin.NewPerlin(heightAlpha, heightBeta, heightOctaves, seed)
 
-	midX := w / 2
-	midY := h / 2
+	// Stage 1: Generate heightmap
+	heightmap := make([]float64, w*h)
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			nx := float64(x) * heightFreq * heightStretch
+			ny := float64(y) * heightFreq
+			heightmap[y*w+x] = p.Noise2D(nx, ny)
+		}
+	}
 
-	// Phase 1: River (horizontal, winding across the center)
-	riverY := midY
-	for x := int32(0); x < w; x++ {
-		// Winding river
-		riverY += int32(r.Intn(3) - 1)
-		if riverY < midY-3 {
-			riverY = midY - 3
-		}
-		if riverY > midY+3 {
-			riverY = midY + 3
-		}
-		// River width = 2-3 tiles
-		width := 2 + r.Intn(2)
-		for dy := int32(0); dy < int32(width); dy++ {
-			gm.SetTerrain(x, riverY+dy, component.TerrainDeep)
-			// Shallow banks on edges
-			if gm.TileAt(x, riverY-1) != nil && gm.TileAt(x, riverY-1).TerrainType == component.TerrainPlain {
-				gm.SetTerrain(x, riverY-1, component.TerrainShallow)
-			}
-			bottomEdge := riverY + int32(width)
-			if gm.TileAt(x, bottomEdge) != nil && gm.TileAt(x, bottomEdge).TerrainType == component.TerrainPlain {
-				gm.SetTerrain(x, bottomEdge, component.TerrainShallow)
+	// Stage 2: Classify hills from heightmap
+	// Find the threshold that gives ~hillFraction coverage
+	hillThreshold := findPercentile(heightmap, 1.0-hillFraction)
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			if heightmap[y*w+x] >= hillThreshold {
+				gm.SetTerrain(x, y, component.TerrainHill)
+				// Store normalized elevation
+				elev := int8((heightmap[y*w+x] - heightmap[minIndex(heightmap)]) /
+					(heightmap[maxIndex(heightmap)] - heightmap[minIndex(heightmap)]) * 100)
+				gm.TileAt(x, y).Elevation = clampInt8(elev)
 			}
 		}
 	}
 
-	// Phase 2: Bridges with vertical roads (north-south crossings)
-	bridgeCount := 3 + r.Intn(2)
-	bridgeSpacing := w / int32(bridgeCount+1)
-	for i := int32(0); i < int32(bridgeCount); i++ {
-		bx := bridgeSpacing*(i+1) + int32(r.Intn(5)-2)
-		if bx < 1 || bx >= w-1 {
-			bx = bridgeSpacing * (i + 1)
-		}
-		// Find the river at this x and place bridge
-		for y := int32(0); y < h; y++ {
-			tile := gm.TileAt(bx, y)
-			if tile != nil && tile.TerrainType == component.TerrainDeep {
-				gm.SetTerrain(bx, y, component.TerrainBridge)
-				tile = gm.TileAt(bx, y)
-				tile.Health = 500
-				tile.MaxHealth = 500
+	// Stage 3: River — downhill trace from random high point
+	riverTiles := traceRiver(gm, heightmap, r, w, h)
+
+	// Stage 4: Lake — sea level sweep for remaining water budget
+	waterBudget := int(float64(w*h) * waterFraction)
+	remainingBudget := waterBudget - len(riverTiles)
+	if remainingBudget > 0 {
+		lakeTiles := fillLake(gm, heightmap, remainingBudget, w, h)
+		riverTiles = append(riverTiles, lakeTiles...)
+	}
+
+	// Stage 5: Forest — second noise layer with adaptive threshold
+	applyForest(gm, p, w, h)
+
+	// Stage 6: Elevation for non-hill tiles
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			tile := gm.TileAt(x, y)
+			if tile.TerrainType != component.TerrainHill {
+				hMin, hMax := heightmap[minIndex(heightmap)], heightmap[maxIndex(heightmap)]
+				hRange := hMax - hMin
+				if hRange == 0 {
+					hRange = 1
+				}
+				norm := (heightmap[y*w+x] - hMin) / hRange * 100
+				tile.Elevation = clampInt8(int8(norm))
 			}
 		}
-		// Roads leading north-south to bridges
-		for y := int32(0); y < h; y++ {
-			tile := gm.TileAt(bx, y)
-			if tile != nil && tile.TerrainType == component.TerrainPlain {
-				gm.SetTerrain(bx, y, component.TerrainRoad)
-			}
-			if tile != nil && tile.TerrainType == component.TerrainShallow {
-				gm.SetTerrain(bx, y, component.TerrainRoad)
-			}
-		}
 	}
 
-	// Phase 3: Forests (clusters of trees on both sides)
-	for i := 0; i < 12; i++ {
-		fx := int32(r.Intn(int(midX - 4)))
-		fy := int32(r.Intn(int(h)))
-		size := 3 + r.Intn(5)
-		placeCluster(gm, fx, fy, size, component.TerrainForest, r)
-		// Mirror
-		mirrorX := w - 1 - fx
-		placeCluster(gm, mirrorX, fy, size, component.TerrainForest, r)
+	// Stage 7: Pass detection & stronghold placement
+	strongholds := placeStrongholds(gm, r, w, h)
+
+	// Stage 8: Bridge placement on river
+	placeBridges(gm, riverTiles, r)
+
+	// Stage 9: Spawn placement
+	spawn1 := placeSpawn(gm, w/2, int32(3), w, h) // top-center
+	spawn2 := placeSpawn(gm, w/2, h-4, w, h)       // bottom-center
+
+	// Stage 10: Objective assignment
+	assignProceduralObjective(gm, strongholds, r)
+
+	// Stage 11: Validate connectivity
+	profiles := component.StandardMovementProfiles()
+	if !isConnected(gm, spawn1, spawn2, profiles[0]) {
+		panic(fmt.Sprintf("procedural map seed %d: Light profile has no path between spawns", seed))
+	}
+	if !isConnected(gm, spawn1, spawn2, profiles[1]) {
+		panic(fmt.Sprintf("procedural map seed %d: Heavy profile has no path between spawns", seed))
 	}
 
-	// Phase 4: Hills (elevated areas)
-	for i := 0; i < 6; i++ {
-		hx := int32(r.Intn(int(midX - 6)))
-		hy := int32(r.Intn(int(h)))
-		size := 4 + r.Intn(6)
-		placeCluster(gm, hx, hy, size, component.TerrainHill, r)
-		mirrorX := w - 1 - hx
-		placeCluster(gm, mirrorX, hy, size, component.TerrainHill, r)
-	}
-
-	// Phase 5: Spawn areas (clear plains for player starts)
-	clearArea(gm, 2, 2, 12, 12)       // top-left (player 1)
-	clearArea(gm, 2, h-14, 12, 12)    // bottom-left
-	clearArea(gm, w-14, 2, 12, 12)    // top-right (player 2)
-	clearArea(gm, w-14, h-14, 12, 12) // bottom-right
-
-	// Phase 6: A few scattered swamp patches
-	for i := 0; i < 4; i++ {
-		sx := int32(r.Intn(int(midX - 3)))
-		sy := int32(r.Intn(int(h)))
-		size := 2 + r.Intn(3)
-		placeCluster(gm, sx, sy, size, component.TerrainSwamp, r)
-		mirrorX := w - 1 - sx
-		placeCluster(gm, mirrorX, sy, size, component.TerrainSwamp, r)
-	}
-
-	// Phase 7: Destructible walls (strategic chokepoints)
-	for i := 0; i < 3; i++ {
-		wx := int32(r.Intn(int(midX-8)) + 4)
-		wy := int32(r.Intn(int(h-4)) + 2)
-		length := int32(3 + r.Intn(4))
-		placeWall(gm, wx, wy, length, true, r)
-		mirrorX := w - 1 - wx
-		placeWall(gm, mirrorX, wy, length, true, r)
-	}
-
-	// Phase 8: Strongholds scattered across the battlefield. Roads are sparse:
-	// building them is expensive, so only important sites become part of the
-	// connected road network and lesser outposts may remain off-road.
-	strongholds := generateStrongholdSites(w, h, r)
-	linkStrongholdsWithRoads(gm, strongholds, r)
-	for _, site := range strongholds {
-		placeStronghold(gm, site)
-	}
-
-	// Phase 9: Shallow water fords (2-3), far from bridges
-	placeShallowFords(gm, r)
-
-	// Phase 10: Ensure spawn areas connect to the road network
-	ensureSpawnRoadConnection(gm, r)
-
-	// Phase 11: Assign random objective
-	assignObjective(gm, r)
+	// Store metadata
+	gm.Spawns = [][2]int32{spawn1, spawn2}
+	gm.Seed = seed
 
 	return gm
 }
 
-func generateStrongholdSites(w, h int32, r *rand.Rand) []strongholdSite {
-	targetCount := int((w * h) / 400)
-	if targetCount < 5 {
-		targetCount = 5
+// findPercentile returns the value at the given percentile in the heightmap.
+func findPercentile(data []float64, frac float64) float64 {
+	sorted := make([]float64, len(data))
+	copy(sorted, data)
+	sort.Float64s(sorted)
+	idx := int(frac * float64(len(sorted)-1))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
+}
+
+func minIndex(data []float64) int {
+	minVal := data[0]
+	minIdx := 0
+	for i, v := range data {
+		if v < minVal {
+			minVal = v
+			minIdx = i
+		}
+	}
+	return minIdx
+}
+
+func maxIndex(data []float64) int {
+	maxVal := data[0]
+	maxIdx := 0
+	for i, v := range data {
+		if v > maxVal {
+			maxVal = v
+			maxIdx = i
+		}
+	}
+	return maxIdx
+}
+
+func clampInt8(v int8) int8 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
+// traceRiver traces a downhill path from a random high point to the lowest point.
+// Returns the list of deep water tiles placed.
+func traceRiver(gm *GameMap, heightmap []float64, r *rand.Rand, w, h int32) [][2]int32 {
+	// Find tiles in top 10% of elevation
+	var highCandidates [][2]int32
+	threshold10 := findPercentile(heightmap, 0.90)
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			if heightmap[y*w+x] >= threshold10 {
+				highCandidates = append(highCandidates, [2]int32{x, y})
+			}
+		}
+	}
+	if len(highCandidates) == 0 {
+		return nil
 	}
 
-	margin := int32(5)
-	minDist := float64(12)
-	sites := make([]strongholdSite, 0, targetCount)
-	for attempts := 0; len(sites) < targetCount && attempts < targetCount*80; attempts++ {
-		x := margin + int32(r.Intn(int(w-margin*2)))
-		y := margin + int32(r.Intn(int(h-margin*2)))
+	// Pick a random high point
+	source := highCandidates[r.Intn(len(highCandidates))]
 
+	// Find the global minimum
+	lowestIdx := minIndex(heightmap)
+	target := [2]int32{int32(lowestIdx) % w, int32(lowestIdx) / w}
+
+	// Trace downhill via steepest descent
+	var path [][2]int32
+	visited := make(map[[2]int32]bool)
+	cur := source
+	visited[cur] = true
+
+	for cur != target {
+		path = append(path, cur)
+		// Find the lowest unvisited neighbor
+		bestNext := cur
+		bestHeight := heightmap[cur[1]*w+cur[0]]
+
+		dirs := [][2]int32{{0, 1}, {0, -1}, {1, 0}, {-1, 0}}
+		// Shuffle for tiebreaking
+		r.Shuffle(len(dirs), func(i, j int) { dirs[i], dirs[j] = dirs[j], dirs[i] })
+
+		for _, d := range dirs {
+			nx, ny := cur[0]+d[0], cur[1]+d[1]
+			if nx < 0 || nx >= w || ny < 0 || ny >= h {
+				continue
+			}
+			next := [2]int32{nx, ny}
+			if visited[next] {
+				continue
+			}
+			h := heightmap[ny*w+nx]
+			if h < bestHeight {
+				bestHeight = h
+				bestNext = next
+			}
+		}
+
+		if bestNext == cur {
+			// Stuck — all lower neighbors visited. Allow revisiting.
+			// Just move toward target.
+			dx := target[0] - cur[0]
+			dy := target[1] - cur[1]
+			if abs32(abs32(dx)) > abs32(dy) {
+				if dx > 0 {
+					bestNext = [2]int32{cur[0] + 1, cur[1]}
+				} else {
+					bestNext = [2]int32{cur[0] - 1, cur[1]}
+				}
+			} else {
+				if dy > 0 {
+					bestNext = [2]int32{cur[0], cur[1] + 1}
+				} else {
+					bestNext = [2]int32{cur[0], cur[1] - 1}
+				}
+			}
+		}
+
+		visited[bestNext] = true
+		cur = bestNext
+
+		// Safety: don't trace forever
+		if len(path) > int(w+h)*2 {
+			break
+		}
+	}
+	path = append(path, target)
+
+	// Paint river tiles with variable width
+	var allRiver [][2]int32
+	pathLen := len(path)
+	for i, pos := range path {
+		// Width: 1 upstream, widening to riverMaxWidth downstream
+		t := float64(i) / float64(pathLen) // 0.0 at source, 1.0 at lake
+		width := 1 + int(t*float64(riverMaxWidth-1))
+		if width < 1 {
+			width = 1
+		}
+
+		tile := gm.TileAt(pos[0], pos[1])
+		if tile != nil && tile.TerrainType == component.TerrainHill {
+			// Don't overwrite hills with river — skip
+			continue
+		}
+
+		gm.SetTerrain(pos[0], pos[1], component.TerrainDeep)
+		allRiver = append(allRiver, pos)
+
+		// Widen: add perpendicular tiles
+		if width > 1 {
+			for dw := 1; dw < width; dw++ {
+				for _, offset := range []int32{int32(dw), -int32(dw)} {
+					nx := pos[0] + offset
+					ny := pos[1]
+					if nx >= 0 && nx < w && ny >= 0 && ny < h {
+						t2 := gm.TileAt(nx, ny)
+						if t2 != nil && t2.TerrainType != component.TerrainHill {
+							gm.SetTerrain(nx, ny, component.TerrainDeep)
+							allRiver = append(allRiver, [2]int32{nx, ny})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return allRiver
+}
+
+// fillLake fills the lowest depression to consume remaining water budget.
+func fillLake(gm *GameMap, heightmap []float64, budget int, w, h int32) [][2]int32 {
+	if budget <= 0 {
+		return nil
+	}
+
+	// Sort all tile positions by height (ascending)
+	type posHeight struct {
+		x, y int32
+		h    float64
+	}
+	candidates := make([]posHeight, 0, w*h)
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			tile := gm.TileAt(x, y)
+			if tile != nil && tile.TerrainType == component.TerrainPlain {
+				candidates = append(candidates, posHeight{x, y, heightmap[y*w+x]})
+			}
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].h < candidates[j].h
+	})
+
+	// Fill the lowest tiles that form a connected region
+	// Start from the absolute lowest plain tile
+	var lakeTiles [][2]int32
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// BFS from lowest tile, expanding to neighbors of similar or lower height
+	visited := make(map[[2]int32]bool)
+	queue := [][2]int32{{candidates[0].x, candidates[0].y}}
+	visited[queue[0]] = true
+
+	for len(queue) > 0 && len(lakeTiles) < budget {
+		cur := queue[0]
+		queue = queue[1:]
+
+		tile := gm.TileAt(cur[0], cur[1])
+		if tile == nil || tile.TerrainType != component.TerrainPlain {
+			continue
+		}
+
+		gm.SetTerrain(cur[0], cur[1], component.TerrainDeep)
+		lakeTiles = append(lakeTiles, cur)
+
+		for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			nx, ny := cur[0]+d[0], cur[1]+d[1]
+			next := [2]int32{nx, ny}
+			if visited[next] || nx < 0 || nx >= w || ny < 0 || ny >= h {
+				continue
+			}
+			nt := gm.TileAt(nx, ny)
+			if nt != nil && (nt.TerrainType == component.TerrainPlain || nt.TerrainType == component.TerrainDeep) {
+				visited[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	return lakeTiles
+}
+
+// applyForest applies forest terrain using a second noise layer with adaptive threshold.
+func applyForest(gm *GameMap, p *perlin.Perlin, w, h int32) float64 {
+	// Generate forest noise
+	forestNoise := make([]float64, w*h)
+	var eligible []struct {
+		idx int
+		val float64
+	}
+
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			idx := y*w + x
+			tile := gm.TileAt(x, y)
+			if tile.TerrainType == component.TerrainPlain {
+				nx := float64(x)*forestFreq + forestCoord
+				ny := float64(y)*forestFreq + forestCoord
+				forestNoise[idx] = p.Noise2D(nx, ny)
+			eligible = append(eligible, struct {
+				idx int
+				val float64
+			}{int(idx), forestNoise[idx]})
+			}
+		}
+	}
+
+	if len(eligible) == 0 {
+		return 0
+	}
+
+	// Find the threshold at (1-forestFraction) percentile — tiles above this become forest
+	sort.Slice(eligible, func(i, j int) bool {
+		return eligible[i].val < eligible[j].val
+	})
+	cutoffIdx := int(float64(len(eligible)) * (1 - forestFraction))
+	if cutoffIdx < 0 {
+		cutoffIdx = 0
+	}
+	if cutoffIdx >= len(eligible) {
+		cutoffIdx = len(eligible) - 1
+	}
+	threshold := eligible[cutoffIdx].val
+
+	// Apply forest to tiles above threshold
+	for _, e := range eligible {
+		if e.val >= threshold {
+			x := int32(e.idx % int(w))
+			y := int32(e.idx / int(w))
+			gm.SetTerrain(x, y, component.TerrainForest)
+		}
+	}
+
+	return threshold
+}
+
+// placeStrongholds finds ridge passes and places strongholds at them.
+func placeStrongholds(gm *GameMap, r *rand.Rand, w, h int32) [][2]int32 {
+	// Detect passes: non-hill tiles flanked by hill tiles
+	type pass struct {
+		x, y   int32
+		score  int // number of hill neighbors
+	}
+
+	var passes []pass
+	for y := int32(1); y < h-1; y++ {
+		for x := int32(1); x < w-1; x++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil || tile.TerrainType == component.TerrainHill ||
+				tile.TerrainType == component.TerrainDeep {
+				continue
+			}
+			hillNeighbors := 0
+			for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+				nt := gm.TileAt(x+d[0], y+d[1])
+				if nt != nil && nt.TerrainType == component.TerrainHill {
+					hillNeighbors++
+				}
+			}
+			if hillNeighbors >= passThreshold1 {
+				passes = append(passes, pass{x, y, hillNeighbors})
+			}
+		}
+	}
+
+	// If not enough passes, relax threshold
+	if len(passes) < 1 {
+		for y := int32(1); y < h-1; y++ {
+			for x := int32(1); x < w-1; x++ {
+				tile := gm.TileAt(x, y)
+				if tile == nil || tile.TerrainType == component.TerrainHill ||
+					tile.TerrainType == component.TerrainDeep {
+					continue
+				}
+				hillNeighbors := 0
+				for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+					nt := gm.TileAt(x+d[0], y+d[1])
+					if nt != nil && nt.TerrainType == component.TerrainHill {
+						hillNeighbors++
+					}
+				}
+				if hillNeighbors >= passThreshold2 {
+					passes = append(passes, pass{x, y, hillNeighbors})
+				}
+			}
+		}
+	}
+
+	// If still no passes, find tiles nearest to ridges
+	if len(passes) < 1 {
+		var hills [][2]int32
+		for y := int32(0); y < h; y++ {
+			for x := int32(0); x < w; x++ {
+				if gm.TileAt(x, y).TerrainType == component.TerrainHill {
+					hills = append(hills, [2]int32{x, y})
+				}
+			}
+		}
+		for y := int32(1); y < h-1; y++ {
+			for x := int32(1); x < w-1; x++ {
+				tile := gm.TileAt(x, y)
+				if tile == nil || tile.TerrainType == component.TerrainHill ||
+					tile.TerrainType == component.TerrainDeep {
+					continue
+				}
+				minDist := float64(999)
+				for _, hp := range hills {
+					d := math.Hypot(float64(x-hp[0]), float64(y-hp[1]))
+					if d < minDist {
+						minDist = d
+					}
+				}
+				if minDist < 4 {
+					passes = append(passes, pass{x, y, int(10 - minDist)})
+				}
+			}
+		}
+	}
+
+	// Determine stronghold count
+	targetCount := int((w * h) / strongholdDenom)
+	if targetCount < 1 {
+		targetCount = 1
+	}
+	if targetCount > strongholdMax {
+		targetCount = strongholdMax
+	}
+
+	if len(passes) < targetCount {
+		targetCount = len(passes)
+	}
+
+	// Sort passes by score (prefer higher-scoring passes), then by proximity to center
+	sort.Slice(passes, func(i, j int) bool {
+		return passes[i].score > passes[j].score
+	})
+
+	// Pick top passes, ensuring minimum spacing
+	var selected [][2]int32
+	for _, ps := range passes {
+		if len(selected) >= targetCount {
+			break
+		}
 		tooClose := false
-		for _, site := range sites {
-			if math.Hypot(float64(x-site.X), float64(y-site.Y)) < minDist {
+		for _, s := range selected {
+			if abs32(ps.x-s[0])+abs32(ps.y-s[1]) < 10 {
 				tooClose = true
 				break
 			}
@@ -171,191 +556,189 @@ func generateStrongholdSites(w, h int32, r *rand.Rand) []strongholdSite {
 		if tooClose {
 			continue
 		}
-
-		sites = append(sites, strongholdSite{
-			X:     x,
-			Y:     y,
-			Level: 1 + len(sites)%5,
-		})
+		selected = append(selected, [2]int32{ps.x, ps.y})
 	}
 
-	sort.Slice(sites, func(i, j int) bool {
-		if sites[i].Y == sites[j].Y {
-			return sites[i].X < sites[j].X
-		}
-		return sites[i].Y < sites[j].Y
-	})
-	return sites
-}
-
-func linkStrongholdsWithRoads(gm *GameMap, sites []strongholdSite, r *rand.Rand) {
-	if len(sites) < 2 {
-		return
-	}
-
-	roadSites := chooseRoadStrongholds(sites)
-	for i := 1; i < len(roadSites); i++ {
-		placeRoadPath(gm, roadSites[i-1].X, roadSites[i-1].Y, roadSites[i].X, roadSites[i].Y, r)
-	}
-}
-
-func chooseRoadStrongholds(sites []strongholdSite) []strongholdSite {
-	roadSites := make([]strongholdSite, 0, len(sites))
-	for i, site := range sites {
-		if site.Level >= 4 || i%3 == 0 {
-			roadSites = append(roadSites, site)
-		}
-	}
-	if len(roadSites) < 2 {
-		return sites[:2]
-	}
-	return roadSites
-}
-
-func placeRoadPath(gm *GameMap, x1, y1, x2, y2 int32, r *rand.Rand) {
-	x, y := x1, y1
-	for x != x2 || y != y2 {
-		placeRoadTile(gm, x, y)
-		if x < x2 {
-			x++
-		} else if x > x2 {
-			x--
-		}
-		if y < y2 {
-			y++
-		} else if y > y2 {
-			y--
-		}
-		if r.Intn(4) == 0 {
-			if abs32(x2-x) > abs32(y2-y) && y > 1 && y < gm.Height-2 {
-				y += []int32{-1, 1}[r.Intn(2)]
-			} else if x > 1 && x < gm.Width-2 {
-				x += []int32{-1, 1}[r.Intn(2)]
-			}
-		}
-	}
-	placeRoadTile(gm, x, y)
-}
-
-func placeRoadTile(gm *GameMap, x, y int32) {
-	tile := gm.TileAt(x, y)
-	if tile == nil {
-		return
-	}
-	if tile.TerrainType == component.TerrainDeep {
-		gm.SetTerrain(x, y, component.TerrainBridge)
-		tile = gm.TileAt(x, y)
-		tile.Health = 500
-		tile.MaxHealth = 500
-		return
-	}
-	gm.SetTerrain(x, y, component.TerrainRoad)
-	tile = gm.TileAt(x, y)
-	tile.Health = 0
-	tile.MaxHealth = 0
-	tile.BlockLOS = false
-	tile.Elevation = 0
-}
-
-func placeStronghold(gm *GameMap, site strongholdSite) {
-	tt := component.TerrainType(int(component.TerrainStronghold1) + site.Level - 1)
-	radius := int32(1 + (site.Level+1)/2)
-	for y := site.Y - radius; y <= site.Y+radius; y++ {
-		for x := site.X - radius; x <= site.X+radius; x++ {
-			tile := gm.TileAt(x, y)
-			if tile == nil {
-				continue
-			}
-			if abs32(x-site.X)+abs32(y-site.Y) > radius+1 {
-				continue
-			}
-			gm.SetTerrain(x, y, tt)
-			tile = gm.TileAt(x, y)
-			tile.Health = 0
-			tile.MaxHealth = 0
-			tile.BlockLOS = true
-			tile.Elevation = int8(1 + site.Level/2)
-		}
-	}
-}
-
-func abs32(v int32) int32 {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
-// placeCluster places a blob of terrain using a simple flood-fill growth.
-func placeCluster(gm *GameMap, cx, cy int32, size int, tt component.TerrainType, r *rand.Rand) {
-	queue := [][2]int32{{cx, cy}}
-	visited := make(map[[2]int32]bool)
-
-	for len(queue) > 0 && size > 0 {
-		// Pick random from queue
-		idx := r.Intn(len(queue))
-		pos := queue[idx]
-		queue = append(queue[:idx], queue[idx+1:]...)
-
-		if visited[pos] {
-			continue
-		}
-		visited[pos] = true
-
+	// Place strongholds
+	for _, pos := range selected {
 		tile := gm.TileAt(pos[0], pos[1])
-		if tile == nil {
-			continue
+		if tile != nil && tile.TerrainType != component.TerrainHill &&
+			tile.TerrainType != component.TerrainDeep {
+			gm.SetTerrain(pos[0], pos[1], component.TerrainStronghold1)
 		}
-		// Don't overwrite river crossings or the main road network.
-		if tile.TerrainType == component.TerrainDeep ||
-			tile.TerrainType == component.TerrainBridge ||
-			tile.TerrainType == component.TerrainRoad {
+	}
+
+	return selected
+}
+
+// placeBridges places 1-2 destructible bridges at the narrowest river sections.
+func placeBridges(gm *GameMap, riverTiles [][2]int32, r *rand.Rand) {
+	if len(riverTiles) < 3 {
+		return
+	}
+
+	// Group river tiles into contiguous segments
+	// For simplicity, find "narrow" points: river tiles with non-water neighbors on both sides
+	// along one axis. A narrow point has land close on at least one axis.
+	type narrowPoint struct {
+		x, y    int32
+		gapSize int // estimated width at this point
+	}
+
+	var narrows []narrowPoint
+	riverSet := make(map[[2]int32]bool)
+	for _, rt := range riverTiles {
+		riverSet[rt] = true
+	}
+
+	for _, rt := range riverTiles {
+		// Check horizontal gap: count consecutive river tiles in X direction
+		gapX := 1
+		for dx := int32(1); ; dx++ {
+			if riverSet[[2]int32{rt[0] + dx, rt[1]}] {
+				gapX++
+			} else {
+				break
+			}
+		}
+		for dx := int32(-1); ; dx-- {
+			if riverSet[[2]int32{rt[0] + dx, rt[1]}] {
+				gapX++
+			} else {
+				break
+			}
+		}
+
+		// Only consider points where gap is small (narrow)
+		if gapX <= 4 {
+			narrows = append(narrows, narrowPoint{rt[0], rt[1], gapX})
+		}
+	}
+
+	// Sort by gap size (narrowest first)
+	sort.Slice(narrows, func(i, j int) bool {
+		return narrows[i].gapSize < narrows[j].gapSize
+	})
+
+	// Place 1-2 bridges at narrowest points with minimum spacing
+	bridgeCount := 1
+	if len(narrows) > 5 {
+		bridgeCount = 2
+	}
+
+	placed := 0
+	for _, np := range narrows {
+		if placed >= bridgeCount {
+			break
+		}
+
+		// Check minimum spacing from existing bridges
+		tooClose := false
+		for y := int32(0); y < gm.Height; y++ {
+			for x := int32(0); x < gm.Width; x++ {
+				if gm.TileAt(x, y).TerrainType == component.TerrainBridge {
+					if abs32(x-np.x)+abs32(y-np.y) < 10 {
+						tooClose = true
+						break
+					}
+				}
+			}
+			if tooClose {
+				break
+			}
+		}
+		if tooClose {
 			continue
 		}
 
-		gm.SetTerrain(pos[0], pos[1], tt)
-		size--
+		// Place bridge: convert this river tile and any adjacent river tiles at same x
+		gm.SetTerrain(np.x, np.y, component.TerrainBridge)
+		tile := gm.TileAt(np.x, np.y)
+		tile.Health = bridgeHealth
+		tile.MaxHealth = bridgeHealth
 
-		// Add neighbors
-		for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-			nx, ny := pos[0]+d[0], pos[1]+d[1]
-			if !visited[[2]int32{nx, ny}] {
-				queue = append(queue, [][2]int32{{nx, ny}}...)
+		// Also bridge adjacent river tiles in Y direction (full crossing)
+		for dy := int32(-1); ; dy-- {
+			t := gm.TileAt(np.x, np.y+dy)
+			if t != nil && t.TerrainType == component.TerrainDeep {
+				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)
+				t = gm.TileAt(np.x, np.y+dy)
+				t.Health = bridgeHealth
+				t.MaxHealth = bridgeHealth
+			} else {
+				break
+			}
+		}
+		for dy := int32(1); ; dy++ {
+			t := gm.TileAt(np.x, np.y+dy)
+			if t != nil && t.TerrainType == component.TerrainDeep {
+				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)
+				t = gm.TileAt(np.x, np.y+dy)
+				t.Health = bridgeHealth
+				t.MaxHealth = bridgeHealth
+			} else {
+				break
+			}
+		}
+
+		placed++
+	}
+}
+
+// placeSpawn finds a suitable spawn location near (targetX, targetY) and clears a 6x6 area.
+func placeSpawn(gm *GameMap, targetX, targetY int32, w, h int32) [2]int32 {
+	// Try target position first, then search outward
+	cx, cy := targetX, targetY
+
+	// Clamp
+	if cx < spawnClearRadius {
+		cx = spawnClearRadius
+	}
+	if cx >= w-spawnClearRadius {
+		cx = w - spawnClearRadius - 1
+	}
+	if cy < spawnClearRadius {
+		cy = spawnClearRadius
+	}
+	if cy >= h-spawnClearRadius {
+		cy = h - spawnClearRadius - 1
+	}
+
+	// Check if center is suitable (not hill, not water)
+	tile := gm.TileAt(cx, cy)
+	if tile != nil && (tile.TerrainType == component.TerrainHill || tile.TerrainType == component.TerrainDeep) {
+		// Search outward along edge row then inward
+		found := false
+		// Determine search direction (top spawn searches rows going inward, bottom goes inward)
+		rowDir := int32(1)
+		if targetY > h/2 {
+			rowDir = -1
+		}
+
+		for dy := int32(0); dy < spawnSearchDepth && !found; dy++ {
+			for dx := int32(0); dx < w/2 && !found; dx++ {
+				for _, ox := range []int32{dx, -dx} {
+					tx := cx + ox
+					ty := cy + dy*rowDir
+					if tx < spawnClearRadius || tx >= w-spawnClearRadius ||
+						ty < spawnClearRadius || ty >= h-spawnClearRadius {
+						continue
+					}
+					t := gm.TileAt(tx, ty)
+					if t != nil && t.TerrainType != component.TerrainHill && t.TerrainType != component.TerrainDeep {
+						cx, cy = tx, ty
+						found = true
+						break
+					}
+				}
 			}
 		}
 	}
-}
 
-// placeWall places a line of destructible wall segments.
-func placeWall(gm *GameMap, x, y, length int32, horizontal bool, r *rand.Rand) {
-	for i := int32(0); i < length; i++ {
-		var wx, wy int32
-		if horizontal {
-			wx, wy = x+i, y
-		} else {
-			wx, wy = x, y+i
-		}
-		tile := gm.TileAt(wx, wy)
-		if tile == nil {
-			continue
-		}
-		if tile.TerrainType == component.TerrainDeep || tile.TerrainType == component.TerrainBridge {
-			continue
-		}
-		gm.SetTerrain(wx, wy, component.TerrainWall)
-		tile = gm.TileAt(wx, wy)
-		tile.Health = 300
-		tile.MaxHealth = 300
-		tile.BlockLOS = true
-		tile.Elevation = 2
-	}
-}
-
-// clearArea resets a rectangular area to plains+roads (safe spawn zones).
-func clearArea(gm *GameMap, x, y, w, h int32) {
-	for dy := int32(0); dy < h; dy++ {
-		for dx := int32(0); dx < w; dx++ {
-			tile := gm.TileAt(x+dx, y+dy)
+	// Clear 6x6 area to plains
+	for dy := int32(-spawnClearRadius); dy <= spawnClearRadius; dy++ {
+		for dx := int32(-spawnClearRadius); dx <= spawnClearRadius; dx++ {
+			tile := gm.TileAt(cx+dx, cy+dy)
 			if tile != nil {
 				tile.TerrainType = component.TerrainPlain
 				tile.Elevation = 0
@@ -365,208 +748,63 @@ func clearArea(gm *GameMap, x, y, w, h int32) {
 			}
 		}
 	}
-	// Road through center of spawn area, matching the map's vertical road axis.
-	roadX := x + w/2
-	for dy := int32(0); dy < h; dy++ {
-		gm.SetTerrain(roadX, y+dy, component.TerrainRoad)
-	}
+
+	return [2]int32{cx, cy}
 }
 
-// placeShallowFords places 2-3 shallow water fords on deep water tiles,
-// each at least 10 tiles Manhattan distance from any bridge.
-func placeShallowFords(gm *GameMap, r *rand.Rand) {
-	// Collect bridge positions
-	var bridges [][2]int32
-	for y := int32(0); y < gm.Height; y++ {
-		for x := int32(0); x < gm.Width; x++ {
-			if gm.TileAt(x, y).TerrainType == component.TerrainBridge {
-				bridges = append(bridges, [2]int32{x, y})
-			}
+// assignProceduralObjective assigns objective based on terrain.
+func assignProceduralObjective(gm *GameMap, strongholds [][2]int32, r *rand.Rand) {
+	// 15% Survival chance
+	if r.Intn(100) < survivalChance {
+		gm.Objective = Objective{
+			Type:     ObjectiveSurvival,
+			Duration: survivalTicks,
 		}
+		return
 	}
 
-	// Collect deep water tiles far from bridges
-	var candidates [][2]int32
-	for y := int32(0); y < gm.Height; y++ {
-		for x := int32(0); x < gm.Width; x++ {
-			if gm.TileAt(x, y).TerrainType != component.TerrainDeep {
-				continue
-			}
-			minDist := int32(999)
-			for _, b := range bridges {
-				d := abs32(x-b[0]) + abs32(y-b[1])
-				if d < minDist {
-					minDist = d
-				}
-			}
-			if minDist >= 5 {
-				candidates = append(candidates, [2]int32{x, y})
-			}
-		}
-	}
-
-	fordCount := 2 + r.Intn(2) // 2 or 3
-	if fordCount > len(candidates) {
-		fordCount = len(candidates)
-	}
-	for i := 0; i < fordCount; i++ {
-		idx := r.Intn(len(candidates))
-		pos := candidates[idx]
-		gm.SetTerrain(pos[0], pos[1], component.TerrainShallow)
-		// Remove used candidate
-		candidates = append(candidates[:idx], candidates[idx+1:]...)
-	}
-}
-
-// ensureSpawnRoadConnection checks that each spawn area's road connects
-// to the main road/bridge network. If not, places a road path.
-func ensureSpawnRoadConnection(gm *GameMap, r *rand.Rand) {
-	spawns := [][2]int32{
-		{2 + 12 / 2, 2 + 6},               // top-left spawn center road
-		{2 + 12 / 2, gm.Height - 14 + 6},  // bottom-left
-		{gm.Width - 14 + 12 / 2, 2 + 6},   // top-right
-		{gm.Width - 14 + 12 / 2, gm.Height - 14 + 6}, // bottom-right
-	}
-
-	for _, spawn := range spawns {
-		if !isConnectedToRoadNetwork(gm, spawn[0], spawn[1]) {
-			// Find nearest bridge
-			nearestBridge := findNearestBridge(gm, spawn[0], spawn[1])
-			if nearestBridge != nil {
-				placeRoadPath(gm, spawn[0], spawn[1], nearestBridge[0], nearestBridge[1], r)
-			}
-		}
-	}
-}
-
-// isConnectedToRoadNetwork does a small BFS from (x,y) along road/bridge tiles.
-// Returns true if it reaches a bridge.
-func isConnectedToRoadNetwork(gm *GameMap, startX, startY int32) bool {
-	visited := make(map[[2]int32]bool)
-	queue := [][2]int32{{startX, startY}}
-	visited[[2]int32{startX, startY}] = true
-
-	for len(queue) > 0 {
-		pos := queue[0]
-		queue = queue[1:]
-		tile := gm.TileAt(pos[0], pos[1])
-		if tile == nil {
+	// If we have a stronghold near the map center, use Capture
+	centerX, centerY := gm.Width/2, gm.Height/2
+	bestStronghold := [2]int32{-1, -1}
+	bestDist := float64(99999)
+	for _, s := range strongholds {
+		tile := gm.TileAt(s[0], s[1])
+		if tile == nil || tile.TerrainType != component.TerrainStronghold1 {
 			continue
 		}
-		if tile.TerrainType == component.TerrainBridge {
-			return true
-		}
-		if tile.TerrainType != component.TerrainRoad {
-			continue
-		}
-		for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-			next := [2]int32{pos[0] + d[0], pos[1] + d[1]}
-			if visited[next] {
-				continue
-			}
-			visited[next] = true
-			queue = append(queue, next)
+		d := math.Hypot(float64(s[0]-centerX), float64(s[1]-centerY))
+		if d < bestDist {
+			bestDist = d
+			bestStronghold = s
 		}
 	}
-	return false
-}
 
-func findNearestBridge(gm *GameMap, x, y int32) *[2]int32 {
-	var best *[2]int32
-	bestDist := int32(99999)
-	for by := int32(0); by < gm.Height; by++ {
-		for bx := int32(0); bx < gm.Width; bx++ {
-			if gm.TileAt(bx, by).TerrainType == component.TerrainBridge {
-				d := abs32(x-bx) + abs32(y-by)
-				if d < bestDist {
-					bestDist = d
-					best = &[2]int32{bx, by}
-				}
-			}
+	if bestStronghold[0] >= 0 && bestDist < float64(math.Max(float64(gm.Width), float64(gm.Height))/2) {
+		gm.Objective = Objective{
+			Type:       ObjectiveCapture,
+			TargetX:    bestStronghold[0],
+			TargetY:    bestStronghold[1],
+			HoldTarget: captureHold,
 		}
+		return
 	}
-	return best
-}
 
-// assignObjective picks a random objective and fills in type-specific data.
-func assignObjective(gm *GameMap, r *rand.Rand) {
-	objType := ObjectiveType(r.Intn(3))
-	gm.Objective = Objective{Type: objType}
-
-	switch objType {
-	case ObjectiveCapture:
-		// Find stronghold group closest to map center
-		centerX, centerY := gm.Width/2, gm.Height/2
-		groups := findStrongholdGroups(gm)
-		if len(groups) == 0 {
-			gm.Objective.Type = ObjectiveElimination
-			return
-		}
-		var bestGroup [][2]int32
-		bestDist := float64(99999)
-		for _, g := range groups {
-			for _, cell := range g {
-				d := math.Hypot(float64(cell[0]-centerX), float64(cell[1]-centerY))
-				if d < bestDist {
-					bestDist = d
-					bestGroup = g
-				}
-			}
-		}
-		// Use center of best group
-		var sumX, sumY int32
-		for _, cell := range bestGroup {
-			sumX += cell[0]
-			sumY += cell[1]
-		}
-		gm.Objective.TargetX = sumX / int32(len(bestGroup))
-		gm.Objective.TargetY = sumY / int32(len(bestGroup))
-		gm.Objective.HoldTarget = 300
-
-	case ObjectiveSurvival:
-		gm.Objective.Duration = int32(3000 + r.Intn(3001))
+	// Default: Elimination
+	gm.Objective = Objective{
+		Type: ObjectiveElimination,
 	}
 }
 
+// isStrongholdTerrain checks if a terrain type is any stronghold level.
+// Shared with clash maps and tests.
 func isStrongholdTerrain(tt component.TerrainType) bool {
 	return tt >= component.TerrainStronghold1 && tt <= component.TerrainStronghold5
 }
 
-func findStrongholdGroups(gm *GameMap) [][][2]int32 {
-	visited := make(map[[2]int32]bool)
-	var groups [][][2]int32
-	for y := int32(0); y < gm.Height; y++ {
-		for x := int32(0); x < gm.Width; x++ {
-			start := [2]int32{x, y}
-			if visited[start] {
-				continue
-			}
-			tile := gm.TileAt(x, y)
-			if tile == nil || !isStrongholdTerrain(tile.TerrainType) {
-				continue
-			}
-			var group [][2]int32
-			queue := [][2]int32{start}
-			visited[start] = true
-			for len(queue) > 0 {
-				cell := queue[0]
-				queue = queue[1:]
-				group = append(group, cell)
-				for _, d := range [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-					next := [2]int32{cell[0] + d[0], cell[1] + d[1]}
-					if visited[next] {
-						continue
-					}
-					t := gm.TileAt(next[0], next[1])
-					if t == nil || !isStrongholdTerrain(t.TerrainType) {
-						continue
-					}
-					visited[next] = true
-					queue = append(queue, next)
-				}
-			}
-			groups = append(groups, group)
-		}
+// abs32 returns the absolute value of an int32.
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
 	}
-	return groups
+	return v
 }

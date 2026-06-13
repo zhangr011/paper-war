@@ -189,8 +189,17 @@ export class App {
     };
 
     this.connection.onDisconnect = () => {
-      // Go back to login screen
+      // Mid-match disconnect with a valid token — stay on game screen and
+      // let the reconnect overlay do its job. Only boot to login if there's
+      // no pending reconnect (true disconnect / no match in progress).
+      if (this.connection.reconnectToken) return;
       this.showScreen('login');
+    };
+
+    // Mid-match disconnect — show reconnect overlay instead of booting to login.
+    // The connection layer auto-retries; the overlay is dismissed on reconnect_ok.
+    this.connection.onReconnecting = () => {
+      if (this.game) this.game.showReconnectOverlay();
     };
 
     // Handle text messages from server
@@ -229,6 +238,39 @@ export class App {
 
       case 'match_found':
         this.startGame(msg);
+        break;
+
+      case 'reconnect_ok':
+        // Server validated our token and re-bound our playerID. The map data
+        // binary message follows immediately after this text message.
+        if (this.game) {
+          this.game.playerID = msg.player_id;
+          this.game.mapWidth = msg.map_w || this.game.mapWidth;
+          this.game.mapHeight = msg.map_h || this.game.mapHeight;
+          // Clear stale entity state — the next snapshot will repopulate.
+          if (this.game.state) this.game.state.clearEntities();
+          this.game.hideReconnectOverlay();
+          // Update token in case server refreshed it
+          if (msg.reconnect_token) {
+            this.connection.reconnectToken = msg.reconnect_token;
+          }
+        }
+        break;
+
+      case 'reconnect_failed':
+        // Token invalid/expired or match ended — give up and return to lobby.
+        this.connection.reconnectToken = null;
+        if (this.game) this.game.hideReconnectOverlay();
+        this.showReconnectFailed(msg.reason || 'unknown');
+        // Return to lobby after short delay
+        setTimeout(() => {
+          if (this.game) {
+            this.game.stop();
+            this.game = null;
+          }
+          this.showScreen('lobby');
+          this.lobbyStatus.textContent = 'Reconnect failed — match no longer available.';
+        }, 3000);
         break;
 
       case 'roster_update':
@@ -305,6 +347,26 @@ export class App {
   }
 
   // -----------------------------------------------------------------------
+  // Reconnect failure notice — briefly shown before returning to lobby
+  // -----------------------------------------------------------------------
+
+  showReconnectFailed(reason) {
+    const existing = document.getElementById('reconnect-failed-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'reconnect-failed-toast';
+    toast.style.cssText = [
+      'position:fixed', 'top:50%', 'left:50%', 'transform:translate(-50%,-50%)',
+      'background:#b3261e', 'color:#fff', 'padding:20px 32px', 'border-radius:8px',
+      'font-family:sans-serif', 'font-size:16px', 'z-index:3000',
+      'box-shadow:0 4px 20px rgba(0,0,0,0.5)', 'text-align:center',
+    ].join(';');
+    toast.textContent = `Reconnect failed (${reason}). Returning to lobby…`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  // -----------------------------------------------------------------------
   // Game start
   // -----------------------------------------------------------------------
 
@@ -324,6 +386,9 @@ export class App {
     this.game.playerID = matchInfo.player_id;
     this.game.mapWidth = matchInfo.map_w || 48;
     this.game.mapHeight = matchInfo.map_h || 96;
+
+    // Store reconnect token so connection.js can auto-rejoin on disconnect
+    this.connection.reconnectToken = matchInfo.reconnect_token || null;
 
     // Set up map data handler
     this.connection.onMapData = (terrainData) => {

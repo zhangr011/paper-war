@@ -162,6 +162,16 @@ export class StateManager {
     /** Entity ID → UnitState */
     this.units = new Map();
 
+    /** Clear all tracked entities. Used on reconnect to drop stale state
+     *  before the first post-rejoin snapshot repopulates the world. */
+    this.clearEntities = () => {
+      this.units.clear();
+      this.prevTick = 0;
+      this.currTick = 0;
+      this.t = 0;
+      this.lastSnapshotTime = 0;
+    };
+
     // Double-buffer tick tracking
     this.prevTick = 0;
     this.currTick = 0;

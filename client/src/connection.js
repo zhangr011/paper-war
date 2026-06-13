@@ -60,6 +60,11 @@ export class Connection {
     this.maxReconnectDelay = 30000;
     this.reconnectTimer = null;
 
+    // Match reconnect token — set when a match starts, cleared on intentional
+    // disconnect or when the server rejects the reconnect. When non-null and
+    // the socket drops, we automatically try to rejoin the in-progress match.
+    this.reconnectToken = null;
+
     // Heartbeat
     this.pingInterval = null;
     this.lastPong = 0;
@@ -77,12 +82,23 @@ export class Connection {
       this.connected = true;
       this.reconnectDelay = 1000;
       this.startHeartbeat();
+      // If we have a reconnect token, try to rejoin the in-progress match
+      // instead of presenting as a fresh connection.
+      if (this.reconnectToken) {
+        this.ws.send(JSON.stringify({ type: 'reconnect', token: this.reconnectToken }));
+        // onConnect still fires — Game uses it for status display — but the
+        // actual rejoin is completed when the server replies reconnect_ok.
+      }
       if (this.onConnect) this.onConnect();
     };
 
     this.ws.onclose = () => {
       this.connected = false;
       this.stopHeartbeat();
+      // Intentional disconnect (user quit) — don't auto-reconnect.
+      if (this._intentionalClose) return;
+      // Mid-match drop — show overlay, then retry with back-off.
+      if (this.reconnectToken && this.onReconnecting) this.onReconnecting();
       if (this.onDisconnect) this.onDisconnect();
       this.scheduleReconnect();
     };
@@ -123,6 +139,8 @@ export class Connection {
   }
 
   disconnect() {
+    this._intentionalClose = true;
+    this.reconnectToken = null; // intentional disconnect — don't auto-rejoin
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -425,6 +443,20 @@ export class Connection {
         const dataLen = view.getUint16(off, true); off += 2;
         const rosterData = new Uint8Array(data, off, dataLen);
         if (this.onRosterUpdate) this.onRosterUpdate(rosterData);
+        break;
+      }
+      case 0x83: { // MsgMatchStats (AAR)
+        const stats = [null, null];
+        for (let i = 0; i < 2; i++) {
+          const kills = view.getUint16(off, true); off += 2;
+          const deaths = view.getUint16(off, true); off += 2;
+          const commanderKills = view.getUint16(off, true); off += 2;
+          const unitsRecruited = view.getUint16(off, true); off += 2;
+          const goldEarned = view.getInt32(off, true); off += 4;
+          const goldSpent = view.getInt32(off, true); off += 4;
+          stats[i] = { kills, deaths, commanderKills, unitsRecruited, goldEarned, goldSpent };
+        }
+        if (this.onMatchStats) this.onMatchStats(stats);
         break;
       }
       default:

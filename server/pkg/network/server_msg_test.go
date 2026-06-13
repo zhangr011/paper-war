@@ -87,3 +87,24 @@ func TestServerMessageRosterUpdate(t *testing.T) {
 		t.Fatalf("roster data len = %d, want 5", len(decoded.RosterData))
 	}
 }
+
+func TestEncodeDecodeMatchStats(t *testing.T) {
+	stats := [2]MatchStatsEntry{
+		{Kills: 15, Deaths: 8, CommanderKills: 2, UnitsRecruited: 12, GoldEarned: 450, GoldSpent: 300},
+		{Kills: 8, Deaths: 15, CommanderKills: 1, UnitsRecruited: 10, GoldEarned: 240, GoldSpent: 250},
+	}
+	msg := &ServerMessage{Type: MsgMatchStats, Stats: stats}
+	encoded := EncodeServerMessage(msg)
+	decoded, err := DecodeServerMessage(encoded)
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if decoded.Type != MsgMatchStats {
+		t.Fatalf("type = 0x%02x, want 0x%02x", decoded.Type, MsgMatchStats)
+	}
+	for i := 0; i < 2; i++ {
+		if decoded.Stats[i] != stats[i] {
+			t.Errorf("faction %d: got %+v, want %+v", i, decoded.Stats[i], stats[i])
+		}
+	}
+}

@@ -33,6 +33,19 @@ type DeathSystem struct {
 	// Deaths collects entityIDs of units that died this tick.
 	// Used by GenerateSnapshot to send death events to clients.
 	Deaths []uint32
+
+	// KillEvents collects faction-attributed kill data each tick.
+	// Cleared at start of each Tick. Session reads this to feed MatchStats.
+	KillEvents []KillEvent
+}
+
+// KillEvent captures the faction attribution for a single unit death.
+// Emitted by DeathSystem each tick.
+type KillEvent struct {
+	KillerFaction uint8  // faction of the killer, or 0xFF if no killer
+	DeadFaction   uint8  // faction of the dead unit
+	IsCommander   bool   // true if the dead unit was a squad commander
+	Bounty        int32  // gold bounty awarded to the killer (0 if no killer)
 }
 
 func (s *DeathSystem) Name() string  { return "DeathSystem" }
@@ -71,6 +84,7 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 	s.GoldBounties = make(map[uint32]int32)
 	s.Promotions = make(map[uint32]ecs.Entity)
 	s.Deaths = nil
+	s.KillEvents = nil
 
 	var dead []ecs.Entity
 	s.healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
@@ -81,6 +95,21 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 
 	for _, e := range dead {
 		hp, _ := s.healthPool.Get(e)
+
+		// --- Build KillEvent for stats attribution (before components removed) ---
+		ke := KillEvent{KillerFaction: 0xFF}
+		if s.ownerPool != nil {
+			if deadOwner, ok := s.ownerPool.Get(e); ok {
+				ke.DeadFaction = deadOwner.Faction
+			}
+		}
+		isCommanderDeath := false
+		if s.cmdPool != nil {
+			if cmd, ok := s.cmdPool.Get(e); ok && cmd.IsAlive {
+				isCommanderDeath = true
+			}
+		}
+		ke.IsCommander = isCommanderDeath
 
 		// Award kill points to the killer
 		if hp.LastAttacker != 0 && s.killPointsPool != nil {
@@ -93,8 +122,10 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 				// Award Gold bounty to killer's player
 				if s.ownerPool != nil && s.unitTypePool != nil {
 					if killerOwner, ok := s.ownerPool.Get(killerEntity); ok {
+						ke.KillerFaction = killerOwner.Faction
 						if deadUT, ok := s.unitTypePool.Get(e); ok {
 							bounty := component.CombatUnitTypeTable[deadUT.Type].KillBounty
+							ke.Bounty = bounty
 							if bounty > 0 {
 								s.GoldBounties[killerOwner.PlayerID] += bounty
 							}
@@ -103,6 +134,7 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 				}
 			}
 		}
+		s.KillEvents = append(s.KillEvents, ke)
 
 		// Handle commander death: promote highest-level unit in squad
 		if s.cmdPool != nil {

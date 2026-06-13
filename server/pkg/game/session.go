@@ -47,6 +47,7 @@ type GameSession struct {
 	PlayerGold    map[uint32]int32             // v1: gold per player
 	lastSentGold  map[uint32]int32             // track what was last sent to client
 	Store         persist.Store                // v1: persistence (nil = no persistence)
+	stats         *MatchStats                  // v1: cumulative match statistics (AAR)
 
 	tickCount uint32
 }
@@ -87,7 +88,9 @@ func defaultCombatUnitSpeed(mapWidth int32) int64 {
 }
 
 func NewGameSession() *GameSession {
-	gs := &GameSession{}
+	gs := &GameSession{
+		stats: NewMatchStats(),
+	}
 
 	// 1. Create entity manager + world
 	em := ecs.NewEntityManager()
@@ -220,6 +223,12 @@ func (gs *GameSession) Tick() {
 				gs.PlayerGold[playerID] -= deducted
 			}
 		}
+		// AAR: count recruits per faction
+		for playerID, count := range gs.recruitSys.SuccessfulRecruits {
+			if faction := gs.factionOfPlayer(playerID); faction != 0xFF {
+				gs.stats.AddRecruits(faction, count, gs.recruitSys.GoldDeductions[playerID])
+			}
+		}
 	}
 
 	// Award Gold bounties from DeathSystem
@@ -231,6 +240,11 @@ func (gs *GameSession) Tick() {
 					gs.lastSentGold = make(map[uint32]int32)
 				}
 			}
+		}
+
+		// AAR: record kill events
+		for _, ke := range gs.deathSys.KillEvents {
+			gs.stats.RecordKill(ke.KillerFaction, ke.DeadFaction, ke.IsCommander, ke.Bounty)
 		}
 
 		// Sync AI states with promoted commanders
@@ -1674,4 +1688,23 @@ func unitTypeName(ut component.CombatUnitType) string {
 	default:
 		return "LightInfantry"
 	}
+}
+
+// factionOfPlayer maps a playerID to its faction constant.
+// playerID 1 = FactionPlayer (0), playerID 2 = FactionEnemy (1).
+// Returns 0xFF for unknown players.
+func (gs *GameSession) factionOfPlayer(playerID uint32) uint8 {
+	switch playerID {
+	case 1:
+		return component.FactionPlayer
+	case 2:
+		return component.FactionEnemy
+	default:
+		return 0xFF
+	}
+}
+
+// GetMatchStats returns the cumulative match statistics for AAR display.
+func (gs *GameSession) GetMatchStats() *MatchStats {
+	return gs.stats
 }

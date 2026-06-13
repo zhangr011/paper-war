@@ -39,6 +39,10 @@ type RecruitmentSystem struct {
 	// GoldDeductions collects {playerID: amount} for each successful recruit.
 	// Cleared at start of each Tick. Session reads this after Tick().
 	GoldDeductions map[uint32]int32
+
+	// SuccessfulRecruits collects {playerID: count} for each successful recruit.
+	// Cleared at start of each Tick. Session reads this for match stats.
+	SuccessfulRecruits map[uint32]uint16
 }
 
 func (s *RecruitmentSystem) Name() string  { return "RecruitmentSystem" }
@@ -72,6 +76,7 @@ func (s *RecruitmentSystem) Recruit(req RecruitRequest) error {
 
 func (s *RecruitmentSystem) Tick(w *ecs.World, tick uint32) {
 	s.GoldDeductions = make(map[uint32]int32)
+	s.SuccessfulRecruits = make(map[uint32]uint16)
 	for _, req := range s.pending {
 		s.processRecruit(req)
 	}
@@ -136,6 +141,7 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 	if s.PlayerGold != nil && recruitCost > 0 {
 		s.GoldDeductions[playerID] += recruitCost
 	}
+	s.SuccessfulRecruits[playerID]++
 
 	// Spawn the unit at commander position with small offset
 	newEntity := s.em.Create()

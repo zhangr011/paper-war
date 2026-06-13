@@ -11,15 +11,27 @@ const (
 	MsgGoldUpdate   uint8 = 0x80
 	MsgMatchResult  uint8 = 0x81
 	MsgRosterUpdate uint8 = 0x82
+	MsgMatchStats   uint8 = 0x83
 )
+
+// MatchStatsEntry is the wire format for one faction's AAR stats.
+type MatchStatsEntry struct {
+	Kills          uint16
+	Deaths         uint16
+	CommanderKills uint16
+	UnitsRecruited uint16
+	GoldEarned     int32
+	GoldSpent      int32
+}
 
 // ServerMessage is a typed message from server to client.
 type ServerMessage struct {
 	Type       uint8
-	Gold       int32   // MsgGoldUpdate
-	Winner     uint8   // MsgMatchResult
-	Reason     string  // MsgMatchResult
-	RosterData []byte  // MsgRosterUpdate: opaque roster blob
+	Gold       int32            // MsgGoldUpdate
+	Winner     uint8            // MsgMatchResult
+	Reason     string           // MsgMatchResult
+	RosterData []byte           // MsgRosterUpdate: opaque roster blob
+	Stats      [2]MatchStatsEntry // MsgMatchStats: [player, enemy]
 }
 
 // EncodeServerMessage serializes a server message.
@@ -41,6 +53,15 @@ func EncodeServerMessage(msg *ServerMessage) []byte {
 	case MsgRosterUpdate:
 		binary.Write(buf, binary.LittleEndian, uint16(len(msg.RosterData)))
 		buf.Write(msg.RosterData)
+	case MsgMatchStats:
+		for i := 0; i < 2; i++ {
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].Kills)
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].Deaths)
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].CommanderKills)
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].UnitsRecruited)
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].GoldEarned)
+			binary.Write(buf, binary.LittleEndian, msg.Stats[i].GoldSpent)
+		}
 	}
 	return buf.Bytes()
 }
@@ -87,6 +108,27 @@ func DecodeServerMessage(data []byte) (*ServerMessage, error) {
 		msg.RosterData = make([]byte, dataLen)
 		if _, err := io.ReadFull(r, msg.RosterData); err != nil {
 			return nil, err
+		}
+	case MsgMatchStats:
+		for i := 0; i < 2; i++ {
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].Kills); err != nil {
+				return nil, err
+			}
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].Deaths); err != nil {
+				return nil, err
+			}
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].CommanderKills); err != nil {
+				return nil, err
+			}
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].UnitsRecruited); err != nil {
+				return nil, err
+			}
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].GoldEarned); err != nil {
+				return nil, err
+			}
+			if err := binary.Read(r, binary.LittleEndian, &msg.Stats[i].GoldSpent); err != nil {
+				return nil, err
+			}
 		}
 	}
 

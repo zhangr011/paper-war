@@ -62,9 +62,15 @@ func main() {
 	// 2. Declare hub early so callbacks can reference it
 	var hub *network.Hub
 
+	// 2b. Reconnect registry — issues tokens at match start so players can
+	// re-join after a dropped connection. Tokens live for 120s after issue
+	// and are cleared on every new match start / match end.
+	registry := game.NewMatchRegistry()
+
 	// 3. Create matchmaker — on match, spawn squads for each player
 	mm := game.NewMatchmaker(func(players []game.QueuePlayer) {
 		log.Printf("Match found with %d players!", len(players))
+		registry.Clear()
 		gs.Reset()
 		gs.Map.Objective.Type = 0 // Force elimination
 		for i, p := range players {
@@ -74,14 +80,18 @@ func main() {
 			// Spawn 2 squads per player
 			spawnSquadsForPlayer(gs, playerID, i, len(players))
 
+			// Issue reconnect token
+			token := registry.IssueToken(playerID)
+
 			// Send match_found to this player
 			mw, mh := gs.MapSize()
 			hub.SendJSON(p.ClientID, map[string]interface{}{
-				"type":      "match_found",
-				"player_id": playerID,
-				"players":   len(players),
-				"map_w":     mw,
-				"map_h":     mh,
+				"type":            "match_found",
+				"player_id":       playerID,
+				"players":         len(players),
+				"map_w":           mw,
+				"map_h":           mh,
+				"reconnect_token": token,
 			})
 			// Send map terrain data as binary
 			hub.SendToClient(p.ClientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
@@ -122,6 +132,7 @@ func main() {
 				cmdType = uint8(ct)
 			}
 			log.Printf("client %d (%s) starting solo game (cmdType=%d)", clientID, name, cmdType)
+			registry.Clear()
 			gs.Reset()
 			// Force elimination objective for all modes
 			gs.Map.Objective.Type = 0 // ObjectiveElimination = 0
@@ -136,13 +147,15 @@ func main() {
 			}
 			// AI player (player 2): always default spawn
 			spawnSquadsForPlayer(gs, 2, 1, 2)
+			token := registry.IssueToken(1)
 			mw, mh := gs.MapSize()
 			hub.SendJSON(clientID, map[string]interface{}{
-				"type":      "match_found",
-				"player_id": uint32(1),
-				"players":   1,
-				"map_w":     mw,
-				"map_h":     mh,
+				"type":            "match_found",
+				"player_id":       uint32(1),
+				"players":         1,
+				"map_w":           mw,
+				"map_h":           mh,
+				"reconnect_token": token,
 			})
 			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		case "start_clash":
@@ -230,12 +243,58 @@ func main() {
 				squadID++
 			}
 
+		hub.SendJSON(clientID, map[string]interface{}{
+			"type":      "match_found",
+			"player_id": uint32(0), // spectator
+			"players":   2,
+			"map_w":     mw,
+			"map_h":     mh,
+		})
+		hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
+		case "reconnect":
+			// Re-bind a new WebSocket connection to an existing in-progress match.
+			// The client sends the token it received in match_found; the server
+			// validates it, restores playerID + InGame on the new clientID, and
+			// re-sends match_found + map data so the client can re-initialize.
+			token, _ := msg["token"].(string)
+			if token == "" {
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":   "reconnect_failed",
+					"reason": "missing_token",
+				})
+				return
+			}
+			playerID, ok := registry.Validate(token)
+			if !ok {
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":   "reconnect_failed",
+					"reason": "invalid_or_expired",
+				})
+				log.Printf("client %d: reconnect failed (invalid/expired token)", clientID)
+				return
+			}
+			// Only allow reconnect while a match is in progress
+			if gs.Lifecycle.Phase == game.PhaseEnded {
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":   "reconnect_failed",
+					"reason": "match_ended",
+				})
+				log.Printf("client %d: reconnect failed (match already ended)", clientID)
+				return
+			}
+			// Re-bind: set the new clientID's playerID and InGame flag.
+			hub.SetClientPlayerID(clientID, playerID)
+			hub.SetClientInGame(clientID, true)
+			log.Printf("client %d reconnected as player %d", clientID, playerID)
+
+			// Re-send match_found + map data so client can re-init
+			mw, mh := gs.MapSize()
 			hub.SendJSON(clientID, map[string]interface{}{
-				"type":      "match_found",
-				"player_id": uint32(0), // spectator
-				"players":   2,
-				"map_w":     mw,
-				"map_h":     mh,
+				"type":            "reconnect_ok",
+				"player_id":       playerID,
+				"map_w":           mw,
+				"map_h":           mh,
+				"reconnect_token": token, // refresh token so another reconnect is possible
 			})
 			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		}
@@ -293,14 +352,39 @@ func main() {
 		// Send MatchResult to all in-game clients when match ends
 		if gs.Lifecycle.Phase == game.PhaseEnded && !gs.Lifecycle.MatchResultSent {
 			gs.Lifecycle.MatchResultSent = true
+			registry.Clear() // revoke all reconnect tokens — match is over
 			result := network.EncodeServerMessage(&network.ServerMessage{
 				Type:   network.MsgMatchResult,
 				Winner: gs.Lifecycle.WinnerFaction,
 				Reason: gs.Lifecycle.WinReason,
 			})
+			// AAR: send match statistics right after result
+			ms := gs.GetMatchStats()
+			statsMsg := network.EncodeServerMessage(&network.ServerMessage{
+				Type: network.MsgMatchStats,
+				Stats: [2]network.MatchStatsEntry{
+					{
+						Kills:          ms.Factions[0].Kills,
+						Deaths:         ms.Factions[0].Deaths,
+						CommanderKills: ms.Factions[0].CommanderKills,
+						UnitsRecruited: ms.Factions[0].UnitsRecruited,
+						GoldEarned:     ms.Factions[0].GoldEarned,
+						GoldSpent:      ms.Factions[0].GoldSpent,
+					},
+					{
+						Kills:          ms.Factions[1].Kills,
+						Deaths:         ms.Factions[1].Deaths,
+						CommanderKills: ms.Factions[1].CommanderKills,
+						UnitsRecruited: ms.Factions[1].UnitsRecruited,
+						GoldEarned:     ms.Factions[1].GoldEarned,
+						GoldSpent:      ms.Factions[1].GoldSpent,
+					},
+				},
+			})
 			for _, cid := range hub.ClientIDs() {
 				if hub.GetClientInGame(cid) {
 					hub.SendToClient(cid, result)
+					hub.SendToClient(cid, statsMsg)
 				}
 			}
 		}

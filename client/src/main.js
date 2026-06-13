@@ -295,7 +295,9 @@ export class Game {
     };
 
     this.connection.onMatchResult = ({ winner, reason }) => {
-      this.showMatchResult(winner, reason);
+      this.matchWinner = winner;
+      this.matchReason = reason;
+      this.showMatchResult(winner, reason, this.matchStats);
       // Play victory/defeat stinger
       if (this.audioStarted) {
         const pid = this.connection.playerID;
@@ -308,6 +310,14 @@ export class Game {
         }
         // Stop ambient when match ends
         this.ambient.stop();
+      }
+    };
+
+    this.connection.onMatchStats = (stats) => {
+      this.matchStats = stats;
+      // If result already shown, re-render with stats
+      if (this.matchWinner !== undefined) {
+        this.showMatchResult(this.matchWinner, this.matchReason, stats);
       }
     };
 
@@ -808,6 +818,37 @@ export class Game {
     this.running = false;
     this.connection.disconnect();
     this.ambient.stop();
+  }
+
+  // -----------------------------------------------------------------------
+  // Reconnect overlay — shown when the WebSocket drops mid-match. The browser
+  // connection layer auto-retries with exponential back-off; this overlay just
+  // tells the player what's happening.
+  // -----------------------------------------------------------------------
+
+  showReconnectOverlay() {
+    if (this._reconnectOverlay) return; // already shown
+    const overlay = document.createElement('div');
+    overlay.id = 'reconnect-overlay';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'background:rgba(0,0,0,0.75)',
+      'display:flex', 'flex-direction:column', 'align-items:center',
+      'justify-content:center', 'z-index:2000', 'color:#fff',
+      'font-family:sans-serif', 'pointer-events:none',
+    ].join(';');
+    overlay.innerHTML =
+      '<div style="font-size:24px;font-weight:bold;margin-bottom:12px">' +
+      'Connection lost</div>' +
+      '<div style="font-size:14px;opacity:0.8">Reconnecting to match…</div>';
+    document.body.appendChild(overlay);
+    this._reconnectOverlay = overlay;
+  }
+
+  hideReconnectOverlay() {
+    if (this._reconnectOverlay) {
+      this._reconnectOverlay.remove();
+      this._reconnectOverlay = null;
+    }
   }
 
   loop(now) {
@@ -1633,7 +1674,7 @@ export class Game {
       `<span style="color:#FF4444;font-weight:bold">RED ${red}</span>`;
   }
 
-  showMatchResult(winner, reason) {
+  showMatchResult(winner, reason, stats) {
     // Show a simple overlay with the result
     let overlay = document.getElementById('match-result-overlay');
     if (!overlay) {
@@ -1652,16 +1693,42 @@ export class Game {
       heading = `Team ${teamName} Wins!`;
       headingColor = winner === 0 ? '#4488FF' : '#FF4444';
     } else {
-      const isWin = winner === pid;
+      const isWin = winner === (pid - 1); // pid 1 = faction 0, pid 2 = faction 1
       heading = isWin ? 'Victory!' : 'Defeat';
       headingColor = isWin ? '#4CAF50' : '#FF4444';
     }
+
+    // Build AAR stats table if stats available
+    let statsHTML = '';
+    if (stats && stats[0] && stats[1]) {
+      const blue = stats[0]; // FactionPlayer
+      const red = stats[1];  // FactionEnemy
+      const row = (label, blueVal, redVal) =>
+        `<tr><td style="color:#4488FF;text-align:right;padding:4px 12px">${blueVal}</td>` +
+        `<td style="color:#aaa;text-align:center;padding:4px 12px;font-size:13px">${label}</td>` +
+        `<td style="color:#FF4444;text-align:left;padding:4px 12px">${redVal}</td></tr>`;
+      statsHTML =
+        '<table style="margin:16px auto 0;border-collapse:collapse;font-size:18px">' +
+        '<thead><tr>' +
+        '<th style="color:#4488FF;padding:4px 12px">Blue</th>' +
+        '<th></th>' +
+        '<th style="color:#FF4444;padding:4px 12px">Red</th>' +
+        '</tr></thead><tbody>' +
+        row('Kills', blue.kills, red.kills) +
+        row('Losses', blue.deaths, red.deaths) +
+        row('Cmdr Kills', blue.commanderKills, red.commanderKills) +
+        row('Recruited', blue.unitsRecruited, red.unitsRecruited) +
+        row('Gold Earned', blue.goldEarned, red.goldEarned) +
+        row('Gold Spent', blue.goldSpent, red.goldSpent) +
+        '</tbody></table>';
+    }
+
     overlay.innerHTML =
-      '<div style="text-align:center">' +
+      '<div style="text-align:center;max-width:500px">' +
       `<h1 style="font-size:48px;margin:0;color:${headingColor}">${heading}</h1>` +
       '<p style="font-size:20px;margin:16px 0">' + reason + '</p>' +
-      '<button id="match-result-ok" ' +
-      'style="padding:12px 32px;font-size:18px;cursor:pointer">OK</button>' +
+      statsHTML +
+      '<button id="match-result-ok" style="margin-top:20px;padding:12px 32px;font-size:18px;cursor:pointer">OK</button>' +
       '</div>';
     document.getElementById('match-result-ok').addEventListener('click', () => {
       overlay.remove();

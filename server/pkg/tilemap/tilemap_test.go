@@ -79,8 +79,7 @@ func TestNewTestMap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPropertyDimensions(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if gm.Width != 48 || gm.Height != 96 {
 			t.Errorf("seed %d: dimensions = %dx%d, want 48x96", seed, gm.Width, gm.Height)
 		}
@@ -88,8 +87,7 @@ func TestPropertyDimensions(t *testing.T) {
 }
 
 func TestPropertyNoNilTiles(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		for y := int32(0); y < gm.Height; y++ {
 			for x := int32(0); x < gm.Width; x++ {
 				tile := gm.TileAt(x, y)
@@ -102,8 +100,7 @@ func TestPropertyNoNilTiles(t *testing.T) {
 }
 
 func TestPropertySpawnCount(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if len(gm.Spawns) != 2 {
 			t.Errorf("seed %d: spawn count = %d, want 2", seed, len(gm.Spawns))
 		}
@@ -111,8 +108,7 @@ func TestPropertySpawnCount(t *testing.T) {
 }
 
 func TestPropertySpawnTerrain(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		for i, sp := range gm.Spawns {
 			tile := gm.TileAt(sp[0], sp[1])
 			if tile == nil {
@@ -137,8 +133,7 @@ func TestPropertySpawnTerrain(t *testing.T) {
 }
 
 func TestPropertyForestCoverage(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		total := int32(0)
 		hills := int32(0)
 		water := int32(0)
@@ -167,8 +162,7 @@ func TestPropertyForestCoverage(t *testing.T) {
 }
 
 func TestPropertyWaterCoverage(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		water := int32(0)
 		total := int32(len(gm.Tiles))
 		for _, tile := range gm.Tiles {
@@ -184,8 +178,7 @@ func TestPropertyWaterCoverage(t *testing.T) {
 }
 
 func TestPropertyHillCoverage(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		hills := int32(0)
 		total := int32(len(gm.Tiles))
 		for _, tile := range gm.Tiles {
@@ -201,8 +194,7 @@ func TestPropertyHillCoverage(t *testing.T) {
 }
 
 func TestPropertyStrongholdCount(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		strongholds := int32(0)
 		for _, tile := range gm.Tiles {
 			if isStrongholdTerrain(tile.TerrainType) {
@@ -218,8 +210,7 @@ func TestPropertyStrongholdCount(t *testing.T) {
 func TestPropertyLightConnectivity(t *testing.T) {
 	profiles := component.StandardMovementProfiles()
 	light := profiles[0]
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if len(gm.Spawns) < 2 {
 			t.Fatalf("seed %d: not enough spawns", seed)
 		}
@@ -232,8 +223,7 @@ func TestPropertyLightConnectivity(t *testing.T) {
 func TestPropertyHeavyConnectivity(t *testing.T) {
 	profiles := component.StandardMovementProfiles()
 	heavy := profiles[1]
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if len(gm.Spawns) < 2 {
 			t.Fatalf("seed %d: not enough spawns", seed)
 		}
@@ -244,8 +234,7 @@ func TestPropertyHeavyConnectivity(t *testing.T) {
 }
 
 func TestPropertyObjectiveValid(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if gm.Objective.Type < ObjectiveElimination || gm.Objective.Type > ObjectiveSurvival {
 			t.Errorf("seed %d: Objective.Type = %d, want 0-2", seed, gm.Objective.Type)
 		}
@@ -253,8 +242,7 @@ func TestPropertyObjectiveValid(t *testing.T) {
 }
 
 func TestPropertyCaptureHasTarget(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if gm.Objective.Type != ObjectiveCapture {
 			continue
 		}
@@ -390,8 +378,7 @@ func TestGenerateMapBridgesAreDestructible(t *testing.T) {
 }
 
 func TestGenerateMapSurvivalObjectiveValid(t *testing.T) {
-	for seed := int64(0); seed < 100; seed++ {
-		gm := GenerateMap(48, 96, seed)
+	for seed, gm := range testMaps {
 		if gm.Objective.Type != ObjectiveSurvival {
 			continue
 		}

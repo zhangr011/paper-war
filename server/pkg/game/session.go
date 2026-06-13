@@ -181,6 +181,7 @@ func NewGameSession() *GameSession {
 
 		// AI system (player 2 is AI)
 		gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+		gs.AISys.PlayerGold = gs.PlayerGold
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -397,6 +398,7 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.AISys2 = nil
 
 	gs.objectiveSys.Reset(gs.Map)
@@ -443,6 +445,7 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 	// Reset fog and AI
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.AISys2 = nil // reset clash AI
 
 	// Reset objective system (reuse existing, update map)
@@ -465,6 +468,7 @@ func (gs *GameSession) EnableClashMode() {
 	// Clash mode: no fog for either AI so they always see each other
 	gs.AISys.FogSystem = nil
 	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys2.PlayerGold = gs.PlayerGold
 }
 
 // SpawnTeam creates the standard team composition for the given level.

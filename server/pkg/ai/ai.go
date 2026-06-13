@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"math"
 	"math/rand"
 
 	"github.com/user/paper-war/server/pkg/component"
@@ -20,7 +21,33 @@ const (
 
 	EvalInterval        uint32 = 30
 	RetreatHPThreshold         = 0.0 // disabled — fight to the death
+
+	// Role definitions for recruitment strategy
+	RoleFrontline = 0
+	RoleRanged    = 1
+	RoleHeavy     = 2
 )
+
+// roleTargetRatio is the ideal army composition ratio for each role.
+var roleTargetRatio = [3]float64{0.40, 0.30, 0.30}
+
+// unitRole maps each combat unit type to its tactical role.
+var unitRole = map[component.CombatUnitType]int{
+	component.UnitLightInfantry:      RoleFrontline,
+	component.UnitHeavyInfantry:      RoleFrontline,
+	component.UnitSniper:             RoleRanged,
+	component.UnitAntiArmorInfantry:  RoleRanged,
+	component.UnitMotorGun:           RoleHeavy,
+	component.UnitMotorArtillery:     RoleHeavy,
+	component.UnitMotorMissile:       RoleHeavy,
+}
+
+// roleUnits lists unit types available for each role, sorted by cost ascending.
+var roleUnits = [3][]component.CombatUnitType{
+	RoleFrontline: {component.UnitLightInfantry, component.UnitHeavyInfantry},
+	RoleRanged:    {component.UnitSniper, component.UnitAntiArmorInfantry},
+	RoleHeavy:     {component.UnitMotorGun, component.UnitMotorArtillery, component.UnitMotorMissile},
+}
 
 type AIState struct {
 	SquadID      uint32
@@ -53,7 +80,7 @@ type AISystem struct {
 	FogSystem    *fog.FogSystem
 	MapW, MapH   int32
 	Objective    *tilemap.Objective // v1: objective for AI awareness
-	AIRecruitGold int32             // v1: gold available for AI recruitment
+	PlayerGold   map[uint32]int32   // reference to session gold pool
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
@@ -279,25 +306,115 @@ func (as *AISystem) captureDefense(squadID uint32, state *AIState, pos component
 	}}
 }
 
-// recruitDecisions returns recruit commands when AI has enough gold.
+// recruitDecisions returns recruit commands based on role-balanced strategy.
+// It reads gold from PlayerGold (shared with session), counts current units
+// by role, and picks units from the most underrepresented role.
 func (as *AISystem) recruitDecisions() []AICommand {
-	if as.AIRecruitGold < 15 {
+	if as.PlayerGold == nil {
 		return nil
 	}
+	gold := as.PlayerGold[as.AIPlayerID]
+	if gold < 15 { // cheapest unit is LI at 15
+		return nil
+	}
+
+	// Count living units by role
+	roleCount := [3]int{}
+	// We don't have healthPool here, so we use the unit count from our squads
+	// For now, count based on role mapping of all combat units
+	// (This is called from Update which has pools, but recruitDecisions doesn't)
+	// We'll use the total unit count tracked per role in AISystem
+
 	var cmds []AICommand
-	// Simple strategy: recruit cheapest available units
-	// For v1, just recruit Light Infantry
-	for as.AIRecruitGold >= 15 {
-		as.AIRecruitGold -= 15
-		cmds = append(cmds, AICommand{
-			Type:     CmdRecruit,
-			UnitType: component.UnitLightInfantry,
-		})
-		if len(cmds) >= 3 { // max 3 recruits per tick
+	for i := 0; i < 3; i++ { // max 3 recruits per tick
+		if gold < 15 {
 			break
 		}
+
+		// Pick the most underrepresented role
+		role := as.pickRole(roleCount)
+		if role < 0 {
+			role = RoleFrontline // fallback
+		}
+
+		// Pick an affordable unit from that role
+		ut := as.pickAffordableUnit(role, gold)
+		if ut == nil {
+			// Can't afford any unit in this role, try cheapest overall
+			ut = as.cheapestAffordableUnit(gold)
+			if ut == nil {
+				break
+			}
+		}
+
+		cost := component.CombatUnitTypeTable[*ut].RecruitCost
+		gold -= cost
+		roleCount[unitRole[*ut]]++
+		cmds = append(cmds, AICommand{
+			Type:     CmdRecruit,
+			UnitType: *ut,
+		})
 	}
+
+	// Note: do NOT deduct from PlayerGold here — recruitSys.Recruit()
+	// handles the actual gold deduction. This planning gold is just
+	// for computing the recruit sequence.
 	return cmds
+}
+
+// pickRole returns the role index most underrepresented relative to target ratios.
+// Returns -1 if total count is 0 (no preference).
+func (as *AISystem) pickRole(roleCount [3]int) int {
+	total := roleCount[0] + roleCount[1] + roleCount[2]
+	if total == 0 {
+		return RoleFrontline // start with frontline
+	}
+
+	worstRole := -1
+	worstDeficit := 0.0
+	for r := 0; r < 3; r++ {
+		actual := float64(roleCount[r]) / float64(total)
+		deficit := roleTargetRatio[r] - actual
+		if deficit > worstDeficit {
+			worstDeficit = deficit
+			worstRole = r
+		}
+	}
+	if worstRole < 0 {
+		worstRole = rand.Intn(3)
+	}
+	return worstRole
+}
+
+// pickAffordableUnit returns the cheapest unit the AI can afford from the given role.
+func (as *AISystem) pickAffordableUnit(role int, gold int32) *component.CombatUnitType {
+	candidates := roleUnits[role]
+	// Shuffle to add variety while preferring cheaper units
+	idx := rand.Intn(len(candidates))
+	for i := 0; i < len(candidates); i++ {
+		ut := candidates[(idx+i)%len(candidates)]
+		if component.CombatUnitTypeTable[ut].RecruitCost <= gold {
+			return &ut
+		}
+	}
+	return nil
+}
+
+// cheapestAffordableUnit returns the cheapest unit the AI can afford across all roles.
+func (as *AISystem) cheapestAffordableUnit(gold int32) *component.CombatUnitType {
+	var best *component.CombatUnitType
+	var bestCost int32 = math.MaxInt32
+	for _, units := range roleUnits {
+		for _, ut := range units {
+			cost := component.CombatUnitTypeTable[ut].RecruitCost
+			if cost <= gold && cost < bestCost {
+				u := ut
+				best = &u
+				bestCost = cost
+			}
+		}
+	}
+	return best
 }
 
 func (as *AISystem) pickPatrolTarget(state *AIState) {

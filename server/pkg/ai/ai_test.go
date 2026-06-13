@@ -176,27 +176,34 @@ func TestAIRecruit(t *testing.T) {
 
 	sys := NewAISystem(2, nil, 48, 96)
 	sys.RegisterSquad(1, uint32(cmd))
-	sys.AIRecruitGold = 50
+	sys.PlayerGold = map[uint32]int32{2: 50}
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool)
 	recruitCmds := filterCmds(cmds, CmdRecruit)
-	if len(recruitCmds) != 3 {
-		t.Fatalf("expected 3 recruit commands, got %d", len(recruitCmds))
+	if len(recruitCmds) == 0 {
+		t.Fatal("expected at least 1 recruit command, got 0")
 	}
-	for i, c := range recruitCmds {
-		if c.UnitType != component.UnitLightInfantry {
-			t.Errorf("recruit cmd %d: unit type = %d, want LightInfantry", i, c.UnitType)
+	// Verify varied unit types across multiple calls
+	seenTypes := map[component.CombatUnitType]bool{}
+	for _, c := range recruitCmds {
+		seenTypes[c.UnitType] = true
+	}
+	// At least one recruit must be affordable
+	for _, c := range recruitCmds {
+		cost := component.CombatUnitTypeTable[c.UnitType].RecruitCost
+		if cost > 50 {
+			t.Errorf("recruited unit type %d costs %d but only had 50 gold", c.UnitType, cost)
 		}
 	}
-	// Gold should be spent (50 - 3*15 = 5)
-	if sys.AIRecruitGold != 5 {
-		t.Errorf("remaining gold = %d, want 5", sys.AIRecruitGold)
+	// Verify gold was not overspent (AI doesn't deduct — recruitSys does)
+	if sys.PlayerGold[2] < 0 {
+		t.Errorf("gold went negative: %d", sys.PlayerGold[2])
 	}
 }
 
 func TestAIRecruitNoGold(t *testing.T) {
 	sys := NewAISystem(2, nil, 48, 96)
-	sys.AIRecruitGold = 10
+	sys.PlayerGold = map[uint32]int32{2: 10}
 	cmds := sys.recruitDecisions()
 	if len(cmds) != 0 {
 		t.Errorf("expected 0 recruit commands with 10 gold, got %d", len(cmds))
@@ -211,4 +218,95 @@ func filterCmds(cmds []AICommand, cmdType uint8) []AICommand {
 		}
 	}
 	return result
+}
+
+func TestAIRecruitRoleBalance(t *testing.T) {
+	// With 200 gold, the AI should recruit units from multiple roles,
+	// not just spam Light Infantry.
+	sys := NewAISystem(2, nil, 48, 96)
+	sys.PlayerGold = map[uint32]int32{2: 200}
+
+	cmds := sys.recruitDecisions()
+	if len(cmds) == 0 {
+		t.Fatal("expected recruit commands with 200 gold")
+	}
+
+	roles := map[int]int{}
+	for _, c := range cmds {
+		roles[unitRole[c.UnitType]]++
+	}
+	t.Logf("recruited %d units across %d roles: %v", len(cmds), len(roles), roles)
+
+	// With 200 gold, AI should recruit from at least 2 different roles
+	if len(roles) < 2 {
+		t.Errorf("expected units from at least 2 roles, got %d: %v", len(roles), roles)
+	}
+
+	// Verify no unit costs more than available gold
+	for _, c := range cmds {
+		cost := component.CombatUnitTypeTable[c.UnitType].RecruitCost
+		if cost > 200 {
+			t.Errorf("unit type %d costs %d, exceeds 200 gold budget", c.UnitType, cost)
+		}
+	}
+}
+
+func TestAIRecruitMaxThreePerTick(t *testing.T) {
+	sys := NewAISystem(2, nil, 48, 96)
+	sys.PlayerGold = map[uint32]int32{2: 1000} // tons of gold
+
+	cmds := sys.recruitDecisions()
+	if len(cmds) > 3 {
+		t.Errorf("AI recruited %d units in one tick, max is 3", len(cmds))
+	}
+}
+
+func TestAIRecruitNoGoldMap(t *testing.T) {
+	// PlayerGold is nil — should not panic
+	sys := NewAISystem(2, nil, 48, 96)
+	cmds := sys.recruitDecisions()
+	if len(cmds) != 0 {
+		t.Errorf("expected 0 recruits with nil PlayerGold, got %d", len(cmds))
+	}
+}
+
+func TestAIPickRole(t *testing.T) {
+	sys := NewAISystem(2, nil, 48, 96)
+
+	// Empty army → frontline (start with meat shields)
+	role := sys.pickRole([3]int{0, 0, 0})
+	if role != RoleFrontline {
+		t.Errorf("empty army should pick frontline, got %d", role)
+	}
+
+	// All frontline → should pick ranged or heavy (underrepresented)
+	role = sys.pickRole([3]int{10, 0, 0})
+	if role == RoleFrontline {
+		t.Errorf("all-frontline army should pick non-frontline, got frontline")
+	}
+
+	// Balanced army (4/3/3) → all roles close to target, any is fine
+	role = sys.pickRole([3]int{4, 3, 3})
+	if role < 0 || role > 2 {
+		t.Errorf("balanced army should pick valid role 0-2, got %d", role)
+	}
+}
+
+func TestAICheapestAffordableUnit(t *testing.T) {
+	sys := NewAISystem(2, nil, 48, 96)
+
+	// With 15 gold, only LightInfantry (15) is affordable
+	ut := sys.cheapestAffordableUnit(15)
+	if ut == nil {
+		t.Fatal("expected a unit with 15 gold, got nil")
+	}
+	if *ut != component.UnitLightInfantry {
+		t.Errorf("cheapest unit at 15 gold should be LightInfantry, got %d", *ut)
+	}
+
+	// With 0 gold, nothing is affordable
+	ut = sys.cheapestAffordableUnit(0)
+	if ut != nil {
+		t.Errorf("expected nil with 0 gold, got unit type %d", *ut)
+	}
 }

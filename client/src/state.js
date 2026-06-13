@@ -1,7 +1,13 @@
 // client/src/state.js
-// Double-buffered state management with interpolation from 5Hz server
-// snapshots to 30fps rendering. Handles incremental diff updates, angle
-// wrapping, velocity-based extrapolation, and accelerated correction.
+// Double-buffered state management with jitter-buffered interpolation from
+// 10Hz server snapshots to 30fps rendering. Handles incremental diff
+// updates, angle wrapping, velocity-based extrapolation with decay, and
+// accelerated correction.
+//
+// Jitter buffer: snapshots are queued on arrival and only activated
+// (shifting prev→curr) when the current interpolation reaches t≥1.0.
+// This prevents visual backward-jumps from early packet arrivals and
+// naturally absorbs network timing variance.
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,18 +34,26 @@ const EVENT_PROJECTILE    = 4;
 const FRAC_BITS = 12;
 const FIXED_ONE = 1 << FRAC_BITS;
 
-// Server tick rate
-const SERVER_HZ = 5;
-const TICK_DURATION_MS = 1000 / SERVER_HZ; // 200ms
+// Server tick rate — must match game.ServerTicksPerSecond (10 Hz)
+const SERVER_HZ = 10;
+const TICK_DURATION_MS = 1000 / SERVER_HZ; // 100ms
 
-// Extrapolation limits
-const MAX_EXTRAPOLATION_MS = 200;
+// Extrapolation limits — tuned for 10Hz (1.5 ticks max)
+const MAX_EXTRAPOLATION_MS = 150;
 const MAX_EXTRAPOLATION_T = MAX_EXTRAPOLATION_MS / TICK_DURATION_MS;
+
+// Velocity decay during extrapolation: after each tick past t=1.0, scale
+// velocity by this factor. This makes predicted movement slow down
+// naturally instead of continuing at full speed into infinity.
+const EXTRAPOLATION_VELOCITY_DECAY = 0.7;
 
 // Accelerated correction: when the interpolated position is far from the
 // target, blend toward it faster to avoid a visible "slide".
-const CORRECTION_THRESHOLD = 4.0; // world units
-const CORRECTION_SPEED = 8.0;     // multiplier on the blend
+const CORRECTION_THRESHOLD = 5.0; // world units (only genuine desyncs, not normal movement)
+const CORRECTION_SPEED = 3.0;     // blend fraction per tick (0.3 = 30% correction)
+
+// Maximum pending snapshots in the jitter buffer queue
+const MAX_PENDING_SNAPSHOTS = 3;
 
 // ---------------------------------------------------------------------------
 // Utility functions
@@ -168,6 +182,8 @@ export class StateManager {
       this.units.clear();
       this.prevTick = 0;
       this.currTick = 0;
+      this.nextTick = 0;
+      this.pendingQueue = [];
       this.t = 0;
       this.lastSnapshotTime = 0;
     };
@@ -175,6 +191,12 @@ export class StateManager {
     // Double-buffer tick tracking
     this.prevTick = 0;
     this.currTick = 0;
+    this.nextTick = 0; // tick of the latest queued snapshot
+
+    // Jitter buffer: pending snapshots awaiting activation.
+    // Snapshots are queued on arrival and activated (prev→curr shift)
+    // only when the current interpolation reaches t≥1.0 in update().
+    this.pendingQueue = [];
 
     // Interpolation parameter t ∈ [0, 1+]
     this.t = 0;
@@ -205,25 +227,59 @@ export class StateManager {
   // -----------------------------------------------------------------------
 
   /**
-   * Apply a decoded server snapshot.
+   * Queue a decoded server snapshot for activation.
+   *
+   * The snapshot is NOT applied immediately — it goes into a pending
+   * queue and is activated in update() when the current interpolation
+   * reaches t≥1.0. This prevents visual backward-jumps from early
+   * packet arrivals and naturally absorbs network jitter.
+   *
+   * Events and fog data are processed immediately (they are time-critical:
+   * damage flashes, death sounds, fog visibility).
    *
    * @param {number} tick - Current snapshot tick
    * @param {number} prevTick - Previous snapshot tick this is a diff from
-   * @param {Array<{entityID:number, changedMask:number, x?:number, y?:number, vx?:number, vy?:number, angle?:number, hp?:number, targetID?:number, morale?:number, state?:number, squadID?:number}>} unitUpdates
-   *   Unit updates with changedMask bits indicating which fields are present.
-   *   Position/velocity values should already be converted from fixed-point.
-   * @param {Array<{type:number, data:Uint8Array}>} events - Snapshot events
+   * @param {Array} unitUpdates - Unit updates with changedMask bits
+   * @param {Array} events - Snapshot events
+   * @param {Object} fog - Fog of war data
    */
   applySnapshot(tick, prevTick, unitUpdates, events, fog) {
-    // Update fog grid
+    // Update fog grid immediately
     if (fog && fog.visible) {
       this.fogWidth = fog.width;
       this.fogHeight = fog.height;
       this.fogVisible = fog.visible;
     }
-    const now = performance.now();
 
-    // If this is an out-of-order or duplicate snapshot, skip it
+    // Process events immediately (time-critical)
+    if (events && events.length > 0) {
+      this._processEvents(events);
+    }
+
+    // Reject out-of-order or duplicate snapshots
+    if (tick <= this.nextTick && this.nextTick !== 0) {
+      return;
+    }
+
+    // Queue for delayed activation
+    this.pendingQueue.push({ tick, prevTick, unitUpdates });
+    if (this.pendingQueue.length > MAX_PENDING_SNAPSHOTS) {
+      // Overflow — drop oldest (shouldn't happen at 10Hz server / 30fps client)
+      this.pendingQueue.shift();
+    }
+    this.nextTick = tick;
+  }
+
+  /**
+   * Activate a pending snapshot: shift prev→curr and apply diffs.
+   * Called from update() when the current interpolation reaches t≥1.0,
+   * or immediately for the first snapshot.
+   * @private
+   */
+  _activateSnapshot(snap) {
+    const { tick, prevTick, unitUpdates } = snap;
+
+    // Final out-of-order guard
     if (tick <= this.currTick && this.currTick !== 0) {
       return;
     }
@@ -346,14 +402,8 @@ export class StateManager {
       }
     }
 
-    // Process events
-    if (events && events.length > 0) {
-      this._processEvents(events);
-    }
-
-    // Record the time this snapshot arrived for interpolation timing.
-    // Reset t so we start interpolating from the beginning of the new tick.
-    this.lastSnapshotTime = now;
+    // Record activation time and reset interpolation parameter
+    this.lastSnapshotTime = performance.now();
     this.t = 0;
   }
 
@@ -363,15 +413,37 @@ export class StateManager {
 
   /**
    * Advance the interpolation state. Call once per render frame.
+   *
+   * First, any pending snapshots whose activation time has arrived
+   * (current interpolation reached t≥1.0) are activated. Then units
+   * are interpolated/extrapolated for the current frame.
+   *
    * @param {number} now - Current time in ms (e.g. performance.now())
    */
   update(now) {
+    // Activate pending snapshots whose interpolation window has completed.
+    // This is the jitter buffer: early-arriving snapshots wait here until
+    // the current interpolation finishes, preventing visual jumps.
+    while (this.pendingQueue.length > 0) {
+      if (this.lastSnapshotTime === 0) {
+        // First snapshot — activate immediately
+        this._activateSnapshot(this.pendingQueue.shift());
+      } else {
+        const elapsed = now - this.lastSnapshotTime;
+        if (elapsed >= this.tickDuration) {
+          this._activateSnapshot(this.pendingQueue.shift());
+        } else {
+          break; // Current interpolation not yet complete
+        }
+      }
+    }
+
     if (this.lastSnapshotTime === 0) {
-      // No snapshot received yet
+      // No snapshot activated yet
       return;
     }
 
-    // Calculate elapsed time since the last snapshot arrived
+    // Calculate elapsed time since the last snapshot was activated
     const elapsed = now - this.lastSnapshotTime;
 
     // Normalized interpolation parameter
@@ -396,12 +468,16 @@ export class StateManager {
       let ra = lerpAngle(unit.prevAngle, unit.currAngle, t);
 
       // When extrapolating past t=1, use velocity to predict position.
-      // This gives one frame of smooth continuation before snapping.
+      // Velocity decays linearly so predicted movement slows down
+      // naturally instead of shooting off at full speed.
       if (extrapolating && (unit.currVx !== 0 || unit.currVy !== 0)) {
         const extraT = t - 1.0;
-        // Velocity is in world-units per tick
-        rx += unit.currVx * extraT;
-        ry += unit.currVy * extraT;
+        const velocityScale = Math.max(
+          0,
+          1.0 - extraT * (1.0 - EXTRAPOLATION_VELOCITY_DECAY),
+        );
+        rx += unit.currVx * extraT * velocityScale;
+        ry += unit.currVy * extraT * velocityScale;
       }
 
       // Accelerated correction: if the render position is far from the
@@ -411,7 +487,6 @@ export class StateManager {
       const dy = ry - unit.renderY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > CORRECTION_THRESHOLD) {
-        // Correction factor: higher distance → faster convergence
         const correctionT = clamp(
           CORRECTION_SPEED * (this.tickDuration / 1000),
           0,
@@ -500,6 +575,8 @@ export class StateManager {
     this.units.clear();
     this.prevTick = 0;
     this.currTick = 0;
+    this.nextTick = 0;
+    this.pendingQueue = [];
     this.t = 0;
     this.lastSnapshotTime = 0;
     this.pendingEvents = [];

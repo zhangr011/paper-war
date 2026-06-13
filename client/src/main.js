@@ -2,16 +2,16 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v5';
-import { Camera } from './camera.js?v=v5';
-import { StateManager } from './state.js?v=v5';
-import { Connection } from './connection.js?v=v5';
-import { InputHandler } from './input.js?v=v5';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v5';
-import { AudioEngine } from './audio/audioengine.js?v=v5';
-import { SFX } from './audio/sfx.js?v=v5';
-import { Ambient } from './audio/ambient.js?v=v5';
-import { Music } from './audio/music.js?v=v5';
+import { Renderer } from './gl.js?v=v6';
+import { Camera } from './camera.js?v=v6';
+import { StateManager } from './state.js?v=v6';
+import { Connection } from './connection.js?v=v6';
+import { InputHandler } from './input.js?v=v6';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v6';
+import { AudioEngine } from './audio/audioengine.js?v=v6';
+import { SFX } from './audio/sfx.js?v=v6';
+import { Ambient } from './audio/ambient.js?v=v6';
+import { Music } from './audio/music.js?v=v6';
 
 // ---------------------------------------------------------------------------
 // Constants

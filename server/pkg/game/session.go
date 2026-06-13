@@ -132,38 +132,23 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
 	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 
-	// Build a default movement profile for terrain costs
-	defaultProfile := &component.MovementProfile{
-		ID: 0,
-		TerrainCosts: [16]uint8{
-			component.TerrainPlain:       1,
-			component.TerrainRoad:        1,
-			component.TerrainShallow:     3,
-			component.TerrainDeep:        0, // impassable
-			component.TerrainForest:      2,
-			component.TerrainHill:        3,
-			component.TerrainSwamp:       4,
-			component.TerrainBridge:      1,
-			component.TerrainWall:        0, // impassable
-			component.TerrainSnow:        3,
-			component.TerrainDesert:      2,
-			component.TerrainStronghold1: 1,
-			component.TerrainStronghold2: 1,
-			component.TerrainStronghold3: 1,
-			component.TerrainStronghold4: 1,
-			component.TerrainStronghold5: 1,
-		},
+	// Build movement profiles from the standard Light/Heavy definitions.
+	// Light (ID 0): infantry — faster terrain traversal, can ford Shallow water.
+	// Heavy (ID 1): motorized — slower on difficult terrain, cannot cross Shallow.
+	stdProfiles := component.StandardMovementProfiles()
+	profilesMap := make(map[uint8]*component.MovementProfile, len(stdProfiles))
+	for _, p := range stdProfiles {
+		profilesMap[p.ID] = p
 	}
-	profiles := map[uint8]*component.MovementProfile{0: defaultProfile}
 
 	// 6. Create all systems, add to world
-	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, []*component.MovementProfile{defaultProfile})
+	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, stdProfiles)
 	gs.commanderSys = &commander.CommanderSystem{Sh: gs.Sh}
 	gs.movementSys = &movement.MovementSystem{
 		Gm:       gs.Map,
 		Cache:    gs.Cache,
 		Sh:       gs.Sh,
-		Profiles: profiles,
+		Profiles: profilesMap,
 	}
 	gs.combatSys = &combat.CombatSystem{Sh: gs.Sh}
 	gs.deathSys = &combat.DeathSystem{}
@@ -567,7 +552,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 		IsAlive:         true,
 	})
 
-	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: 0})
+	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cmdStats.Armor)})
 	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 	gs.addComponent(cmdEntity, component.FormationRoleComponent{
 		Role: component.RoleCommander,
@@ -667,7 +652,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		IsAlive:         true,
 	})
 
-	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: 0})
+	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cmdStats.Armor)})
 	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 	gs.addComponent(cmdEntity, component.FormationRoleComponent{
 		Role: component.RoleCommander,
@@ -756,7 +741,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			Armor:  cuStats.Armor,
 			Level:  cu.Level,
 		})
-		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: 0})
+		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cuStats.Armor)})
 		gs.addComponent(cuEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 		gs.addComponent(cuEntity, component.FormationRoleComponent{
 			Role:    role,
@@ -1023,7 +1008,7 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			Level:  1,
 		})
 
-		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: 0})
+		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(stats.Armor)})
 		gs.addComponent(unitEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 		gs.addComponent(unitEntity, component.FormationRoleComponent{
 			Role:    role,

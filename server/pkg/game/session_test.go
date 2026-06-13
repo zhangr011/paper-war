@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
@@ -555,4 +556,105 @@ func TestFlushRostersNilStoreNoop(t *testing.T) {
 
 	// Should not panic
 	gs.FlushRosters(context.Background())
+}
+
+// TestMovementProfileAssignment verifies that spawned units get the correct
+// movement profile based on their armor type (ADR-0007).
+// Light armor → ProfileID 0, Heavy armor → ProfileID 1.
+func TestMovementProfileAssignment(t *testing.T) {
+	gs := NewGameSession()
+	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
+
+	movePool := gs.World.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent])
+	utPool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+
+	movePool.Each(func(e ecs.Entity, mc *component.MovementComponent) {
+		ut, ok := utPool.Get(e)
+		if !ok {
+			return // commander has no UnitTypeComponent
+		}
+		wantID := component.ArmorTypeToProfileID(ut.Armor)
+		if mc.ProfileID != wantID {
+			t.Errorf("entity %d: armor=%d (type %v) has ProfileID=%d, want %d",
+				e, ut.Armor, ut.Type, mc.ProfileID, wantID)
+		}
+	})
+}
+
+// TestMovementProfileHeavyUnitsGetHeavyProfile verifies that recruiting heavy
+// units (e.g. MotorGun) assigns ProfileID 1.
+func TestMovementProfileHeavyUnitsGetHeavyProfile(t *testing.T) {
+	gs := NewGameSession()
+	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
+
+	// Give gold and find commander for recruit
+	gs.PlayerGold[1] = 500
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	var cmdEntity ecs.Entity
+	boidPool.Each(func(e ecs.Entity, b *component.BoidComponent) {
+		if b.SquadID == 1 && b.Role == component.RoleCommander {
+			cmdEntity = e
+		}
+	})
+	if cmdEntity == 0 {
+		t.Fatal("commander not found")
+	}
+
+	gs.recruitSys.Recruit(combat.RecruitRequest{
+		CommanderEntity: cmdEntity,
+		UnitType:        component.UnitMotorGun,
+	})
+	gs.Tick() // process recruit
+
+	movePool := gs.World.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent])
+	utPool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+
+	foundHeavy := false
+	movePool.Each(func(e ecs.Entity, mc *component.MovementComponent) {
+		ut, ok := utPool.Get(e)
+		if !ok {
+			return
+		}
+		if ut.Type == component.UnitMotorGun {
+			foundHeavy = true
+			if mc.ProfileID != 1 {
+				t.Errorf("MotorGun has ProfileID=%d, want 1 (Heavy)", mc.ProfileID)
+			}
+			if ut.Armor != component.ArmorHeavy {
+				t.Errorf("MotorGun armor=%d, want ArmorHeavy (%d)", ut.Armor, component.ArmorHeavy)
+			}
+		}
+	})
+
+	if !foundHeavy {
+		t.Fatal("no MotorGun found after Recruit")
+	}
+}
+
+// TestSessionRegistersBothProfiles verifies the session init registers
+// both Light and Heavy movement profiles in the movement system.
+func TestSessionRegistersBothProfiles(t *testing.T) {
+	gs := NewGameSession()
+
+	profiles := gs.movementSys.Profiles
+	if len(profiles) < 2 {
+		t.Fatalf("movement system has %d profiles, want at least 2", len(profiles))
+	}
+
+	light, hasLight := profiles[0]
+	if !hasLight {
+		t.Fatal("profile ID 0 (Light) not registered")
+	}
+	heavy, hasHeavy := profiles[1]
+	if !hasHeavy {
+		t.Fatal("profile ID 1 (Heavy) not registered")
+	}
+
+	// Light can cross Shallow, Heavy cannot
+	if light.TerrainCosts[component.TerrainShallow] == 0 {
+		t.Error("Light profile should cross Shallow water")
+	}
+	if heavy.TerrainCosts[component.TerrainShallow] != 0 {
+		t.Error("Heavy profile should NOT cross Shallow water")
+	}
 }

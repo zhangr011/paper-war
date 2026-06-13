@@ -156,7 +156,7 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 		SeparationW:   fixed.FromFloat(1.5),
 		NeighborRange: fixed.FromFloat(5.0),
 	})
-	s.movePool.Add(newEntity, component.MovementComponent{})
+	s.movePool.Add(newEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(typeStats.Armor)})
 	s.pathPool.Add(newEntity, component.PathfindingComponent{})
 	s.unitTypePool.Add(newEntity, component.UnitTypeComponent{
 		Type:   req.UnitType,

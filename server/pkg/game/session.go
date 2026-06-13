@@ -179,9 +179,9 @@ func NewGameSession() *GameSession {
 		// Fog system (per-player visibility)
 		gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
-		// AI system (player 2 is AI)
 		gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 		gs.AISys.PlayerGold = gs.PlayerGold
+		gs.configureAIStrategy(gs.AISys)
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -338,17 +338,48 @@ func (gs *GameSession) updateFog() {
 	}
 }
 
+// configureAIStrategy sets up the AI with map-specific strategic data:
+// base position, stronghold locations, and objective awareness.
+func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
+	if aiSys == nil || gs.Map == nil {
+		return
+	}
+
+	// Set AI base position from map spawns (spawn[1] = AI/player 2)
+	if len(gs.Map.Spawns) >= 2 {
+		sp := gs.Map.Spawns[1]
+		aiSys.SetBasePosition(fixed.FromFloat(float64(sp[0])), fixed.FromFloat(float64(sp[1])))
+	}
+
+	// Find all stronghold positions on the map
+	var strongholds [][2]int32
+	for y := int32(0); y < gs.Map.Height; y++ {
+		for x := int32(0); x < gs.Map.Width; x++ {
+			tile := gs.Map.TileAt(x, y)
+			if tile != nil && tile.TerrainType >= component.TerrainStronghold1 &&
+				tile.TerrainType <= component.TerrainStronghold5 {
+				strongholds = append(strongholds, [2]int32{x, y})
+			}
+		}
+	}
+	aiSys.SetStrongholds(strongholds)
+
+	// Set objective
+	aiSys.SetObjective(&gs.Map.Objective)
+}
+
 func (gs *GameSession) runAI() {
 	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
 
 	runAISys := func(aiSys *ai.AISystem) {
 		if aiSys == nil {
 			return
 		}
-		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool)
+		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool, unitTypePool)
 		for _, cmd := range aiCmds {
 			switch cmd.Type {
 			case ai.CmdMove:
@@ -399,6 +430,7 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 	gs.AISys.PlayerGold = gs.PlayerGold
+	gs.configureAIStrategy(gs.AISys)
 	gs.AISys2 = nil
 
 	gs.objectiveSys.Reset(gs.Map)
@@ -446,6 +478,7 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
 	gs.AISys.PlayerGold = gs.PlayerGold
+	gs.configureAIStrategy(gs.AISys)
 	gs.AISys2 = nil // reset clash AI
 
 	// Reset objective system (reuse existing, update map)

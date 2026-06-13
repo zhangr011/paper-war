@@ -66,7 +66,8 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			gold         INT NOT NULL DEFAULT 50,
 			formation    JSONB NOT NULL DEFAULT '{"weapon_slot":"Light","armor_slot":"Light","leading_skill":100}',
 			combat_units JSONB NOT NULL DEFAULT '[]',
-			created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+			created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+			CONSTRAINT uq_commanders_player_name UNIQUE (player_id, name)
 		);
 		CREATE INDEX IF NOT EXISTS idx_commanders_player_id ON commanders(player_id);
 		CREATE INDEX IF NOT EXISTS idx_players_token ON players(token);
@@ -164,12 +165,12 @@ func (s *PostgresStore) SaveCommander(ctx context.Context, playerID uint32, cmd 
 		return fmt.Errorf("marshal units: %w", err)
 	}
 
-	// Upsert: insert or update on conflict (player_id, type)
+	// Upsert: insert or update on conflict (player_id, name)
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO commanders (player_id, name, type, level, gold, formation, combat_units, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (player_id, type) DO UPDATE SET
-			name = EXCLUDED.name,
+		ON CONFLICT (player_id, name) DO UPDATE SET
+			type = EXCLUDED.type,
 			level = EXCLUDED.level,
 			gold = EXCLUDED.gold,
 			formation = EXCLUDED.formation,

@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 async function startSoloGame(page) {
-  await page.goto('http://localhost:8090');
+  await page.goto('/');
   await page.fill('#login-username', 'FogAlign');
   await page.click('#login-form button[type="submit"]');
   await expect(page.locator('#lobby-screen.active')).toBeVisible();

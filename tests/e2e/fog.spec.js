@@ -62,11 +62,11 @@ test('fog grid is received after starting a solo game', async ({ page }) => {
   expect(fog.visible.length).toBe(48 * 96);
 
   // At least some tiles should be visible (commander's vision radius)
-  const visibleCount = fog.visible.filter((v) => v === 1).length;
+  const visibleCount = fog.visible.filter((v) => v >= 1).length;
   expect(visibleCount).toBeGreaterThan(0);
 
   // Most tiles should be fogged (small map, one commander position)
-  const foggedCount = fog.visible.filter((v) => v === 0).length;
+  const foggedCount = fog.visible.filter((v) => v === 0).length; // FogUnexplored
   expect(foggedCount).toBeGreaterThan(0);
 });
 
@@ -185,7 +185,7 @@ test('vision around commander forms a circular pattern, not square', async ({ pa
     let visibleTiles = [];
     for (let y = 0; y < state.fogHeight; y++) {
       for (let x = 0; x < fogW; x++) {
-        if (fogVisible[y * fogW + x] === 1) {
+        if (fogVisible[y * fogW + x] >= 1) {
           visibleTiles.push({ x, y });
         }
       }
@@ -211,8 +211,8 @@ test('vision around commander forms a circular pattern, not square', async ({ pa
     const minY = Math.min(...visibleTiles.map((t) => t.y));
     const maxY = Math.max(...visibleTiles.map((t) => t.y));
 
-    const cornerTL = fogVisible[Math.round(minY) * fogW + Math.round(minX)] === 1;
-    const cornerBR = fogVisible[Math.round(maxY) * fogW + Math.round(maxX)] === 1;
+    const cornerTL = fogVisible[Math.round(minY) * fogW + Math.round(minX)] >= 1;
+    const cornerBR = fogVisible[Math.round(maxY) * fogW + Math.round(maxX)] >= 1;
 
     // Count tiles near the edge (within 1 tile of maxDist)
     const edgeTiles = visibleTiles.filter((t) => {
@@ -254,14 +254,14 @@ test('fog grid updates across multiple snapshots', async ({ page }) => {
 
   // Capture initial fog state
   const fogBefore = await getFogState(page);
-  const initialVisibleCount = fogBefore.visible.filter((v) => v === 1).length;
+  const initialVisibleCount = fogBefore.visible.filter((v) => v >= 1).length;
 
   // Wait for several more snapshots (server ticks at 5Hz, wait ~3 seconds)
   await page.waitForTimeout(3000);
 
   // Capture fog state after snapshots have continued
   const fogAfter = await getFogState(page);
-  const laterVisibleCount = fogAfter.visible.filter((v) => v === 1).length;
+  const laterVisibleCount = fogAfter.visible.filter((v) => v >= 1).length;
 
   // Fog grid should still be valid
   expect(fogAfter.visible.length).toBe(48 * 96);

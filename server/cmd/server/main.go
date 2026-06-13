@@ -70,6 +70,7 @@ func main() {
 		for i, p := range players {
 			playerID := uint32(i + 1)
 			hub.SetClientPlayerID(p.ClientID, playerID)
+			hub.SetClientInGame(p.ClientID, true)
 			// Spawn 2 squads per player
 			spawnSquadsForPlayer(gs, playerID, i, len(players))
 

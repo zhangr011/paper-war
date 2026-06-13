@@ -52,6 +52,17 @@ async function waitForTerrain(page, timeoutMs = 5000) {
   );
 }
 
+/** Poll until at least one unit is in the client game state. */
+async function waitForUnits(page, timeoutMs = 5000) {
+  await page.waitForFunction(
+    () => {
+      const game = window.__paperWarGame;
+      return game && game.state && game.state.units && game.state.units.size > 0;
+    },
+    { timeout: timeoutMs },
+  );
+}
+
 /** Get terrain and map info from the game state. */
 async function getMapState(page) {
   return page.evaluate(() => {
@@ -135,6 +146,7 @@ test('map contains expected major terrain types', async ({ page }) => {
 test('spawn points place units within map bounds', async ({ page }) => {
   await startSoloGame(page);
   await waitForTerrain(page);
+  await waitForUnits(page);
 
   const result = await page.evaluate(() => {
     const game = window.__paperWarGame;
@@ -154,10 +166,12 @@ test('spawn points place units within map bounds', async ({ page }) => {
       });
     }
 
-    // Check all units are within bounds
-    const allInBounds = unitPositions.every(u =>
-      u.x >= 0 && u.x < mapW && u.y >= 0 && u.y < mapH
-    );
+    // Check all units are within bounds (positions are fixed-point, >>12 = tile coords)
+    const allInBounds = unitPositions.every(u => {
+      const tx = u.x / 4096;
+      const ty = u.y / 4096;
+      return tx >= 0 && tx < mapW && ty >= 0 && ty < mapH;
+    });
 
     // Group by player
     const playerIDs = new Set(unitPositions.map(u => u.playerID));
@@ -168,7 +182,7 @@ test('spawn points place units within map bounds', async ({ page }) => {
       totalUnits: unitPositions.length,
       playerCount: playerIDs.size,
       allInBounds,
-      samplePositions: unitPositions.slice(0, 5).map(u => ({ x: Math.floor(u.x), y: Math.floor(u.y) })),
+      samplePositions: unitPositions.slice(0, 5).map(u => ({ x: Math.floor(u.x / 4096), y: Math.floor(u.y / 4096) })),
     };
   });
 

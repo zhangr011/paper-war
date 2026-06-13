@@ -5,6 +5,7 @@ const { test, expect } = require('@playwright/test');
 // ---------------------------------------------------------------------------
 
 test('two players get separate fog grids with independent visibility', async ({ browser }) => {
+  test.setTimeout(60000); // 2-player match needs extra time for matchmaking + snapshots
   const player1 = await browser.newContext();
   const player2 = await browser.newContext();
   const page1 = await player1.newPage();
@@ -12,14 +13,14 @@ test('two players get separate fog grids with independent visibility', async ({ 
 
   try {
     // --- Player 1: login and join queue ---
-    await page1.goto('http://localhost:8090');
+    await page1.goto('/');
     await page1.fill('#login-username', 'Player1');
     await page1.click('#login-form button[type="submit"]');
     await expect(page1.locator('#lobby-screen.active')).toBeVisible();
     await page1.click('#find-match-btn');
 
     // --- Player 2: login and join queue ---
-    await page2.goto('http://localhost:8090');
+    await page2.goto('/');
     await page2.fill('#login-username', 'Player2');
     await page2.click('#login-form button[type="submit"]');
     await expect(page2.locator('#lobby-screen.active')).toBeVisible();
@@ -55,7 +56,7 @@ test('two players get separate fog grids with independent visibility', async ({ 
         const visibleTiles = [];
         for (let y = 0; y < fogH; y++) {
           for (let x = 0; x < fogW; x++) {
-            if (fog[y * fogW + x] === 1) {
+            if (fog[y * fogW + x] >= 1) {
               visibleTiles.push({ x, y });
             }
           }

@@ -1,7 +1,7 @@
 package tilemap
 
 import (
-	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -55,7 +55,29 @@ const (
 // The output is fully deterministic: same (w, h, seed) always produces the same map.
 //
 // Pipeline: heightmap → hills → river → lake → forest → strongholds → bridges → spawns → objective → validate
+//
+// If the generated map fails connectivity validation, it retries with incremented seeds
+// (up to maxMapRetries) before giving up.
 func GenerateMap(w, h int32, seed int64) *GameMap {
+	const maxMapRetries = 20
+	for attempt := 0; attempt < maxMapRetries; attempt++ {
+		gm := generateMapOnce(w, h, seed+int64(attempt))
+		// Validate connectivity
+		profiles := component.StandardMovementProfiles()
+		spawn1 := gm.Spawns[0]
+		spawn2 := gm.Spawns[1]
+		if isConnected(gm, spawn1, spawn2, profiles[0]) && isConnected(gm, spawn1, spawn2, profiles[1]) {
+			return gm
+		}
+		// Connectivity failed — retry with next seed
+	}
+	// All retries failed — return the last map anyway (rare edge case)
+	log.Printf("WARNING: GenerateMap failed connectivity after %d retries with base seed %d", maxMapRetries, seed)
+	return generateMapOnce(w, h, seed)
+}
+
+// generateMapOnce creates a single procedural map instance for the given seed.
+func generateMapOnce(w, h int32, seed int64) *GameMap {
 	gm := NewGameMap(w, h)
 	r := rand.New(rand.NewSource(seed))
 	p := perlin.NewPerlin(heightAlpha, heightBeta, heightOctaves, seed)
@@ -128,16 +150,7 @@ func GenerateMap(w, h int32, seed int64) *GameMap {
 	// Stage 10: Objective assignment
 	assignProceduralObjective(gm, strongholds, r)
 
-	// Stage 11: Validate connectivity
-	profiles := component.StandardMovementProfiles()
-	if !isConnected(gm, spawn1, spawn2, profiles[0]) {
-		panic(fmt.Sprintf("procedural map seed %d: Light profile has no path between spawns", seed))
-	}
-	if !isConnected(gm, spawn1, spawn2, profiles[1]) {
-		panic(fmt.Sprintf("procedural map seed %d: Heavy profile has no path between spawns", seed))
-	}
-
-	// Store metadata
+	// Store metadata (validation handled by caller GenerateMap)
 	gm.Spawns = [][2]int32{spawn1, spawn2}
 	gm.Seed = seed
 

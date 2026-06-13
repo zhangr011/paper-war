@@ -268,6 +268,14 @@ export class App {
             this.game.stop();
             this.game = null;
           }
+          // Re-enable lobby buttons — they were disabled when the match started
+          // (app.js soloBtn handler) and are never re-enabled on the reconnect
+          // failure path. Without this, the lobby is unreachable after a crash.
+          // Mirrors the re-enable in main.js match-result OK handler.
+          this.soloBtn.disabled = false;
+          this.findMatchBtn.disabled = false;
+          if (this.clashBtn) this.clashBtn.disabled = false;
+          this.lobbySpinner.style.display = 'none';
           this.showScreen('lobby');
           this.lobbyStatus.textContent = 'Reconnect failed — match no longer available.';
         }, 3000);

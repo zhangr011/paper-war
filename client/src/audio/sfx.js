@@ -3,7 +3,7 @@
 // All sounds route through the AudioEngine's sfxGain bus.
 
 import { EVENT_DAMAGE, EVENT_DEATH, EVENT_COMMANDER_DOWN, EVENT_PROJECTILE }
-  from '../connection.js?v=v1';
+  from '../connection.js?v=v2';
 
 // CombatUnitType constants (must match server component/unit_type.go)
 const UNIT_LI = 0;     // Light Infantry — rifle

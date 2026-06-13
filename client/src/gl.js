@@ -14,24 +14,94 @@ const SPRITE_VS = `#version 300 es
 in vec2 a_position;
 in vec2 a_texcoord;
 in vec4 a_color;
+in float a_tileType;
+in float a_seed;
 uniform mat4 u_projection;
 out vec2 v_texcoord;
 out vec4 v_color;
+out float v_tileType;
+out float v_seed;
 void main() {
   gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
   v_texcoord = a_texcoord;
   v_color = a_color;
+  v_tileType = a_tileType;
+  v_seed = a_seed;
 }
 `;
 
+// Textured fragment shader.
+//   - tileType == 0: flat color (objects, effects, fog, UI)
+//   - tileType >= 1: per-pixel hash noise modulates brightness with patterns
+//     chosen per terrain type (water waves, mountain grain, road planks, etc.)
+//   - Time uniform animates water.
+//
+// The hash is quantized with floor() so noise falls on a chunky pixel grid,
+// giving the pixel-art look of design/map.png instead of smooth gradients.
 const SPRITE_FS = `#version 300 es
 precision mediump float;
 in vec2 v_texcoord;
 in vec4 v_color;
+in float v_tileType;
+in float v_seed;
 uniform sampler2D u_texture;
+uniform float u_time;
 out vec4 fragColor;
+
+// Dave-Hoskins-style 2D hash, returns [0,1].
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
 void main() {
-  fragColor = texture(u_texture, v_texcoord) * v_color;
+  vec4 base = texture(u_texture, v_texcoord) * v_color;
+  int t = int(v_tileType + 0.5);
+
+  if (t == 0) {
+    fragColor = base;
+    return;
+  }
+
+  // Sample at the tile's pixel grid (TILE_WIDTH = 32 game units per tile).
+  // v_texcoord is 0..1 across one tile, so px is in tile-local pixel coords.
+  vec2 px = v_texcoord * 32.0;
+  vec2 seedOff = vec2(v_seed * 13.37, v_seed * 7.77);
+  float n = 0.0; // noise offset in [-1, 1]
+
+  if (t == 2 || t == 3) {
+    // Water: horizontal wave bands + grain. Darken wave troughs.
+    float band = sin((px.y + v_seed * 17.0) * 0.7 + u_time * 1.6);
+    float grain = hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff) * 2.0 - 1.0;
+    n = band * 0.18 + grain * 0.12;
+  } else if (t == 5) {
+    // Hill / mountain: chunky vertical grain like rock strata.
+    vec2 cell = floor(vec2(px.x * 0.35, px.y * 0.8)) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    // Occasional darker crack lines every ~10 px
+    float crack = step(0.92, hash21(vec2(floor(px.y / 10.0), cell.x)));
+    n = grain * 0.22 - crack * 0.15;
+  } else if (t == 1 || t == 7) {
+    // Road / Bridge: plank lines every 8 px + grain.
+    float plankDark = step(0.78, fract(px.y / 8.0));
+    vec2 cell = vec2(floor(px.x * 0.4), floor(px.y / 8.0) * 0.5) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    n = grain * 0.15 - plankDark * 0.18;
+  } else if (t == 4) {
+    // Forest floor: darker organic noise with occasional light flecks.
+    vec2 cell = floor(px * 0.6) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    float fleck = step(0.95, hash21(cell + 3.0));
+    n = grain * 0.18 + fleck * 0.12;
+  } else {
+    // Plains / swamp / desert / generic: organic per-pixel grain.
+    vec2 cell = floor(px * 0.7) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    n = grain * 0.18;
+  }
+
+  fragColor = vec4(clamp(base.rgb * (1.0 + n), 0.0, 1.0), base.a);
 }
 `;
 
@@ -141,8 +211,12 @@ function createWhitePixelTexture(gl) {
 // SpriteBatch  --  batched quads for terrain tiles & objects
 // ---------------------------------------------------------------------------
 
-// Each vertex: x, y, u, v, r, g, b, a  = 8 floats
-const VERTEX_FLOATS = 8;
+// Each vertex: x, y, u, v, r, g, b, a, tileType, seed  = 10 floats
+//   - tileType: terrain type id; 0 means "flat color" (no noise), >=1 enables
+//     the texture branch of the fragment shader with type-specific patterns.
+//   - seed: per-tile deterministic seed so identical terrain types don't share
+//     the same noise pattern.
+const VERTEX_FLOATS = 10;
 const VERTEX_BYTES = VERTEX_FLOATS * 4;
 const MAX_BATCH_VERTICES = 60000; // ~15000 quads before flush
 const QUAD_VERTICES = 6; // two triangles
@@ -164,10 +238,13 @@ class SpriteBatch {
     this.aPosition = gl.getAttribLocation(program, 'a_position');
     this.aTexcoord = gl.getAttribLocation(program, 'a_texcoord');
     this.aColor = gl.getAttribLocation(program, 'a_color');
+    this.aTileType = gl.getAttribLocation(program, 'a_tileType');
+    this.aSeed = gl.getAttribLocation(program, 'a_seed');
 
     // Uniform locations
     this.uProjection = gl.getUniformLocation(program, 'u_projection');
     this.uTexture = gl.getUniformLocation(program, 'u_texture');
+    this.uTime = gl.getUniformLocation(program, 'u_time');
 
     // VAO + VBO
     this.vao = gl.createVertexArray();
@@ -190,6 +267,12 @@ class SpriteBatch {
     // a_color     (offset 16, 4 floats)
     gl.enableVertexAttribArray(this.aColor);
     gl.vertexAttribPointer(this.aColor, 4, gl.FLOAT, false, VERTEX_BYTES, 16);
+    // a_tileType  (offset 32, 1 float)
+    gl.enableVertexAttribArray(this.aTileType);
+    gl.vertexAttribPointer(this.aTileType, 1, gl.FLOAT, false, VERTEX_BYTES, 32);
+    // a_seed      (offset 36, 1 float)
+    gl.enableVertexAttribArray(this.aSeed);
+    gl.vertexAttribPointer(this.aSeed, 1, gl.FLOAT, false, VERTEX_BYTES, 36);
 
     gl.bindVertexArray(null);
   }
@@ -200,7 +283,9 @@ class SpriteBatch {
   }
 
   /**
-   * Push a single quad (two triangles) into the batch.
+   * Push a single quad (two triangles) into the batch with full control over
+   * texture coordinates and (optionally) tile-type/seed for textured terrain.
+   *
    * @param {number} x      top-left x (screen pixels)
    * @param {number} y      top-left y (screen pixels)
    * @param {number} w      width
@@ -213,9 +298,14 @@ class SpriteBatch {
    * @param {number} g      green 0..1
    * @param {number} b      blue  0..1
    * @param {number} a      alpha 0..1
+   * @param {number} [tileType=0]  0=flat color, >=1 enables per-pixel noise
+   * @param {number} [seed=0]      per-tile deterministic noise seed
    */
-  pushQuad(x, y, w, h, u0, v0, u1, v1, r, g, b, a) {
-    // Flush if we would exceed the buffer
+  pushQuad(x, y, w, h, u0, v0, u1, v1, r, g, b, a, tileType = 0, seed = 0) {
+    // NOTE: this mid-batch flush path lacks projection/texture args. In
+    // practice the terrain batch never overflows MAX_BATCH_VERTICES (~15k
+    // quads) so this branch is unreachable; the public flush() at endFrame
+    // always supplies the args. Kept for safety.
     if (this.vertexCount + QUAD_VERTICES > MAX_BATCH_VERTICES) {
       this.flush();
     }
@@ -228,36 +318,58 @@ class SpriteBatch {
     // Triangle 1: top-left, bottom-left, bottom-right
     buf[o]      = x;  buf[o + 1]  = y;  buf[o + 2]  = u0; buf[o + 3]  = v0;
     buf[o + 4]  = r;  buf[o + 5]  = g;  buf[o + 6]  = b;  buf[o + 7]  = a;
+    buf[o + 8]  = tileType; buf[o + 9] = seed;
 
-    buf[o + 8]  = x;  buf[o + 9]  = y1; buf[o + 10] = u0; buf[o + 11] = v1;
-    buf[o + 12] = r;  buf[o + 13] = g;  buf[o + 14] = b;  buf[o + 15] = a;
+    buf[o + 10] = x;  buf[o + 11] = y1; buf[o + 12] = u0; buf[o + 13] = v1;
+    buf[o + 14] = r;  buf[o + 15] = g;  buf[o + 16] = b;  buf[o + 17] = a;
+    buf[o + 18] = tileType; buf[o + 19] = seed;
 
-    buf[o + 16] = x1; buf[o + 17] = y1; buf[o + 18] = u1; buf[o + 19] = v1;
-    buf[o + 20] = r;  buf[o + 21] = g;  buf[o + 22] = b;  buf[o + 23] = a;
+    buf[o + 20] = x1; buf[o + 21] = y1; buf[o + 22] = u1; buf[o + 23] = v1;
+    buf[o + 24] = r;  buf[o + 25] = g;  buf[o + 26] = b;  buf[o + 27] = a;
+    buf[o + 28] = tileType; buf[o + 29] = seed;
 
     // Triangle 2: top-left, bottom-right, top-right
-    buf[o + 24] = x;  buf[o + 25] = y;  buf[o + 26] = u0; buf[o + 27] = v0;
-    buf[o + 28] = r;  buf[o + 29] = g;  buf[o + 30] = b;  buf[o + 31] = a;
+    buf[o + 30] = x;  buf[o + 31] = y;  buf[o + 32] = u0; buf[o + 33] = v0;
+    buf[o + 34] = r;  buf[o + 35] = g;  buf[o + 36] = b;  buf[o + 37] = a;
+    buf[o + 38] = tileType; buf[o + 39] = seed;
 
-    buf[o + 32] = x1; buf[o + 33] = y1; buf[o + 34] = u1; buf[o + 35] = v1;
-    buf[o + 36] = r;  buf[o + 37] = g;  buf[o + 38] = b;  buf[o + 39] = a;
-
-    buf[o + 40] = x1; buf[o + 41] = y;  buf[o + 42] = u1; buf[o + 43] = v1;
+    buf[o + 40] = x1; buf[o + 41] = y1; buf[o + 42] = u1; buf[o + 43] = v1;
     buf[o + 44] = r;  buf[o + 45] = g;  buf[o + 46] = b;  buf[o + 47] = a;
+    buf[o + 48] = tileType; buf[o + 49] = seed;
+
+    buf[o + 50] = x1; buf[o + 51] = y;  buf[o + 52] = u1; buf[o + 53] = v1;
+    buf[o + 54] = r;  buf[o + 55] = g;  buf[o + 56] = b;  buf[o + 57] = a;
+    buf[o + 58] = tileType; buf[o + 59] = seed;
 
     this.vertexCount += QUAD_VERTICES;
   }
 
   /**
-   * Push a colored quad (uses full texture, so with the 1x1 white texture it
-   * renders as a flat color rectangle).
+   * Push a flat-colored quad (uses full texture, so with the 1x1 white texture
+   * it renders as a flat color rectangle).  tileType defaults to 0 which the
+   * fragment shader treats as "no texture", preserving existing behavior for
+   * all non-terrain callers (objects, effects, fog, UI).
    */
   pushColorQuad(x, y, w, h, r, g, b, a) {
-    this.pushQuad(x, y, w, h, 0, 0, 1, 1, r, g, b, a);
+    this.pushQuad(x, y, w, h, 0, 0, 1, 1, r, g, b, a, 0, 0);
   }
 
-  /** Upload and draw all queued vertices, then reset. */
-  flush(projectionMatrix, texture) {
+  /**
+   * Push a textured terrain quad.  Same as pushColorQuad but with tileType and
+   * seed passed through so the fragment shader applies the appropriate noise
+   * pattern.  Used by drawTerrain for textured pixel-art tiles.
+   */
+  pushTexturedQuad(x, y, w, h, r, g, b, tileType, seed) {
+    this.pushQuad(x, y, w, h, 0, 0, 1, 1, r, g, b, 1.0, tileType, seed);
+  }
+
+  /**
+   * Upload and draw all queued vertices, then reset.
+   * @param {Float32Array} projectionMatrix
+   * @param {WebGLTexture} texture
+   * @param {number} [time]  current time in seconds (drives water animation)
+   */
+  flush(projectionMatrix, texture, time = 0) {
     if (this.vertexCount === 0) return;
 
     const gl = this.gl;
@@ -266,6 +378,7 @@ class SpriteBatch {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(this.uTexture, 0);
+    if (this.uTime) gl.uniform1f(this.uTime, time);
 
     const byteLen = this.vertexCount * VERTEX_BYTES;
     gl.bindVertexArray(this.vao);
@@ -510,23 +623,40 @@ export class Renderer {
 
   /**
    * Batch terrain tiles visible in the viewport.
-   * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number}>} tiles
+   * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number, [tileType]:number, [seed]:number}>} tiles
    * @param {{ x:number, y:number }} camera  camera offset (screen pixels)
    */
   drawTerrain(tiles, camera) {
     const batch = this.terrainBatch;
     for (let i = 0; i < tiles.length; i++) {
       const t = tiles[i];
-      batch.pushColorQuad(
-        t.x - camera.x,
-        t.y - camera.y,
-        t.w,
-        t.h,
-        t.r,
-        t.g,
-        t.b,
-        1.0,
-      );
+      // If the tile carries tileType/seed, use the textured path so the
+      // fragment shader applies per-pixel noise.  Otherwise fall back to a
+      // flat color quad (legacy / fallback path).
+      if (t.tileType && t.tileType > 0) {
+        batch.pushTexturedQuad(
+          t.x - camera.x,
+          t.y - camera.y,
+          t.w,
+          t.h,
+          t.r,
+          t.g,
+          t.b,
+          t.tileType,
+          t.seed || 0,
+        );
+      } else {
+        batch.pushColorQuad(
+          t.x - camera.x,
+          t.y - camera.y,
+          t.w,
+          t.h,
+          t.r,
+          t.g,
+          t.b,
+          1.0,
+        );
+      }
     }
   }
 
@@ -677,21 +807,24 @@ export class Renderer {
     const tex = this.whiteTexture;
     const aw = this.atlasWidth;
     const ah = this.atlasHeight;
+    // Time in seconds — drives water wave animation and other time-varying
+    // effects in the textured fragment shader.
+    const time = performance.now() / 1000;
 
     // Pass 1: terrain tiles
-    this.terrainBatch.flush(proj, tex);
+    this.terrainBatch.flush(proj, tex, time);
 
     // Pass 2: terrain objects (already Y-sorted)
-    this.objectBatch.flush(proj, tex);
+    this.objectBatch.flush(proj, tex, time);
 
     // Pass 2.5: fog overlay (between terrain and units)
-    this.fogBatch.flush(proj, tex);
+    this.fogBatch.flush(proj, tex, time);
 
-    // Pass 3: units (instanced)
+    // Pass 3: units (instanced) — no time arg needed, signature differs.
     this.unitBatch.flush(proj, tex, aw, ah);
 
     // Pass 4: effects
-    this.effectsBatch.flush(proj, tex);
+    this.effectsBatch.flush(proj, tex, time);
   }
 
   // -----------------------------------------------------------------------

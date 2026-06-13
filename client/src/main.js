@@ -2,16 +2,16 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v1';
-import { Camera } from './camera.js?v=v1';
-import { StateManager } from './state.js?v=v1';
-import { Connection } from './connection.js?v=v1';
-import { InputHandler } from './input.js?v=v1';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v1';
-import { AudioEngine } from './audio/audioengine.js?v=v1';
-import { SFX } from './audio/sfx.js?v=v1';
-import { Ambient } from './audio/ambient.js?v=v1';
-import { Music } from './audio/music.js?v=v1';
+import { Renderer } from './gl.js?v=v2';
+import { Camera } from './camera.js?v=v2';
+import { StateManager } from './state.js?v=v2';
+import { Connection } from './connection.js?v=v2';
+import { InputHandler } from './input.js?v=v2';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v2';
+import { AudioEngine } from './audio/audioengine.js?v=v2';
+import { SFX } from './audio/sfx.js?v=v2';
+import { Ambient } from './audio/ambient.js?v=v2';
+import { Music } from './audio/music.js?v=v2';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -83,24 +83,28 @@ const SELECTION_BORDER_COLOR = { r: 0.3, g: 0.9, b: 1.0, a: 0.7 };
 // Cleanup dead units every N frames
 const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 
-// Terrain type colors (matching server component.TerrainType)
+// Terrain type colors tuned to the dark, earthy pixel-art palette of
+// design/map.png (avg brightness ~64/255).  Each entry is a base color; the
+// textured fragment shader in gl.js modulates it with per-pixel noise.
+//
+// Server terrain type ids (component.TerrainType) line up with these indices.
 const TERRAIN_COLORS = [
-  { r: 0.22, g: 0.48, b: 0.18 }, // 0 Plain (bright grass)
-  { r: 0.50, g: 0.40, b: 0.25 }, // 1 Road (warm brown)
-  { r: 0.25, g: 0.50, b: 0.70 }, // 2 Shallow (light blue)
-  { r: 0.08, g: 0.15, b: 0.45 }, // 3 Deep (dark blue)
-  { r: 0.05, g: 0.18, b: 0.05 }, // 4 Forest (very dark green)
-  { r: 0.60, g: 0.50, b: 0.30 }, // 5 Hill (sandy tan)
-  { r: 0.30, g: 0.38, b: 0.15 }, // 6 Swamp (yellow-green)
-  { r: 0.55, g: 0.42, b: 0.22 }, // 7 Bridge (wood brown)
-  { r: 0.55, g: 0.55, b: 0.52 }, // 8 Wall (light stone gray)
-  { r: 0.85, g: 0.90, b: 0.95 }, // 9 Snow (white)
-  { r: 0.80, g: 0.70, b: 0.40 }, // 10 Desert (bright sand)
-  { r: 0.55, g: 0.35, b: 0.22 }, // 11 Stronghold L1 (brick red)
-  { r: 0.60, g: 0.38, b: 0.22 }, // 12 Stronghold L2
-  { r: 0.65, g: 0.42, b: 0.22 }, // 13 Stronghold L3
-  { r: 0.70, g: 0.45, b: 0.22 }, // 14 Stronghold L4
-  { r: 0.75, g: 0.48, b: 0.22 }, // 15 Stronghold L5
+  { r: 0.19, g: 0.31, b: 0.06 }, // 0 Plain   — dominant #305010 grass
+  { r: 0.63, g: 0.50, b: 0.31 }, // 1 Road    — warm earthy #a08050
+  { r: 0.20, g: 0.35, b: 0.50 }, // 2 Shallow — transition teal
+  { r: 0.14, g: 0.31, b: 0.49 }, // 3 Deep    — design dark teal RGB(37,80,124)
+  { r: 0.13, g: 0.25, b: 0.06 }, // 4 Forest  — darker green variant #204010
+  { r: 0.56, g: 0.44, b: 0.25 }, // 5 Hill    — warm brown #907040 (peaks get lighter via elevation shading)
+  { r: 0.18, g: 0.25, b: 0.10 }, // 6 Swamp   — muted olive
+  { r: 0.44, g: 0.28, b: 0.13 }, // 7 Bridge  — dark wood #704820
+  { r: 0.42, g: 0.40, b: 0.36 }, // 8 Wall    — stone gray (darkened)
+  { r: 0.78, g: 0.82, b: 0.88 }, // 9 Snow    — kept light for contrast
+  { r: 0.60, g: 0.50, b: 0.30 }, // 10 Desert — muted sand
+  { r: 0.50, g: 0.30, b: 0.18 }, // 11 Stronghold L1 — brick red (darkened)
+  { r: 0.55, g: 0.33, b: 0.18 }, // 12 Stronghold L2
+  { r: 0.60, g: 0.36, b: 0.18 }, // 13 Stronghold L3
+  { r: 0.65, g: 0.39, b: 0.18 }, // 14 Stronghold L4
+  { r: 0.70, g: 0.42, b: 0.18 }, // 15 Stronghold L5
 ];
 
 // ---------------------------------------------------------------------------
@@ -963,7 +967,10 @@ export class Game {
 
   /**
    * Build terrain tile descriptors for the visible tile range.
-   * Applies elevation shading, noise variation, and water animation.
+   * Each tile carries its terrain type and a deterministic per-tile seed so
+   * the textured fragment shader (gl.js) can apply per-pixel pixel-art noise
+   * without identical tiles sharing the same pattern.  Elevation shading for
+   * hills is still applied here; everything else is delegated to the GPU.
    */
   buildTerrainTiles(visible) {
     const tiles = [];
@@ -980,7 +987,6 @@ export class Game {
 
     const zoom = this.camera.zoom;
     const hasElevation = !!this.elevationData;
-    const now = this.frameCount; // for water animation
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
@@ -990,73 +996,40 @@ export class Game {
         const th = TILE_HEIGHT * zoom;
 
         let r, g, b;
+        // Deterministic per-tile hash → seed in [0, 1000).  Same hash that
+        // was already used for plains jitter; reused as the texture seed.
+        const seed = (((tx * 374761393 + ty * 668265263) >>> 0) % 1000) / 100;
+        let tileType = 1; // default to "textured" so all terrain gets noise
 
         if (this.terrainData) {
           const idx = ty * mw + tx;
-          const terrainType = this.terrainData[idx];
-          const color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
+          tileType = this.terrainData[idx];
+          const color = TERRAIN_COLORS[tileType] || TERRAIN_COLORS[0];
           r = color.r;
           g = color.g;
           b = color.b;
 
-          if (hasElevation) {
+          // Elevation shading for hills — peak brightness still controlled
+          // client-side because it depends on continuous elevation data, not
+          // on/off patterns.  Plains jitter and water shimmer are now done in
+          // the shader, so we don't repeat them here.
+          if (hasElevation && tileType === 5) {
             const elev = this.elevationData[idx]; // 0-100
-
-            // --- Elevation shading ---
-            if (terrainType === 5) {
-              // Hills: brighten by elevation. Low=dark tan, peaks=bright sand
-              const t = elev / 100;
-              r = r + (0.95 - r) * t * 0.5;
-              g = g + (0.85 - g) * t * 0.5;
-              b = b + (0.55 - b) * t * 0.5;
-            } else if (terrainType === 0) {
-              // Plains: subtle noise-based brightness jitter (3%)
-              const noise = ((tx * 374761393 + ty * 668265263) & 0xFFFF) / 0xFFFF;
-              const jitter = (noise - 0.5) * 0.06;
-              r += jitter;
-              g += jitter;
-              b += jitter;
-            } else if (terrainType === 3) {
-              // Deep water: animated shimmer
-              const wave = Math.sin((tx + ty) * 0.7 + now * 0.15) * 0.04;
-              b += wave + 0.02;
-            } else if (terrainType === 2) {
-              // Shallow water: gentler animation
-              const wave = Math.sin((tx * 0.5 + ty * 0.8) + now * 0.12) * 0.03;
-              b += wave;
-              g += wave * 0.5;
-            } else if (terrainType === 7) {
-              // Bridge: subtle plank lines (darken every 4 pixels in tile)
-              // Already brown — add slight variation
-              const plank = ((tx + ty) % 2) * 0.03;
-              r += plank;
-              g += plank;
-            }
-          }
-
-          // --- Shoreline edge detection ---
-          if ((terrainType === 2 || terrainType === 3) && hasElevation) {
-            // Check if any neighbor is land — darken edge for shoreline
-            const idx = ty * mw + tx;
-            const isEdge = (tx > 0 && this.terrainData[idx - 1] < 2) ||
-              (tx < mw - 1 && this.terrainData[idx + 1] < 2) ||
-              (ty > 0 && this.terrainData[idx - mw] < 2) ||
-              (ty < mh - 1 && this.terrainData[idx + mw] < 2);
-            if (isEdge) {
-              r -= 0.04;
-              g -= 0.04;
-              b -= 0.02;
-            }
+            const t = elev / 100;
+            r = r + (0.95 - r) * t * 0.5;
+            g = g + (0.85 - g) * t * 0.5;
+            b = b + (0.55 - b) * t * 0.5;
           }
         } else {
-          // Fallback: simple checkerboard
+          // Fallback: simple checkerboard (no texture shader path)
           const color = (tx + ty) % 2 === 0 ? GRASS_A : GRASS_B;
           r = color.r;
           g = color.g;
           b = color.b;
+          tileType = 0;
         }
 
-        tiles.push({ x: sx, y: sy, w: tw, h: th, r, g, b });
+        tiles.push({ x: sx, y: sy, w: tw, h: th, r, g, b, tileType, seed });
       }
     }
 

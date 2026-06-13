@@ -1,6 +1,8 @@
 package combat
 
 import (
+	"math"
+
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
@@ -73,7 +75,7 @@ func (s *ProjectileSystem) Tick(w *ecs.World, tick uint32) {
 				})
 			} else {
 				// Single target: find nearest entity at impact point
-				var bestDist int64 = ^int64(0)
+				var bestDist int64 = math.MaxInt64
 				var bestEntity ecs.Entity
 				s.healthPool.Each(func(target ecs.Entity, hp *component.HealthComponent) {
 					tpos, ok := s.posPool.Get(target)

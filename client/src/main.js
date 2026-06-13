@@ -140,7 +140,9 @@ export class Game {
     // Map data
     this.mapWidth = MAP_WIDTH;
     this.mapHeight = MAP_HEIGHT;
-    this.terrainData = null; // Uint8Array from server
+    this.terrainData = null; // Uint8Array from server (terrain types)
+    this.elevationData = null; // Uint8Array from server (elevation 0-100)
+    this.minimapTerrainCanvas = null; // offscreen canvas for cached minimap terrain
 
     // Game time for timer display
     this.gameStartTime = 0;
@@ -175,11 +177,20 @@ export class Game {
     this.framesSinceCleanup = 0;
   }
 
-  // Set terrain data received from server
+  // Set terrain data received from server.
+  // Binary layout: [terrain0, elev0, terrain1, elev1, ...] (2*w*h bytes).
   setMapTerrain(data) {
-    this.terrainData = data;
+    // De-interleave into separate terrain and elevation arrays
+    const tileCount = data.length / 2;
+    this.terrainData = new Uint8Array(tileCount);
+    this.elevationData = new Uint8Array(tileCount);
+    for (let i = 0; i < tileCount; i++) {
+      this.terrainData[i] = data[i * 2];
+      this.elevationData[i] = data[i * 2 + 1];
+    }
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
+    this.buildMinimapTerrain();
     this.centerCameraOnPlayerStart();
   }
 
@@ -688,7 +699,13 @@ export class Game {
       this.renderer.drawFog(fogTiles, cameraOffset);
     }
 
-    // Pass 2: Terrain objects (none yet)
+    // Pass 2: Terrain objects (trees, strongholds, bridges)
+    if (this.terrainData) {
+      const terrainObjects = this.buildTerrainObjects(visible);
+      if (terrainObjects.length > 0) {
+        this.renderer.drawObjects(terrainObjects, cameraOffset);
+      }
+    }
 
     // Pass 3: Units (already Y-sorted by buildUnitDescriptors)
     this.renderer.drawUnits(unitDescs, cameraOffset);
@@ -711,8 +728,8 @@ export class Game {
   }
 
   /**
-   * Build placeholder terrain tile descriptors for the visible tile range.
-   * Uses a simple checkerboard pattern with two grass colors.
+   * Build terrain tile descriptors for the visible tile range.
+   * Applies elevation shading, noise variation, and water animation.
    */
   buildTerrainTiles(visible) {
     const tiles = [];
@@ -728,39 +745,195 @@ export class Game {
     const endY = Math.min(mh, maxTY);
 
     const zoom = this.camera.zoom;
+    const hasElevation = !!this.elevationData;
+    const now = this.frameCount; // for water animation
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
-        // Rectangular tile position in screen pixels.
         const sx = tx * TILE_WIDTH * zoom;
         const sy = ty * TILE_HEIGHT * zoom;
-
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
 
-        // Get terrain color from map data
-        let color;
+        let r, g, b;
+
         if (this.terrainData) {
           const idx = ty * mw + tx;
-          const terrainType = this.terrainData[idx] || 0;
-          color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
+          const terrainType = this.terrainData[idx];
+          const color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
+          r = color.r;
+          g = color.g;
+          b = color.b;
+
+          if (hasElevation) {
+            const elev = this.elevationData[idx]; // 0-100
+
+            // --- Elevation shading ---
+            if (terrainType === 5) {
+              // Hills: brighten by elevation. Low=dark tan, peaks=bright sand
+              const t = elev / 100;
+              r = r + (0.95 - r) * t * 0.5;
+              g = g + (0.85 - g) * t * 0.5;
+              b = b + (0.55 - b) * t * 0.5;
+            } else if (terrainType === 0) {
+              // Plains: subtle noise-based brightness jitter (3%)
+              const noise = ((tx * 374761393 + ty * 668265263) & 0xFFFF) / 0xFFFF;
+              const jitter = (noise - 0.5) * 0.06;
+              r += jitter;
+              g += jitter;
+              b += jitter;
+            } else if (terrainType === 3) {
+              // Deep water: animated shimmer
+              const wave = Math.sin((tx + ty) * 0.7 + now * 0.15) * 0.04;
+              b += wave + 0.02;
+            } else if (terrainType === 2) {
+              // Shallow water: gentler animation
+              const wave = Math.sin((tx * 0.5 + ty * 0.8) + now * 0.12) * 0.03;
+              b += wave;
+              g += wave * 0.5;
+            } else if (terrainType === 7) {
+              // Bridge: subtle plank lines (darken every 4 pixels in tile)
+              // Already brown — add slight variation
+              const plank = ((tx + ty) % 2) * 0.03;
+              r += plank;
+              g += plank;
+            }
+          }
+
+          // --- Shoreline edge detection ---
+          if ((terrainType === 2 || terrainType === 3) && hasElevation) {
+            // Check if any neighbor is land — darken edge for shoreline
+            const idx = ty * mw + tx;
+            const isEdge = (tx > 0 && this.terrainData[idx - 1] < 2) ||
+              (tx < mw - 1 && this.terrainData[idx + 1] < 2) ||
+              (ty > 0 && this.terrainData[idx - mw] < 2) ||
+              (ty < mh - 1 && this.terrainData[idx + mw] < 2);
+            if (isEdge) {
+              r -= 0.04;
+              g -= 0.04;
+              b -= 0.02;
+            }
+          }
         } else {
-          color = (tx + ty) % 2 === 0 ? GRASS_A : GRASS_B;
+          // Fallback: simple checkerboard
+          const color = (tx + ty) % 2 === 0 ? GRASS_A : GRASS_B;
+          r = color.r;
+          g = color.g;
+          b = color.b;
         }
 
-        tiles.push({
-          x: sx,
-          y: sy,
-          w: tw,
-          h: th,
-          r: color.r,
-          g: color.g,
-          b: color.b,
-        });
+        tiles.push({ x: sx, y: sy, w: tw, h: th, r, g, b });
       }
     }
 
     return tiles;
+  }
+
+  /**
+   * Build terrain object descriptors (trees, stronghold icons) for the visible range.
+   * These are drawn in Pass 2 (object batch) on top of terrain tiles.
+   * Uses deterministic hash from tile coordinates for consistent placement.
+   */
+  buildTerrainObjects(visible) {
+    const objects = [];
+    const { minTX, maxTX, minTY, maxTY } = visible;
+    const mw = this.mapWidth;
+    const mh = this.mapHeight;
+    const zoom = this.camera.zoom;
+
+    const startX = Math.max(0, minTX);
+    const endX = Math.min(mw, maxTX);
+    const startY = Math.max(0, minTY);
+    const endY = Math.min(mh, maxTY);
+
+    for (let ty = startY; ty < endY; ty++) {
+      for (let tx = startX; tx < endX; tx++) {
+        const idx = ty * mw + tx;
+        const terrainType = this.terrainData[idx];
+
+        const sx = tx * TILE_WIDTH * zoom;
+        const sy = ty * TILE_HEIGHT * zoom;
+
+        if (terrainType === 4) {
+          // Forest: draw 1-3 small triangular "tree" shapes
+          const hash1 = ((tx * 374761393 + ty * 668265263) >>> 0) % 100;
+          const treeCount = (hash1 % 3) + 1; // 1-3 trees per tile
+          for (let t = 0; t < treeCount; t++) {
+            // Deterministic offset within tile using hash
+            const h = ((tx * 73856093 ^ ty * 19349663 ^ t * 83492791) >>> 0);
+            const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - 8) * zoom + 2 * zoom;
+            const oy = ((h >> 8 & 0xFF) / 255) * (TILE_HEIGHT - 12) * zoom + 2 * zoom;
+
+            const treeW = 5 * zoom;
+            const treeH = 8 * zoom;
+
+            // Tree trunk (small brown rect)
+            objects.push({
+              x: sx + ox + treeW / 2 - zoom,
+              y: sy + oy + treeH,
+              w: 2 * zoom,
+              h: 3 * zoom,
+              r: 0.25, g: 0.15, b: 0.08,
+              sortY: sy + oy + treeH,
+            });
+
+            // Tree canopy (dark green rect)
+            objects.push({
+              x: sx + ox,
+              y: sy + oy,
+              w: treeW,
+              h: treeH,
+              r: 0.04 + ((h >> 16 & 0xFF) / 255) * 0.04,
+              g: 0.12 + ((h >> 16 & 0xFF) / 255) * 0.06,
+              b: 0.02,
+              sortY: sy + oy,
+            });
+          }
+        } else if (terrainType >= 11 && terrainType <= 15) {
+          // Stronghold: draw stone keep icon
+          const level = terrainType - 10; // 1-5
+          const keepW = (8 + level * 2) * zoom;
+          const keepH = (6 + level * 2) * zoom;
+
+          // Stone base
+          objects.push({
+            x: sx + (TILE_WIDTH * zoom - keepW) / 2,
+            y: sy + (TILE_HEIGHT * zoom - keepH) / 2,
+            w: keepW,
+            h: keepH,
+            r: 0.45, g: 0.42, b: 0.38,
+            sortY: sy + (TILE_HEIGHT * zoom + keepH) / 2,
+          });
+
+          // Roof triangle (small darker rect above)
+          const roofW = keepW * 0.6;
+          const roofH = 4 * zoom;
+          objects.push({
+            x: sx + (TILE_WIDTH * zoom - roofW) / 2,
+            y: sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH,
+            w: roofW,
+            h: roofH,
+            r: 0.35, g: 0.22, b: 0.12,
+            sortY: sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH,
+          });
+        } else if (terrainType === 7) {
+          // Bridge: draw horizontal plank lines
+          for (let p = 0; p < 3; p++) {
+            const py = sy + (4 + p * 10) * zoom / 10;
+            objects.push({
+              x: sx + 2 * zoom,
+              y: py,
+              w: (TILE_WIDTH - 4) * zoom,
+              h: 1.5 * zoom,
+              r: 0.40, g: 0.30, b: 0.15,
+              sortY: py,
+            });
+          }
+        }
+      }
+    }
+
+    return objects;
   }
 
   /**
@@ -926,6 +1099,49 @@ export class Game {
   // Minimap
   // -----------------------------------------------------------------------
 
+  /**
+   * Pre-render terrain colors to an offscreen canvas. Called once when
+   * map data is received. The cached image is drawn to the minimap each
+   * frame, then unit dots and viewport rectangle are overlaid.
+   */
+  buildMinimapTerrain() {
+    if (!this.terrainData || !this.minimapCtx) return;
+
+    const mw = this.mapWidth;
+    const mh = this.mapHeight;
+
+    // Create offscreen canvas at 1 pixel per tile
+    const offscreen = document.createElement('canvas');
+    offscreen.width = mw;
+    offscreen.height = mh;
+    const ctx = offscreen.getContext('2d');
+    const imgData = ctx.createImageData(mw, mh);
+    const pixels = imgData.data;
+
+    for (let y = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++) {
+        const idx = y * mw + x;
+        const terrainType = this.terrainData[idx];
+        const color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
+        const pi = idx * 4;
+        pixels[pi] = Math.round(color.r * 255);
+        pixels[pi + 1] = Math.round(color.g * 255);
+        pixels[pi + 2] = Math.round(color.b * 255);
+        pixels[pi + 3] = 255;
+
+        // Elevation tint for hills
+        if (this.elevationData && terrainType === 5) {
+          const t = this.elevationData[idx] / 100;
+          pixels[pi] = Math.min(255, pixels[pi] + Math.round(t * 60));
+          pixels[pi + 1] = Math.min(255, pixels[pi + 1] + Math.round(t * 40));
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    this.minimapTerrainCanvas = offscreen;
+  }
+
   drawMinimap(units) {
     const ctx = this.minimapCtx;
     if (!ctx) return;
@@ -937,8 +1153,7 @@ export class Game {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, mw, mh);
 
-    // Draw map outline as a top-down rectangle so portrait maps read correctly
-    // on a phone-sized minimap.
+    // Map drawing area
     const pad = 8;
     const mapAspect = this.mapWidth / this.mapHeight;
     let mapDrawH = mh - pad * 2;
@@ -954,10 +1169,17 @@ export class Game {
       mapY + (wy / this.mapHeight) * mapDrawH,
     ];
 
+    // Draw cached terrain image (stretched to fit)
+    if (this.minimapTerrainCanvas) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(this.minimapTerrainCanvas, mapX, mapY, mapDrawW, mapDrawH);
+    } else {
+      ctx.fillStyle = '#1a2a1a';
+      ctx.fillRect(mapX, mapY, mapDrawW, mapDrawH);
+    }
+
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
-    ctx.fillStyle = '#1a2a1a';
-    ctx.fillRect(mapX, mapY, mapDrawW, mapDrawH);
     ctx.strokeRect(mapX, mapY, mapDrawW, mapDrawH);
 
     // Draw units as colored dots

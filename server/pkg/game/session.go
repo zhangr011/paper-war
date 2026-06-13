@@ -1356,12 +1356,14 @@ func (gs *GameSession) handleTacticalOrder(squadID uint32, orderType uint8) {
 	})
 }
 
-// MapData returns the terrain types as a flat byte array for client download.
+// MapData returns the terrain types and elevation as a flat byte array for
+// client download.  Layout: [terrain0, elev0, terrain1, elev1, ...] (2*w*h bytes).
 func (gs *GameSession) MapData() []byte {
 	size := gs.Map.Width * gs.Map.Height
-	data := make([]byte, size)
+	data := make([]byte, size*2)
 	for i, tile := range gs.Map.Tiles {
-		data[i] = byte(tile.TerrainType)
+		data[i*2] = byte(tile.TerrainType)
+		data[i*2+1] = uint8(tile.Elevation)
 	}
 	return data
 }

@@ -182,19 +182,27 @@ export class App {
   }
 
   handleLogin(name) {
-    // Connect WebSocket
-    this.connection.onConnect = () => {
-      // Send login message
-      this.connection.sendJSON({ type: 'login', name: name });
+    this.username = name;
+    // Connect WebSocket — save callbacks so they can be restored after a
+    // Game instance overrides them (Game sets its own onConnect/onDisconnect
+    // on the shared connection object).
+    this._loginOnConnect = () => {
+      this.connection.sendJSON({ type: 'login', name: this.username });
+    };
+    this._loginOnDisconnect = () => {
+      // Mid-match disconnect with a valid token — stay on game screen and
+      // let the reconnect overlay do its job. Only clean up if there's no
+      // pending reconnect (true disconnect / no match / clash spectator).
+      if (this.connection.reconnectToken) return;
+      // No reconnect token — clean up any active game and return to lobby.
+      // The connection layer will auto-reconnect; when it does, onConnect
+      // (restored by cleanupGame) re-sends login so the server recognises us.
+      this.cleanupGame();
+      this.lobbyStatus.textContent = 'Connection lost — match no longer available.';
     };
 
-    this.connection.onDisconnect = () => {
-      // Mid-match disconnect with a valid token — stay on game screen and
-      // let the reconnect overlay do its job. Only boot to login if there's
-      // no pending reconnect (true disconnect / no match in progress).
-      if (this.connection.reconnectToken) return;
-      this.showScreen('login');
-    };
+    this.connection.onConnect = this._loginOnConnect;
+    this.connection.onDisconnect = this._loginOnDisconnect;
 
     // Mid-match disconnect — show reconnect overlay instead of booting to login.
     // The connection layer auto-retries; the overlay is dismissed on reconnect_ok.
@@ -264,28 +272,13 @@ export class App {
         this.showReconnectFailed(msg.reason || 'unknown');
         // Return to lobby after short delay
         setTimeout(() => {
-          if (this.game) {
-            this.game.stop(); // calls connection.disconnect() — kills the WS
-            this.game = null;
-          }
-          // Re-enable lobby buttons — they were disabled when the match started
-          // (app.js soloBtn handler) and are never re-enabled on the reconnect
-          // failure path. Without this, the lobby is unreachable after a crash.
-          // Mirrors the re-enable in main.js match-result OK handler.
-          this.soloBtn.disabled = false;
-          this.findMatchBtn.disabled = false;
-          if (this.clashBtn) this.clashBtn.disabled = false;
-          this.lobbySpinner.style.display = 'none';
-          this.showScreen('lobby');
+          this.cleanupGame();
+          // The server doesn't know who we are on this socket — we only sent
+          // a reconnect attempt, not a login. Re-send login so the server
+          // associates this connection with our name and accepts start_solo /
+          // start_clash / join_queue messages.
+          this.connection.sendJSON({ type: 'login', name: this.username });
           this.lobbyStatus.textContent = 'Reconnect failed — match no longer available.';
-          // game.stop() called connection.disconnect() which killed the WebSocket
-          // and set _intentionalClose=true. Without a live WS, sendJSON silently
-          // drops start_solo and the lobby is a dead end. Re-establish a fresh
-          // connection — the onConnect callback (set in handleLogin) re-sends
-          // the login message so the server knows who we are on the new socket.
-          this.connection._intentionalClose = false;
-          this.connection.reconnectDelay = 1000;
-          this.connection.connect();
         }, 3000);
         break;
 
@@ -334,6 +327,34 @@ export class App {
         unitsEl.appendChild(row);
       }
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Game cleanup — called when a match ends, reconnect fails, or the
+  // connection drops without a reconnect token (clash spectator mode).
+  // Restores the connection callbacks that the Game instance overrode,
+  // stops the game loop, and returns the player to the lobby.
+  // -----------------------------------------------------------------------
+
+  cleanupGame() {
+    if (this.game) {
+      // Stop the game loop and audio WITHOUT calling game.stop(), which
+      // would call connection.disconnect() and kill the WebSocket.
+      this.game.running = false;
+      if (this.game.ambient) this.game.ambient.stop();
+      this.game = null;
+    }
+    // Restore login callbacks — the Game instance replaced these with its
+    // own handlers that don't send login. Without restoring, the next
+    // WS reconnect won't send login and the server won't know who we are.
+    if (this._loginOnConnect) this.connection.onConnect = this._loginOnConnect;
+    if (this._loginOnDisconnect) this.connection.onDisconnect = this._loginOnDisconnect;
+    // Re-enable lobby buttons
+    this.soloBtn.disabled = false;
+    this.findMatchBtn.disabled = false;
+    if (this.clashBtn) this.clashBtn.disabled = false;
+    this.lobbySpinner.style.display = 'none';
+    this.showScreen('lobby');
   }
 
   // -----------------------------------------------------------------------

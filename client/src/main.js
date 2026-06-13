@@ -293,6 +293,8 @@ export class Game {
     };
 
     // --- Connection status ---
+    // NOTE: These override the App's onConnect/onDisconnect on the shared
+    // connection object. cleanupGame() restores the original login callbacks.
     this.connection.onConnect = () => {
       this.updateConnectionStatus(true);
       this.gameStartTime = performance.now();
@@ -300,6 +302,12 @@ export class Game {
 
     this.connection.onDisconnect = () => {
       this.updateConnectionStatus(false);
+      // If there's no reconnect token (e.g. clash spectator mode), the match
+      // can't be rejoined. Delegate to the App to clean up and return to lobby.
+      if (!this.connection.reconnectToken) {
+        const app = window.__paperWarApp;
+        if (app) app.cleanupGame();
+      }
     };
 
     // --- Server messages ---
@@ -1792,17 +1800,11 @@ export class Game {
       overlay.remove();
       const app = window.__paperWarApp;
       if (app) {
-        // Stop old game loop to prevent CPU waste
-        if (app.game) app.game.stop();
-        app.game = null;
-        // Mark old connection for clean disconnect
-        if (app.connection) app.connection._intentionalClose = true;
+        // Clean up the game without killing the WebSocket, restore login
+        // callbacks, and return to lobby. The player can immediately start
+        // a new match on the existing live connection.
+        app.cleanupGame();
         app.lobbyStatus.textContent = 'Ready for battle';
-        app.lobbySpinner.style.display = 'none';
-        app.soloBtn.disabled = false;
-        app.clashBtn.disabled = false;
-        app.findMatchBtn.disabled = false;
-        app.showScreen('lobby');
       }
     });
   }

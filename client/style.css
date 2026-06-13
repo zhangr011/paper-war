@@ -966,6 +966,14 @@ body {
   font-size: 13px;
   transition: all 0.15s;
 }
+.icon-btn.muted {
+  opacity: 0.5;
+}
+#mute-btn {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 4px 6px;
+}
 .cmd-type-btn:hover {
   border-color: rgba(255,255,255,0.3);
   background: rgba(255,255,255,0.1);

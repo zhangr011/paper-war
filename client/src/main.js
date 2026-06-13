@@ -8,6 +8,10 @@ import { StateManager } from './state.js?v=v1';
 import { Connection } from './connection.js?v=v1';
 import { InputHandler } from './input.js?v=v1';
 import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v1';
+import { AudioEngine } from './audio/audioengine.js?v=v1';
+import { SFX } from './audio/sfx.js?v=v1';
+import { Ambient } from './audio/ambient.js?v=v1';
+import { Music } from './audio/music.js?v=v1';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -160,6 +164,13 @@ export class Game {
 
     // Base alert state
     this.baseAlertActive = false;
+
+    // --- Audio system ---
+    this.audioEngine = new AudioEngine();
+    this.sfx = new SFX(this.audioEngine);
+    this.ambient = new Ambient(this.audioEngine);
+    this.music = new Music(this.audioEngine);
+    this.audioStarted = false;
     // Unit costs (must match server CombatUnitTypeTable)
     this.unitCosts = [15, 25, 50, 30, 25, 50, 60];
 
@@ -248,12 +259,23 @@ export class Game {
 
       this.state.applySnapshot(snap.tick, snap.prevTick, units, snap.events, snap.fog);
 
-      // Base alert overlay
+      // Base alert overlay + siren
       const alertActive = snap.baseAlert === 1;
       if (alertActive !== this.baseAlertActive) {
         this.baseAlertActive = alertActive;
         const overlay = document.getElementById('base-alert-overlay');
         if (overlay) overlay.classList.toggle('active', alertActive);
+        // Play siren when alert first triggers
+        if (alertActive && this.audioStarted) {
+          this.sfx.baseAlert();
+        }
+      }
+
+      // Process combat events → SFX
+      if (this.audioStarted && snap.events && snap.events.length > 0) {
+        const camWX = (this.camera.x + this.camera.viewW / 2) / TILE_WIDTH - this.camera.offsetX / TILE_WIDTH;
+        const camWY = (this.camera.y + this.camera.viewH / 2) / TILE_HEIGHT - this.camera.offsetY / TILE_HEIGHT;
+        this.sfx.processEvents(snap.events, camWX, camWY);
       }
     };
 
@@ -274,6 +296,19 @@ export class Game {
 
     this.connection.onMatchResult = ({ winner, reason }) => {
       this.showMatchResult(winner, reason);
+      // Play victory/defeat stinger
+      if (this.audioStarted) {
+        const pid = this.connection.playerID;
+        if (pid === 0) {
+          // Spectator — neutral
+        } else if (winner === pid) {
+          this.music.victory();
+        } else {
+          this.music.defeat();
+        }
+        // Stop ambient when match ends
+        this.ambient.stop();
+      }
     };
 
     this.connection.onRosterUpdate = (rosterData) => {
@@ -298,8 +333,9 @@ export class Game {
       this.handleSelect(worldX, worldY);
     };
 
-    // --- Input: left-click (build mode intercept) ---
+    // --- Input: left-click (build mode intercept + audio init) ---
     this.input.onLeftClick = (worldX, worldY) => {
+      this.initAudio(); // lazy-init audio on first click
       return this.handleBuildClick(worldX, worldY);
     };
 
@@ -344,6 +380,12 @@ export class Game {
     const agBtn = document.getElementById('attack-ground-btn');
     if (agBtn) {
       agBtn.addEventListener('click', () => this.toggleAttackGround());
+    }
+
+    // --- Mute toggle ---
+    const muteBtn = document.getElementById('mute-btn');
+    if (muteBtn) {
+      muteBtn.addEventListener('click', () => this.toggleMute());
     }
 
     // --- Keyboard shortcut: A for Attack Ground ---
@@ -519,6 +561,7 @@ export class Game {
 
   handleTactic(tactic) {
     if (this.input.selectedSquads.size === 0) return;
+    if (this.audioStarted) this.sfx.uiTactic();
 
     const units = this.state.getRenderUnits();
     const myUnits = units.filter(u => u.team === 1); // player team
@@ -595,7 +638,11 @@ export class Game {
 
   handleRecruit(unitType) {
     const cost = this.unitCosts[unitType] || 0;
-    if (this.gold < cost) return; // not enough gold
+    if (this.gold < cost) {
+      if (this.audioStarted) this.sfx.uiError();
+      return; // not enough gold
+    }
+    if (this.audioStarted) this.sfx.uiRecruit();
 
     // Send recruit command: use first selected squad as the commander's squad
     let squadID = 0;
@@ -617,6 +664,35 @@ export class Game {
   }
 
   // -----------------------------------------------------------------------
+  // Audio — lazy-init on first interaction (browser autoplay policy)
+  // -----------------------------------------------------------------------
+
+  initAudio() {
+    if (this.audioStarted) return;
+    if (!this.audioEngine.init()) return;
+    this.audioStarted = true;
+    this.ambient.start();
+
+    // Update mute button state
+    this.updateMuteButton();
+  }
+
+  updateMuteButton() {
+    const btn = document.getElementById('mute-btn');
+    if (btn) {
+      btn.textContent = this.audioEngine.muted ? '🔇' : '🔊';
+      btn.classList.toggle('muted', this.audioEngine.muted);
+    }
+  }
+
+  toggleMute() {
+    // Initialize audio if needed (this is a user click)
+    this.initAudio();
+    this.audioEngine.toggleMute();
+    this.updateMuteButton();
+  }
+
+  // -----------------------------------------------------------------------
   // Build mode — click-to-place defensive structures
   // -----------------------------------------------------------------------
 
@@ -625,7 +701,9 @@ export class Game {
       this.cancelBuildMode();
       return;
     }
+    this.initAudio();
     this.buildMode = structType;
+    if (this.audioStarted) this.sfx.uiClick();
     this.attackGroundMode = false; // disable AG mode
 
     // Update button states
@@ -654,6 +732,7 @@ export class Game {
     const costs = { 1: 50, 2: 20, 3: 80 };
     const cost = costs[this.buildMode] || 0;
     if (this.gold < cost) {
+      if (this.audioStarted) this.sfx.uiError();
       this.cancelBuildMode();
       return true;
     }
@@ -661,6 +740,7 @@ export class Game {
     const fx = Math.round(worldX * 65536);
     const fy = Math.round(worldY * 65536);
     this.connection.sendBuild(this.buildMode, fx, fy);
+    if (this.audioStarted) this.sfx.uiBuild();
 
     // Track locally for immediate rendering
     if (!this.placedStructures) this.placedStructures = [];
@@ -727,6 +807,7 @@ export class Game {
   stop() {
     this.running = false;
     this.connection.disconnect();
+    this.ambient.stop();
   }
 
   loop(now) {

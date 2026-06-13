@@ -265,7 +265,7 @@ export class App {
         // Return to lobby after short delay
         setTimeout(() => {
           if (this.game) {
-            this.game.stop();
+            this.game.stop(); // calls connection.disconnect() — kills the WS
             this.game = null;
           }
           // Re-enable lobby buttons — they were disabled when the match started
@@ -278,6 +278,14 @@ export class App {
           this.lobbySpinner.style.display = 'none';
           this.showScreen('lobby');
           this.lobbyStatus.textContent = 'Reconnect failed — match no longer available.';
+          // game.stop() called connection.disconnect() which killed the WebSocket
+          // and set _intentionalClose=true. Without a live WS, sendJSON silently
+          // drops start_solo and the lobby is a dead end. Re-establish a fresh
+          // connection — the onConnect callback (set in handleLogin) re-sends
+          // the login message so the server knows who we are on the new socket.
+          this.connection._intentionalClose = false;
+          this.connection.reconnectDelay = 1000;
+          this.connection.connect();
         }, 3000);
         break;
 

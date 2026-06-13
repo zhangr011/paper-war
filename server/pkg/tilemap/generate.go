@@ -21,13 +21,13 @@ const (
 	heightOctaves = 1     // single octave
 
 	// Forest noise
-	forestFreq  = 0.12  // base frequency for forest noise
+	forestFreq  = 0.18  // higher freq → smaller, more scattered forest patches (matches design/map.png scattered tree clusters)
 	forestCoord = 1000.0 // coordinate offset for independent noise layer
 
 	// Coverage targets
 	hillFraction   = 0.12 // ~12% of tiles become hill
 	waterFraction  = 0.02 // ~2% of tiles become deep water
-	forestFraction = 0.75 // ~75% of eligible tiles become forest
+	forestFraction = 0.15 // ~15% of eligible tiles become forest (design/map.png is grass-dominant with ~5% dark green patches; higher fraction still reads as grassland with scattered tree cover)
 
 	// River
 	riverMaxWidth = 3 // max width at downstream end

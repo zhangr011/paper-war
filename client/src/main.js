@@ -2,16 +2,16 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v2';
-import { Camera } from './camera.js?v=v2';
-import { StateManager } from './state.js?v=v2';
-import { Connection } from './connection.js?v=v2';
-import { InputHandler } from './input.js?v=v2';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v2';
-import { AudioEngine } from './audio/audioengine.js?v=v2';
-import { SFX } from './audio/sfx.js?v=v2';
-import { Ambient } from './audio/ambient.js?v=v2';
-import { Music } from './audio/music.js?v=v2';
+import { Renderer } from './gl.js?v=v5';
+import { Camera } from './camera.js?v=v5';
+import { StateManager } from './state.js?v=v5';
+import { Connection } from './connection.js?v=v5';
+import { InputHandler } from './input.js?v=v5';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v5';
+import { AudioEngine } from './audio/audioengine.js?v=v5';
+import { SFX } from './audio/sfx.js?v=v5';
+import { Ambient } from './audio/ambient.js?v=v5';
+import { Music } from './audio/music.js?v=v5';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -84,28 +84,37 @@ const SELECTION_BORDER_COLOR = { r: 0.3, g: 0.9, b: 1.0, a: 0.7 };
 const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 
 // Terrain type colors tuned to the dark, earthy pixel-art palette of
-// design/map.png (avg brightness ~64/255).  Each entry is a base color; the
-// textured fragment shader in gl.js modulates it with per-pixel noise.
+// design/map.png.  Histogram analysis of the reference art (Jun 2026) shows
+// the playable area averages RGB(83, 104, 48) with a patchwork of two dominant
+// grass tones — (48,80,16) at ~18% and (64,96,32) at ~15% — produced here by
+// per-tile brightness variation (see buildTerrainTiles), not by two palette
+// entries.  The fragment shader in gl.js adds finer per-pixel noise on top.
 //
 // Server terrain type ids (component.TerrainType) line up with these indices.
 const TERRAIN_COLORS = [
-  { r: 0.19, g: 0.31, b: 0.06 }, // 0 Plain   — dominant #305010 grass
-  { r: 0.63, g: 0.50, b: 0.31 }, // 1 Road    — warm earthy #a08050
-  { r: 0.20, g: 0.35, b: 0.50 }, // 2 Shallow — transition teal
-  { r: 0.14, g: 0.31, b: 0.49 }, // 3 Deep    — design dark teal RGB(37,80,124)
-  { r: 0.13, g: 0.25, b: 0.06 }, // 4 Forest  — darker green variant #204010
-  { r: 0.56, g: 0.44, b: 0.25 }, // 5 Hill    — warm brown #907040 (peaks get lighter via elevation shading)
-  { r: 0.18, g: 0.25, b: 0.10 }, // 6 Swamp   — muted olive
-  { r: 0.44, g: 0.28, b: 0.13 }, // 7 Bridge  — dark wood #704820
-  { r: 0.42, g: 0.40, b: 0.36 }, // 8 Wall    — stone gray (darkened)
-  { r: 0.78, g: 0.82, b: 0.88 }, // 9 Snow    — kept light for contrast
-  { r: 0.60, g: 0.50, b: 0.30 }, // 10 Desert — muted sand
-  { r: 0.50, g: 0.30, b: 0.18 }, // 11 Stronghold L1 — brick red (darkened)
-  { r: 0.55, g: 0.33, b: 0.18 }, // 12 Stronghold L2
-  { r: 0.60, g: 0.36, b: 0.18 }, // 13 Stronghold L3
-  { r: 0.65, g: 0.39, b: 0.18 }, // 14 Stronghold L4
-  { r: 0.70, g: 0.42, b: 0.18 }, // 15 Stronghold L5
+  { r: 0.22, g: 0.35, b: 0.09 }, // 0 Plain   — base tuned so mean brightness → design's (48,80,16); bright patches hit (64,96,32) via blue-boost
+  { r: 0.66, g: 0.52, b: 0.32 }, // 1 Road    — warm earthy #a8852 sand
+  { r: 0.22, g: 0.40, b: 0.55 }, // 2 Shallow — transition teal
+  { r: 0.15, g: 0.33, b: 0.52 }, // 3 Deep    — design dark teal RGB(37,80,124)
+  { r: 0.11, g: 0.22, b: 0.055 }, // 4 Forest  — design dark green RGB(29,57,14) for scattered tree clusters
+  { r: 0.62, g: 0.50, b: 0.30 }, // 5 Hill    — warm earth #9e804c (peaks lighten toward stone gray)
+  { r: 0.20, g: 0.28, b: 0.11 }, // 6 Swamp   — muted olive
+  { r: 0.50, g: 0.33, b: 0.16 }, // 7 Bridge  — dark wood #80542a
+  { r: 0.48, g: 0.45, b: 0.40 }, // 8 Wall    — stone gray
+  { r: 0.82, g: 0.86, b: 0.90 }, // 9 Snow    — kept light for contrast
+  { r: 0.66, g: 0.55, b: 0.33 }, // 10 Desert — muted sand #a88c54
+  { r: 0.54, g: 0.32, b: 0.18 }, // 11 Stronghold L1 — brick red
+  { r: 0.59, g: 0.35, b: 0.18 }, // 12 Stronghold L2
+  { r: 0.64, g: 0.38, b: 0.18 }, // 13 Stronghold L3
+  { r: 0.69, g: 0.41, b: 0.18 }, // 14 Stronghold L4
+  { r: 0.74, g: 0.44, b: 0.18 }, // 15 Stronghold L5
 ];
+
+// Terrain types that should participate in the patchwork brightness variation.
+// Roads, bridges, walls, water, and strongholds are excluded so their shape
+// reads cleanly; natural terrain (grass, forest, hill, swamp, desert, snow)
+// gets the organic light/dark patch pattern of design/map.png.
+const PATCHWORK_TERRAINS = new Set([0, 4, 5, 6, 10]);
 
 // ---------------------------------------------------------------------------
 // Game class
@@ -1009,16 +1018,61 @@ export class Game {
           g = color.g;
           b = color.b;
 
+          // Patchwork brightness: a low-frequency hash over ~3x3 tile blocks
+          // produces organic light/dark patches matching the two-tone grass
+          // field of design/map.png (dominant tones (48,80,16) at ~18% and
+          // (64,96,32) at ~15%, with darker (32,64,16) a rarer ~6%).
+          // Using the SUM of two independent hashes yields a triangular
+          // distribution centered near the bright end — most tiles land on
+          // the medium-bright "lush grass" tone, with dark patches as
+          // occasional accents (matching the reference histogram).
+          // Applied only to natural terrain so that roads, water, walls, and
+          // strongholds keep crisp silhouettes.
+          if (PATCHWORK_TERRAINS.has(tileType)) {
+            const px1 = Math.floor(tx / 3);
+            const py1 = Math.floor(ty / 3);
+            const px2 = Math.floor(tx / 5 + 1);
+            const py2 = Math.floor(ty / 4 + 2);
+            const h1 =
+              (((px1 * 374761393 + py1 * 668265263) >>> 0) % 1000) / 1000;
+            const h2 =
+              (((px2 * 2246822519 + py2 * 3266489917) >>> 0) % 1000) / 1000;
+            // Sum of two uniforms → triangular [0,2], mean 1.0.  Scale and
+            // offset to land brightness in [0.74, 1.22] with the peak near
+            // 1.0 (medium-bright, design's dominant grass tone).
+            const brightness = 0.74 + (h1 + h2) * 0.24;
+            r *= brightness;
+            g *= brightness;
+            // Blue gets a non-linear boost on bright tiles to match the
+            // design's saturated bright grass (64,96,32).  Linear scaling
+            // alone would give (64,96,16) at the bright end; the extra
+            // boost pushes blue up only where brightness > 1.0.
+            b *= brightness + Math.max(0, brightness - 1.0) * 0.8;
+          }
+
           // Elevation shading for hills — peak brightness still controlled
           // client-side because it depends on continuous elevation data, not
           // on/off patterns.  Plains jitter and water shimmer are now done in
           // the shader, so we don't repeat them here.
+          // Low-elevation hills darken slightly; peaks lighten toward stone
+          // gray (design #bcbcb8) instead of warm brown, giving the rocky
+          // summit look of the reference art.
           if (hasElevation && tileType === 5) {
             const elev = this.elevationData[idx]; // 0-100
             const t = elev / 100;
-            r = r + (0.95 - r) * t * 0.5;
-            g = g + (0.85 - g) * t * 0.5;
-            b = b + (0.55 - b) * t * 0.5;
+            // Below 40% elevation: slight darkening (valley shadow).
+            // Above 40%: progressive lightening toward stone gray peaks.
+            if (t < 0.4) {
+              const shade = 1.0 - (0.4 - t) * 0.35;
+              r *= shade;
+              g *= shade;
+              b *= shade;
+            } else {
+              const peakT = (t - 0.4) / 0.6; // [0,1] for upper band
+              r = r + (0.74 - r) * peakT * 0.55;
+              g = g + (0.74 - g) * peakT * 0.55;
+              b = b + (0.72 - b) * peakT * 0.55;
+            }
           }
         } else {
           // Fallback: simple checkerboard (no texture shader path)
@@ -1405,17 +1459,48 @@ export class Game {
         const terrainType = this.terrainData[idx];
         const color = TERRAIN_COLORS[terrainType] || TERRAIN_COLORS[0];
         const pi = idx * 4;
-        pixels[pi] = Math.round(color.r * 255);
-        pixels[pi + 1] = Math.round(color.g * 255);
-        pixels[pi + 2] = Math.round(color.b * 255);
-        pixels[pi + 3] = 255;
 
-        // Elevation tint for hills
+        // Mirror buildTerrainTiles: patchwork brightness for natural terrains
+        // so the minimap reads with the same patchy field texture as the main
+        // view, plus the stone-gray peak tint for hills.
+        let r = color.r;
+        let g = color.g;
+        let b = color.b;
+
+        if (PATCHWORK_TERRAINS.has(terrainType)) {
+          const px1 = Math.floor(x / 3);
+          const py1 = Math.floor(y / 3);
+          const px2 = Math.floor(x / 5 + 1);
+          const py2 = Math.floor(y / 4 + 2);
+          const h1 =
+            (((px1 * 374761393 + py1 * 668265263) >>> 0) % 1000) / 1000;
+          const h2 =
+            (((px2 * 2246822519 + py2 * 3266489917) >>> 0) % 1000) / 1000;
+          const brightness = 0.74 + (h1 + h2) * 0.24;
+          r *= brightness;
+          g *= brightness;
+          b *= brightness + Math.max(0, brightness - 1.0) * 0.8;
+        }
+
         if (this.elevationData && terrainType === 5) {
           const t = this.elevationData[idx] / 100;
-          pixels[pi] = Math.min(255, pixels[pi] + Math.round(t * 60));
-          pixels[pi + 1] = Math.min(255, pixels[pi + 1] + Math.round(t * 40));
+          if (t < 0.4) {
+            const shade = 1.0 - (0.4 - t) * 0.35;
+            r *= shade;
+            g *= shade;
+            b *= shade;
+          } else {
+            const peakT = (t - 0.4) / 0.6;
+            r = r + (0.74 - r) * peakT * 0.55;
+            g = g + (0.74 - g) * peakT * 0.55;
+            b = b + (0.72 - b) * peakT * 0.55;
+          }
         }
+
+        pixels[pi] = Math.min(255, Math.round(r * 255));
+        pixels[pi + 1] = Math.min(255, Math.round(g * 255));
+        pixels[pi + 2] = Math.min(255, Math.round(b * 255));
+        pixels[pi + 3] = 255;
       }
     }
 

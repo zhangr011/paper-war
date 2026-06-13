@@ -155,8 +155,11 @@ func TestPropertyForestCoverage(t *testing.T) {
 			continue
 		}
 		coverage := float64(forest) / float64(eligible)
-		if coverage < 0.60 || coverage > 0.85 {
-			t.Errorf("seed %d: forest coverage = %.2f, want 0.60-0.85", seed, coverage)
+		// Design target is grass-dominant with scattered tree clusters (~15%
+		// of eligible tiles), matching design/map.png.  Allow a wide band so
+		// noise-driven variation across seeds stays in range.
+		if coverage < 0.08 || coverage > 0.25 {
+			t.Errorf("seed %d: forest coverage = %.2f, want 0.08-0.25", seed, coverage)
 		}
 	}
 }

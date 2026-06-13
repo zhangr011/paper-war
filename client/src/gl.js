@@ -74,31 +74,44 @@ void main() {
     // Water: horizontal wave bands + grain. Darken wave troughs.
     float band = sin((px.y + v_seed * 17.0) * 0.7 + u_time * 1.6);
     float grain = hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff) * 2.0 - 1.0;
-    n = band * 0.18 + grain * 0.12;
+    n = band * 0.16 + grain * 0.10;
   } else if (t == 5) {
     // Hill / mountain: chunky vertical grain like rock strata.
     vec2 cell = floor(vec2(px.x * 0.35, px.y * 0.8)) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     // Occasional darker crack lines every ~10 px
     float crack = step(0.92, hash21(vec2(floor(px.y / 10.0), cell.x)));
-    n = grain * 0.22 - crack * 0.15;
+    n = grain * 0.20 - crack * 0.18;
   } else if (t == 1 || t == 7) {
     // Road / Bridge: plank lines every 8 px + grain.
     float plankDark = step(0.78, fract(px.y / 8.0));
     vec2 cell = vec2(floor(px.x * 0.4), floor(px.y / 8.0) * 0.5) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
-    n = grain * 0.15 - plankDark * 0.18;
+    n = grain * 0.12 - plankDark * 0.16;
   } else if (t == 4) {
-    // Forest floor: darker organic noise with occasional light flecks.
-    vec2 cell = floor(px * 0.6) + seedOff;
+    // Forest floor: darker organic noise with occasional light flecks
+    // (sunlight through canopy).  Finer grain than plains so tree clusters
+    // feel denser.
+    vec2 cell = floor(px * 0.8) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
-    float fleck = step(0.95, hash21(cell + 3.0));
-    n = grain * 0.18 + fleck * 0.12;
+    float fleck = step(0.93, hash21(cell + 3.0));
+    n = grain * 0.16 + fleck * 0.14;
+  } else if (t == 0) {
+    // Plains: fine scattered-grass clumps.  A small-scale hash gives the
+    // impression of individual grass tufts; the per-tile patchwork
+    // brightness (set CPU-side in buildTerrainTiles) provides the broader
+    // light/dark field variation.  Keeping this branch's amplitude modest
+    // so the patchwork pattern stays readable.
+    vec2 cell = floor(px * 0.9) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    // Sparse brighter grass blades (~12% of pixels) for subtle highlights.
+    float blade = step(0.88, hash21(cell + 7.0));
+    n = grain * 0.13 + blade * 0.08;
   } else {
-    // Plains / swamp / desert / generic: organic per-pixel grain.
+    // Swamp / desert / generic: organic per-pixel grain.
     vec2 cell = floor(px * 0.7) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
-    n = grain * 0.18;
+    n = grain * 0.15;
   }
 
   fragColor = vec4(clamp(base.rgb * (1.0 + n), 0.0, 1.0), base.a);
@@ -605,7 +618,10 @@ export class Renderer {
   /** Clear screen and reset all batch state. Call once per frame. */
   beginFrame() {
     const gl = this.gl;
-    gl.clearColor(0.1, 0.1, 0.12, 1.0);
+    // Dark void color matching design/map.png border (~#141414). Slightly
+    // warmer than pure black so the map edge reads as a framed border rather
+    // than a clipped canvas.
+    gl.clearColor(0.055, 0.06, 0.05, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     this.terrainBatch.reset();

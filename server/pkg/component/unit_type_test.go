@@ -30,9 +30,9 @@ func TestCombatUnitStats(t *testing.T) {
 		RecruitCost int32
 		KillBounty  int32
 	}{
-		{UnitLightInfantry, WeaponGun, ArmorLight, 1, 80, 15, 5, 3, 15, 12},
+		{UnitLightInfantry, WeaponGun, ArmorLight, 1, 100, 15, 5, 3, 15, 12},
 		{UnitHeavyInfantry, WeaponCannon, ArmorLight, 2, 60, 25, 7, 5, 25, 20},
-		{UnitSniper, WeaponSniper, ArmorLight, 1, 40, 45, 10, 8, 50, 40},
+		{UnitSniper, WeaponSniper, ArmorLight, 1, 30, 20, 8, 12, 50, 40},
 		{UnitAntiArmorInfantry, WeaponMissile, ArmorLight, 2, 60, 35, 8, 6, 30, 24},
 		{UnitMotorGun, WeaponGun, ArmorHeavy, 2, 120, 15, 5, 2, 25, 20},
 		{UnitMotorArtillery, WeaponCannon, ArmorHeavy, 4, 150, 40, 7, 5, 50, 40},
@@ -113,7 +113,7 @@ func TestDamageMatrix(t *testing.T) {
 		{WeaponCannon, ArmorLight, 50},
 		{WeaponCannon, ArmorHeavy, 100},
 		{WeaponCannon, ArmorBuilding, 25},
-		{WeaponSniper, ArmorLight, 150},
+		{WeaponSniper, ArmorLight, 100},
 		{WeaponSniper, ArmorHeavy, 25},
 		{WeaponSniper, ArmorBuilding, 0},
 		{WeaponMissile, ArmorLight, 25},

@@ -124,9 +124,9 @@ func TestCombatSniperVsLight(t *testing.T) {
 	w.Tick(1)
 
 	hp, _ := healthPool.Get(target)
-	// Sniper vs Light = 150%, so 10 * 150/100 = 15 damage
-	if hp.HP != 85 {
-		t.Errorf("target HP = %d, want 85 (100 - 10*150/100)", hp.HP)
+	// Sniper vs Light = 100%, so 10 * 100/100 = 10 damage
+	if hp.HP != 90 {
+		t.Errorf("target HP = %d, want 90 (100 - 10*100/100)", hp.HP)
 	}
 }
 

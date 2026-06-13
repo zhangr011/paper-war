@@ -50,7 +50,7 @@ type CombatUnitStats struct {
 var CombatUnitTypeTable = map[CombatUnitType]CombatUnitStats{
 	UnitLightInfantry: {
 		Type: UnitLightInfantry, Weapon: WeaponGun, Armor: ArmorLight,
-		Cost: 1, HP: 80, Damage: 15, Range: 5, Cooldown: 3,
+		Cost: 1, HP: 100, Damage: 15, Range: 5, Cooldown: 3,
 		RecruitCost: 15, KillBounty: 12,
 	},
 	UnitHeavyInfantry: {
@@ -60,7 +60,7 @@ var CombatUnitTypeTable = map[CombatUnitType]CombatUnitStats{
 	},
 	UnitSniper: {
 		Type: UnitSniper, Weapon: WeaponSniper, Armor: ArmorLight,
-		Cost: 1, HP: 40, Damage: 45, Range: 10, Cooldown: 8,
+		Cost: 1, HP: 30, Damage: 20, Range: 8, Cooldown: 12,
 		RecruitCost: 50, KillBounty: 40,
 	},
 	UnitAntiArmorInfantry: {
@@ -90,7 +90,7 @@ var damageMatrix = [4][3]int32{
 	//              Light  Heavy  Building
 	{100, 50, 0},   // Gun
 	{50, 100, 25},  // Cannon
-	{150, 25, 0},   // Sniper
+	{100, 25, 0},   // Sniper
 	{25, 150, 25},  // Missile
 }
 

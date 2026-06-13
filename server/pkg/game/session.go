@@ -37,6 +37,7 @@ type GameSession struct {
 	combatSys     *combat.CombatSystem
 	deathSys      *combat.DeathSystem
 	levelingSys   *combat.LevelingSystem      // v1
+	buildSys      *combat.BuildSystem
 	objectiveSys  *objective.ObjectiveSystem   // v1
 	recruitSys    *combat.RecruitmentSystem    // v1
 	FogSys        *fog.FogSystem
@@ -116,6 +117,7 @@ func NewGameSession() *GameSession {
 		projPool := ecs.NewComponentPool[component.ProjectileComponent]()
 	killPointsPool := ecs.NewComponentPool[component.KillPointsComponent]()
 	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
+	structPool := ecs.NewComponentPool[component.StructureComponent]()
 
 		gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
@@ -131,6 +133,7 @@ func NewGameSession() *GameSession {
 		gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
 	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
 	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
+	gs.World.RegisterPool(component.StructureComponent{}, structPool)
 
 	// Build movement profiles from the standard Light/Heavy definitions.
 	// Light (ID 0): infantry — faster terrain traversal, can ford Shallow water.
@@ -164,9 +167,11 @@ func NewGameSession() *GameSession {
 	gs.levelingSys = &combat.LevelingSystem{}
 	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
 	gs.recruitSys = &combat.RecruitmentSystem{}
+	gs.buildSys = &combat.BuildSystem{PlayerGold: gs.PlayerGold, PlayerSpawns: map[uint32][2]int64{}}
 	gs.World.AddSystem(gs.levelingSys)
 	gs.World.AddSystem(gs.objectiveSys)
 	gs.World.AddSystem(gs.recruitSys)
+	gs.World.AddSystem(gs.buildSys)
 
 	// v1: lifecycle and gold
 	gs.Lifecycle = NewMatchLifecycle(nil, func(winnerFaction uint8, reason string) {
@@ -349,6 +354,30 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 	if len(gs.Map.Spawns) >= 2 {
 		sp := gs.Map.Spawns[1]
 		aiSys.SetBasePosition(fixed.FromFloat(float64(sp[0])), fixed.FromFloat(float64(sp[1])))
+	}
+
+	// Wire build system spawn positions for placement range checks
+	if gs.buildSys != nil {
+		for pid, sp := range gs.Map.Spawns {
+			gs.buildSys.PlayerSpawns[uint32(pid+1)] = [2]int64{
+				fixed.FromFloat(float64(sp[0])),
+				fixed.FromFloat(float64(sp[1])),
+			}
+		}
+	}
+
+	// Wire combat system terrain lookup for stronghold damage bonus
+	if gs.combatSys != nil {
+		gs.combatSys.TerrainFn = func(x, y int32) component.TerrainType {
+			if x < 0 || y < 0 || x >= gs.Map.Width || y >= gs.Map.Height {
+				return component.TerrainPlain
+			}
+			tile := gs.Map.TileAt(x, y)
+			if tile == nil {
+				return component.TerrainPlain
+			}
+			return tile.TerrainType
+		}
 	}
 
 	// Find all stronghold positions on the map
@@ -1117,6 +1146,8 @@ func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 		gs.handleChangeFormation(cmd.SquadID, cmd.FormationType)
 	case network.CmdTacticalOrder:
 		gs.handleTacticalOrder(cmd.SquadID, cmd.OrderType)
+	case network.CmdBuild:
+		gs.handleBuild(clientID, cmd.RecruitType, int64(cmd.TargetX), int64(cmd.TargetY))
 	}
 }
 
@@ -1245,6 +1276,9 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		// Clean up snapshot generator's prevStates for dead entities
 		gs.SnapGen.ClearPrevStates(gs.deathSys.Deaths)
 	}
+	// Compute base alert: is the player's spawn under attack?
+	snap.BaseAlert = gs.checkBaseAlert(playerID)
+
 	snapshotBytes := network.EncodeSnapshot(snap)
 
 	// Append fog grid data: marker 0xFF 0xFE 0xFD 0xFC + w(uint16) + h(uint16) + visible bytes
@@ -1285,6 +1319,68 @@ func (gs *GameSession) resolveSquadID(id uint32) uint32 {
 		return bc.SquadID
 	}
 	return id
+}
+
+// handleBuild processes a player build request for defensive structures.
+func (gs *GameSession) handleBuild(clientID uint32, structType uint8, x, y int64) {
+	if gs.buildSys == nil {
+		return
+	}
+	playerID := clientID // clientID maps to playerID
+	gs.buildSys.Build(combat.BuildRequest{
+		PlayerID: playerID,
+		Type:     component.StructureType(structType),
+		X:        x,
+		Y:        y,
+	})
+}
+
+// checkBaseAlert returns 1 if enemy units are within 10 tiles of the player's spawn.
+func (gs *GameSession) checkBaseAlert(playerID uint32) uint8 {
+	if gs.Map == nil || len(gs.Map.Spawns) == 0 {
+		return 0
+	}
+	spawnIdx := int(playerID) - 1
+	if spawnIdx < 0 || spawnIdx >= len(gs.Map.Spawns) {
+		return 0
+	}
+	sp := gs.Map.Spawns[spawnIdx]
+	spawnX := fixed.FromFloat(float64(sp[0]))
+	spawnY := fixed.FromFloat(float64(sp[1]))
+
+	const alertRadius = 10.0
+	alertRadiusSq := alertRadius * alertRadius
+
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+
+	found := false
+	ownerPool.Each(func(e ecs.Entity, oc *component.OwnerComponent) {
+		if found {
+			return
+		}
+		if oc.PlayerID == playerID {
+			return // friendly
+		}
+		hp, ok := healthPool.Get(e)
+		if !ok || hp.HP <= 0 {
+			return
+		}
+		pos, ok := posPool.Get(e)
+		if !ok {
+			return
+		}
+		dx := fixed.ToFloat(pos.X - spawnX)
+		dy := fixed.ToFloat(pos.Y - spawnY)
+		if dx*dx+dy*dy <= alertRadiusSq {
+			found = true
+		}
+	})
+	if found {
+		return 1
+	}
+	return 0
 }
 
 func (gs *GameSession) handleMoveSquad(squadID uint32, targetX, targetY int64) {

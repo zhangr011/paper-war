@@ -171,6 +171,7 @@
   <!-- Main game viewport -->
   <main id="game-viewport">
     <canvas id="game-canvas"></canvas>
+    <div class="base-alert-overlay" id="base-alert-overlay"></div>
   </main>
 
   <!-- Bottom control bar -->
@@ -276,6 +277,24 @@
           <button class="action-btn recruit-btn" data-unit-type="6" title="Motor Missile (60g)">
             <span class="action-name">MM</span>
             <span class="action-cost">60g</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <span class="action-group-label">Build</span>
+        <div class="action-buttons">
+          <button class="action-btn build-btn" data-struct-type="1" title="Watchtower — reveals fog (50g)">
+            <span class="action-name">WT</span>
+            <span class="action-cost">50g</span>
+          </button>
+          <button class="action-btn build-btn" data-struct-type="2" title="Barricade — cover, blocks movement (20g)">
+            <span class="action-name">BAR</span>
+            <span class="action-cost">20g</span>
+          </button>
+          <button class="action-btn build-btn" data-struct-type="3" title="Turret — auto-attacks enemies (80g)">
+            <span class="action-name">TUR</span>
+            <span class="action-cost">80g</span>
           </button>
         </div>
       </div>

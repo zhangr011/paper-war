@@ -2,7 +2,7 @@ const { exec } = require('child_process');
 const http = require('http');
 const path = require('path');
 
-const SERVER_PORT = 8090;
+const SERVER_PORT = 9091;
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 const STARTUP_TIMEOUT = 10000;
 const POLL_INTERVAL = 200;

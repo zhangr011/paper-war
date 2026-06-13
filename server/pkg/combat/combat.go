@@ -8,7 +8,7 @@ import (
 )
 
 // CombatSystem handles auto-targeting and damage application using the
-// type-aware damage matrix, smart targeting priorities, and cannon splash.
+// the type-aware damage matrix, smart targeting priorities, and cannon splash.
 type CombatSystem struct {
 	Sh *spatial.Hash
 
@@ -18,6 +18,8 @@ type CombatSystem struct {
 	boidPool   *ecs.ComponentPool[component.BoidComponent]
 	ownerPool  *ecs.ComponentPool[component.OwnerComponent]
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent]
+	MapW, MapH int32
+	TerrainFn  func(x, y int32) component.TerrainType // tile terrain lookup
 }
 
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
@@ -119,8 +121,22 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			dmg = 1
 		}
 
-		// Apply damage to primary target
-		targetHealth.HP -= dmg
+	// Apply damage to primary target (with stronghold terrain bonus)
+	effectiveDmg := dmg
+	if s.TerrainFn != nil {
+		tx := int32(fixed.ToFloat(targetPos.X))
+		ty := int32(fixed.ToFloat(targetPos.Y))
+		terrain := s.TerrainFn(tx, ty)
+		shLevel := strongholdLevelFromTerrain(terrain)
+		if shLevel > 0 {
+			bonusPct := StrongholdDefenseBonus(shLevel)
+			effectiveDmg = effectiveDmg * (100 - bonusPct) / 100
+			if effectiveDmg < 1 {
+				effectiveDmg = 1
+			}
+		}
+	}
+	targetHealth.HP -= effectiveDmg
 		targetHealth.LastAttacker = uint32(e)
 
 		// Cannon splash: apply 50% damage to units within 2 tiles
@@ -282,4 +298,21 @@ func (s *CombatSystem) applySplash(targetPos component.PositionComponent, baseDm
 			hp.HP -= splashDmg
 		}
 	}
+}
+
+// strongholdLevelFromTerrain returns 1-5 for stronghold terrain types, 0 otherwise.
+func strongholdLevelFromTerrain(t component.TerrainType) int {
+	switch t {
+	case component.TerrainStronghold1:
+		return 1
+	case component.TerrainStronghold2:
+		return 2
+	case component.TerrainStronghold3:
+		return 3
+	case component.TerrainStronghold4:
+		return 4
+	case component.TerrainStronghold5:
+		return 5
+	}
+	return 0
 }

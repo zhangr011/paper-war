@@ -9,6 +9,7 @@ export const CMD_ATTACK_TARGET = 0x02;
 export const CMD_ATTACK_GROUND = 0x03;
 export const CMD_CHANGE_FORMATION = 0x04;
 export const CMD_TACTICAL_ORDER = 0x05;
+export const CMD_BUILD = 0x08;
 
 // ---------------------------------------------------------------------------
 // ChangedMask bits (server -> client unit deltas)
@@ -223,6 +224,19 @@ export class Connection {
     this.send(buf);
   }
 
+  /**
+   * CmdBuild (0x08): header + StructureType(uint8) + TargetX(int32) + TargetY(int32) = 22 bytes.
+   */
+  sendBuild(structureType, targetX, targetY) {
+    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 1 + 4 + 4);
+    const view = new DataView(buf);
+    let off = this._writeHeader(buf, CMD_BUILD, 0, 0);
+    view.setUint8(off, structureType); off += 1;
+    view.setInt32(off, targetX, true); off += 4;
+    view.setInt32(off, targetY, true); off += 4;
+    this.send(buf);
+  }
+
   // -----------------------------------------------------------------------
   // Snapshot & event decoding (server -> client)
   // -----------------------------------------------------------------------
@@ -282,6 +296,7 @@ export class Connection {
     const prevTick = view.getUint32(off, true); off += 4;
     const unitCount = view.getUint16(off, true); off += 2;
     const eventCount = view.getUint8(off); off += 1;
+    const baseAlert = view.getUint8(off); off += 1;
 
     // --- Unit deltas ---
     const units = [];
@@ -378,7 +393,7 @@ export class Connection {
     }
 
     if (this.onSnapshot) {
-      this.onSnapshot({ tick, prevTick, units, events, fog: fogData });
+      this.onSnapshot({ tick, prevTick, units, events, fog: fogData, baseAlert });
     }
   }
 

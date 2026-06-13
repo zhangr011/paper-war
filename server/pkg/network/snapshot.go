@@ -53,6 +53,7 @@ type Snapshot struct {
 	PrevTick uint32
 	Units    []UnitSnapshot
 	Events   []Event
+	BaseAlert uint8 // 0=clear, 1=player base under attack
 }
 
 type EntityState struct {
@@ -203,7 +204,7 @@ func (sg *SnapshotGenerator) ClearPrevStates(deadIDs []uint32) {
 
 // EncodeSnapshot serializes a snapshot to binary.
 func EncodeSnapshot(snap *Snapshot) []byte {
-	size := 4 + 4 + 2 + 1 // tick + prevtick + unitcount + eventcount
+	size := 4 + 4 + 2 + 1 + 1 // tick + prevtick + unitcount + eventcount + basealert
 	// Estimate unit data
 	for _, u := range snap.Units {
 		size += 4 + 1 // entityID + mask
@@ -242,6 +243,7 @@ func EncodeSnapshot(snap *Snapshot) []byte {
 	buf = appendUint32(buf, snap.PrevTick)
 	buf = appendUint16(buf, uint16(len(snap.Units)))
 	buf = append(buf, uint8(len(snap.Events)))
+	buf = append(buf, snap.BaseAlert)
 
 	for _, u := range snap.Units {
 		buf = appendUint32(buf, u.EntityID)

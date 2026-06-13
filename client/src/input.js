@@ -42,6 +42,7 @@ export class InputHandler {
     this.onBoxSelect = null;    // callback(x1, y1, x2, y2) in screen coords
     this.onHover = null;        // callback(worldX, worldY)
     this.onRightClick = null;   // callback(worldX, worldY, targetEntityID)
+    this.onLeftClick = null;    // callback(worldX, worldY) -> true to consume
 
     // Bind events
     this._onMouseDown = this._onMouseDown.bind(this);
@@ -161,8 +162,12 @@ export class InputHandler {
         }
       } else {
         // Single click select
+        const [wx, wy] = this.camera.screenToWorld(sx, sy);
+        // Build mode intercepts left-click
+        if (this.onLeftClick && this.onLeftClick(wx, wy)) {
+          return; // build mode consumed the click
+        }
         if (this.onSelect) {
-          const [wx, wy] = this.camera.screenToWorld(sx, sy);
           this.onSelect(wx, wy);
         }
       }

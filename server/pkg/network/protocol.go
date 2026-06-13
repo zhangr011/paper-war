@@ -14,6 +14,7 @@ const (
 	CmdTacticalOrder   uint8 = 0x05
 	CmdRecruit         uint8 = 0x06
 	CmdSelectCommander uint8 = 0x07
+	CmdBuild           uint8 = 0x08
 )
 
 type Command struct {
@@ -50,6 +51,10 @@ func EncodeCommand(cmd *Command) []byte {
 		binary.Write(buf, binary.LittleEndian, cmd.RecruitType)
 	case CmdSelectCommander:
 		// SquadID already written in header
+	case CmdBuild:
+		binary.Write(buf, binary.LittleEndian, cmd.RecruitType) // structure type
+		binary.Write(buf, binary.LittleEndian, cmd.TargetX)
+		binary.Write(buf, binary.LittleEndian, cmd.TargetY)
 	}
 	return buf.Bytes()
 }
@@ -97,6 +102,16 @@ func DecodeCommand(data []byte) (*Command, error) {
 		// SquadID already read above
 	case CmdSelectCommander:
 		// SquadID already read above
+	case CmdBuild:
+		if err := binary.Read(r, binary.LittleEndian, &cmd.RecruitType); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &cmd.TargetX); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &cmd.TargetY); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check no unread data

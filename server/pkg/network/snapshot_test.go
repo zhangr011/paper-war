@@ -138,9 +138,9 @@ func TestSnapshotNewUnitCarriesUnitTypeAndTeam(t *testing.T) {
 		t.Fatal("encoded snapshot empty")
 	}
 
-	// Decode manually: header = 4+4+2+1=11 bytes
+	// Decode manually: header = 4+4+2+1+1=12 bytes (tick + prevtick + unitcount + eventcount + basealert)
 	// Per new unit: entityID(4) + mask(1) + X(8) + Y(8) + Vx(8) + Vy(8) + Angle(2) + HP(4) + TargetID(4) + Morale(4) + State(1) + SquadID(4) + UnitType(1) + Team(1) = 58
-	offset := 11
+	offset := 12
 	entityID := uint32(data[offset]) | uint32(data[offset+1])<<8 | uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24
 	if entityID != 42 {
 		t.Errorf("decoded entityID = %d, want 42", entityID)

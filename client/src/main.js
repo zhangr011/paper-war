@@ -155,6 +155,11 @@ export class Game {
     // AttackGround mode
     this.attackGroundMode = false;
 
+    // Build mode
+    this.buildMode = null; // null | 1 (watchtower) | 2 (barricade) | 3 (turret)
+
+    // Base alert state
+    this.baseAlertActive = false;
     // Unit costs (must match server CombatUnitTypeTable)
     this.unitCosts = [15, 25, 50, 30, 25, 50, 60];
 
@@ -190,6 +195,17 @@ export class Game {
     }
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
+
+    // Compute spawn positions (must match server MapData spawns)
+    // Player 1 spawns near top (y=10), Player 2 near bottom (y=mapHeight-10)
+    const spawnX = this.mapWidth / 2;
+    this.mapData = {
+      spawns: [
+        [spawnX, 10],                              // Player 1
+        [spawnX, this.mapHeight - 10],             // Player 2
+      ],
+    };
+
     this.buildMinimapTerrain();
     this.centerCameraOnPlayerStart();
   }
@@ -231,6 +247,14 @@ export class Game {
       });
 
       this.state.applySnapshot(snap.tick, snap.prevTick, units, snap.events, snap.fog);
+
+      // Base alert overlay
+      const alertActive = snap.baseAlert === 1;
+      if (alertActive !== this.baseAlertActive) {
+        this.baseAlertActive = alertActive;
+        const overlay = document.getElementById('base-alert-overlay');
+        if (overlay) overlay.classList.toggle('active', alertActive);
+      }
     };
 
     // --- Connection status ---
@@ -274,6 +298,11 @@ export class Game {
       this.handleSelect(worldX, worldY);
     };
 
+    // --- Input: left-click (build mode intercept) ---
+    this.input.onLeftClick = (worldX, worldY) => {
+      return this.handleBuildClick(worldX, worldY);
+    };
+
     // --- Input: box selection ---
     this.input.onBoxSelect = (x1, y1, x2, y2) => {
       this.handleBoxSelect(x1, y1, x2, y2);
@@ -303,6 +332,14 @@ export class Game {
       });
     });
 
+    // --- Build buttons ---
+    document.querySelectorAll('.build-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const structType = parseInt(btn.dataset.structType, 10);
+        this.toggleBuildMode(structType);
+      });
+    });
+
     // --- Attack Ground toggle ---
     const agBtn = document.getElementById('attack-ground-btn');
     if (agBtn) {
@@ -321,6 +358,15 @@ export class Game {
         this.handleTactic('defend');
       } else if (key === 'r') {
         this.handleTactic('rally');
+      } else if (key === 'Escape') {
+        this.cancelBuildMode();
+      } else if (key === ' ') {
+        // Spacebar: jump camera to player base
+        if (this.mapData && this.mapData.spawns && this.mapData.spawns[0]) {
+          const s = this.mapData.spawns[0];
+          this.camera.x = s[0] * TILE_WIDTH - this.camera.viewW / 2;
+          this.camera.y = s[1] * TILE_HEIGHT - this.camera.viewH / 2;
+        }
       }
     };
 
@@ -571,6 +617,63 @@ export class Game {
   }
 
   // -----------------------------------------------------------------------
+  // Build mode — click-to-place defensive structures
+  // -----------------------------------------------------------------------
+
+  toggleBuildMode(structType) {
+    if (this.buildMode === structType) {
+      this.cancelBuildMode();
+      return;
+    }
+    this.buildMode = structType;
+    this.attackGroundMode = false; // disable AG mode
+
+    // Update button states
+    document.querySelectorAll('.build-btn').forEach(btn => {
+      const st = parseInt(btn.dataset.structType, 10);
+      btn.classList.toggle('active', st === structType);
+    });
+    const agBtn = document.getElementById('attack-ground-btn');
+    if (agBtn) agBtn.classList.remove('active');
+
+    // Change cursor
+    const canvas = document.getElementById('game-canvas');
+    if (canvas) canvas.style.cursor = 'crosshair';
+  }
+
+  cancelBuildMode() {
+    if (!this.buildMode) return;
+    this.buildMode = null;
+    document.querySelectorAll('.build-btn').forEach(btn => btn.classList.remove('active'));
+    const canvas = document.getElementById('game-canvas');
+    if (canvas) canvas.style.cursor = '';
+  }
+
+  handleBuildClick(worldX, worldY) {
+    if (!this.buildMode) return false;
+    const costs = { 1: 50, 2: 20, 3: 80 };
+    const cost = costs[this.buildMode] || 0;
+    if (this.gold < cost) {
+      this.cancelBuildMode();
+      return true;
+    }
+    // Convert float coords to fixed-point int32 for protocol
+    const fx = Math.round(worldX * 65536);
+    const fy = Math.round(worldY * 65536);
+    this.connection.sendBuild(this.buildMode, fx, fy);
+
+    // Track locally for immediate rendering
+    if (!this.placedStructures) this.placedStructures = [];
+    this.placedStructures.push({ x: worldX, y: worldY, type: this.buildMode });
+
+    // Keep build mode active for rapid placement (shift to place one)
+    if (!this.input.shiftDown) {
+      this.cancelBuildMode();
+    }
+    return true;
+  }
+
+  // -----------------------------------------------------------------------
   // Attack Ground mode
   // -----------------------------------------------------------------------
 
@@ -705,6 +808,15 @@ export class Game {
       if (terrainObjects.length > 0) {
         this.renderer.drawObjects(terrainObjects, cameraOffset);
       }
+    }
+
+    // Pass 2.5: Spawn markers (player + enemy base flags)
+    this.drawSpawnMarkers(cameraOffset);
+
+    // Pass 2.6: Defensive structures (watchtowers, barricades, turrets)
+    const structDescs = this.buildStructureDescriptors(visible);
+    if (structDescs.length > 0) {
+      this.renderer.drawObjects(structDescs, cameraOffset);
     }
 
     // Pass 3: Units (already Y-sorted by buildUnitDescriptors)
@@ -933,6 +1045,80 @@ export class Game {
       }
     }
 
+    return objects;
+  }
+
+  /**
+   * Draw spawn markers (flags) for player and enemy bases.
+   * Player base = green flag, enemy base = red flag.
+   */
+  drawSpawnMarkers(cameraOffset) {
+    if (!this.mapData || !this.mapData.spawns) return;
+    const zoom = this.camera.zoom;
+    const ctx = this.renderer.ctx;
+    if (!ctx) return;
+
+    for (let i = 0; i < this.mapData.spawns.length && i < 2; i++) {
+      const spawn = this.mapData.spawns[i];
+      const sx = spawn[0] * TILE_WIDTH * zoom - cameraOffset.x;
+      const sy = spawn[1] * TILE_HEIGHT * zoom - cameraOffset.y;
+
+      // Skip if off-screen
+      if (sx < -50 || sy < -50 || sx > this.canvas.width + 50 || sy > this.canvas.height + 50) continue;
+
+      // Flag pole
+      ctx.fillStyle = '#333';
+      ctx.fillRect(sx - 1, sy - 20 * zoom, 2, 20 * zoom);
+
+      // Flag (triangle)
+      const isPlayer = i === 0;
+      ctx.fillStyle = isPlayer ? '#4a4' : '#a44';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 20 * zoom);
+      ctx.lineTo(sx + 12 * zoom, sy - 16 * zoom);
+      ctx.lineTo(sx, sy - 12 * zoom);
+      ctx.closePath();
+      ctx.fill();
+
+      // Base circle
+      ctx.fillStyle = isPlayer ? 'rgba(68,170,68,0.3)' : 'rgba(170,68,68,0.3)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 8 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
+   * Build descriptors for defensive structures placed by the player.
+   * Tracks locally-placed structures and renders them as map objects.
+   */
+  buildStructureDescriptors(visible) {
+    if (!this.placedStructures) return [];
+    const objects = [];
+    const zoom = this.camera.zoom;
+    const { minTX, maxTX, minTY, maxTY } = visible;
+
+    for (const s of this.placedStructures) {
+      const tx = Math.floor(s.x);
+      const ty = Math.floor(s.y);
+      if (tx < minTX - 1 || tx > maxTX + 1 || ty < minTY - 1 || ty > maxTY + 1) continue;
+
+      const sx = tx * TILE_WIDTH * zoom;
+      const sy = ty * TILE_HEIGHT * zoom;
+
+      if (s.type === 1) {
+        // Watchtower: tall structure with observation platform
+        objects.push({ x: sx + 4 * zoom, y: sy + 2 * zoom, w: 8 * zoom, h: 24 * zoom, r: 0.5, g: 0.4, b: 0.25, sortY: sy });
+        objects.push({ x: sx + 2 * zoom, y: sy + 2 * zoom, w: 12 * zoom, h: 4 * zoom, r: 0.6, g: 0.5, b: 0.3, sortY: sy });
+      } else if (s.type === 2) {
+        // Barricade: low sandbag wall
+        objects.push({ x: sx + 1 * zoom, y: sy + 8 * zoom, w: 14 * zoom, h: 6 * zoom, r: 0.35, g: 0.35, b: 0.3, sortY: sy + 8 });
+      } else if (s.type === 3) {
+        // Turret: circular base + gun barrel
+        objects.push({ x: sx + 3 * zoom, y: sy + 3 * zoom, w: 10 * zoom, h: 10 * zoom, r: 0.3, g: 0.3, b: 0.3, sortY: sy + 3 });
+        objects.push({ x: sx + 7 * zoom, y: sy + 7 * zoom, w: 8 * zoom, h: 2 * zoom, r: 0.2, g: 0.2, b: 0.2, sortY: sy + 7 });
+      }
+    }
     return objects;
   }
 
@@ -1205,6 +1391,28 @@ export class Game {
       ctx.fillRect(px - 1, py - 1, 2, 2);
     }
 
+    // Draw spawn markers on minimap
+    if (this.mapData && this.mapData.spawns) {
+      for (let i = 0; i < this.mapData.spawns.length && i < 2; i++) {
+        const [px, py] = projectToMinimap(this.mapData.spawns[i][0], this.mapData.spawns[i][1]);
+        ctx.fillStyle = i === 0 ? '#44ff44' : '#ff4444';
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Draw base alert ping on minimap
+    if (this.baseAlertActive && this.mapData && this.mapData.spawns) {
+      const [px, py] = projectToMinimap(this.mapData.spawns[0][0], this.mapData.spawns[0][1]);
+      const pulseR = 3 + Math.sin(performance.now() / 200) * 3;
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(px, py, pulseR + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // Draw viewport rectangle on the minimap
     const corners = [
       this.camera.screenToWorld(0, 0),
@@ -1257,6 +1465,14 @@ export class Game {
     document.querySelectorAll('.recruit-btn').forEach(btn => {
       const unitType = parseInt(btn.dataset.unitType, 10);
       const cost = this.unitCosts[unitType] || 0;
+      btn.classList.toggle('disabled', this.gold < cost);
+    });
+
+    // Update build button disabled state based on gold
+    const buildCosts = { 1: 50, 2: 20, 3: 80 };
+    document.querySelectorAll('.build-btn').forEach(btn => {
+      const structType = parseInt(btn.dataset.structType, 10);
+      const cost = buildCosts[structType] || 0;
       btn.classList.toggle('disabled', this.gold < cost);
     });
   }

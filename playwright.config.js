@@ -15,7 +15,7 @@ module.exports = defineConfig({
   fullyParallel: false,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:8090',
+    baseURL: 'http://localhost:9091',
     headless: true,
     viewport: { width: 1280, height: 720 },
     launchOptions: {

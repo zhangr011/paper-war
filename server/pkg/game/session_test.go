@@ -314,10 +314,11 @@ func snapshotHasMovingUnit(t *testing.T, data []byte) bool {
 		return v
 	}
 
-	readUint32()
-	readUint32()
+	readUint32() // tick
+	readUint32() // prevtick
 	unitCount := readUint16()
-	offset++
+	offset++ // eventCount
+	offset++ // baseAlert
 
 	for i := 0; i < int(unitCount); i++ {
 		readUint32()

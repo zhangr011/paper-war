@@ -91,8 +91,9 @@ type AISystem struct {
 	BaseX        int64                   // AI home base position (fixed-point)
 	BaseY        int64
 	Strongholds  [][2]int32              // stronghold tile positions on map
-	EnemyUnits   map[component.CombatUnitType]int // enemy composition intel
-	visitedSH    map[int]bool            // strongholds already sent squads to
+	EnemyUnits      map[component.CombatUnitType]int // enemy composition intel
+	visitedSH       map[int]bool            // strongholds already sent squads to
+	RecruitDisabled bool                    // true → AI never issues recruit commands (clash/spectator mode)
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
@@ -149,8 +150,10 @@ func (as *AISystem) Update(
 	// Refresh enemy composition intel each tick
 	as.EnemyUnits = make(map[component.CombatUnitType]int)
 
-	// v1: AI recruitment check
-	cmds = append(cmds, as.recruitDecisions()...)
+	// v1: AI recruitment check (skipped in clash/spectator mode)
+	if !as.RecruitDisabled {
+		cmds = append(cmds, as.recruitDecisions()...)
+	}
 
 	// Track whether base is under threat
 	baseThreat := false

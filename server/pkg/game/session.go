@@ -540,11 +540,14 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 
 // EnableClashMode activates AI for player 1 as well, creating a second AI system.
 // Both teams are fully AI-controlled. The spectator (playerID=0) sees everything.
+// Recruitment is disabled so teams fight only with their initial composition.
 func (gs *GameSession) EnableClashMode() {
 	// Clash mode: no fog for either AI so they always see each other
 	gs.AISys.FogSystem = nil
+	gs.AISys.RecruitDisabled = true
 	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
 	gs.AISys2.PlayerGold = gs.PlayerGold
+	gs.AISys2.RecruitDisabled = true
 }
 
 // SpawnTeam creates the standard team composition for the given level.

@@ -31,23 +31,23 @@ type GameSession struct {
 	Culler  *network.Culler
 
 	// Systems (kept as references for command handling)
-	terrainSys    *terrain.TerrainSystem
-	commanderSys  *commander.CommanderSystem
-	movementSys   *movement.MovementSystem
-	combatSys     *combat.CombatSystem
-	deathSys      *combat.DeathSystem
-	levelingSys   *combat.LevelingSystem      // v1
-	buildSys      *combat.BuildSystem
-	objectiveSys  *objective.ObjectiveSystem   // v1
-	recruitSys    *combat.RecruitmentSystem    // v1
-	FogSys        *fog.FogSystem
-	AISys         *ai.AISystem
-	AISys2        *ai.AISystem // second AI for clash mode (player 1)
-	Lifecycle     *MatchLifecycle              // v1
-	PlayerGold    map[uint32]int32             // v1: gold per player
-	lastSentGold  map[uint32]int32             // track what was last sent to client
-	Store         persist.Store                // v1: persistence (nil = no persistence)
-	stats         *MatchStats                  // v1: cumulative match statistics (AAR)
+	terrainSys   *terrain.TerrainSystem
+	commanderSys *commander.CommanderSystem
+	movementSys  *movement.MovementSystem
+	combatSys    *combat.CombatSystem
+	deathSys     *combat.DeathSystem
+	levelingSys  *combat.LevelingSystem // v1
+	buildSys     *combat.BuildSystem
+	objectiveSys *objective.ObjectiveSystem // v1
+	recruitSys   *combat.RecruitmentSystem  // v1
+	FogSys       *fog.FogSystem
+	AISys        *ai.AISystem
+	AISys2       *ai.AISystem     // second AI for clash mode (player 1)
+	Lifecycle    *MatchLifecycle  // v1
+	PlayerGold   map[uint32]int32 // v1: gold per player
+	lastSentGold map[uint32]int32 // track what was last sent to client
+	Store        persist.Store    // v1: persistence (nil = no persistence)
+	stats        *MatchStats      // v1: cumulative match statistics (AAR)
 
 	tickCount uint32
 }
@@ -56,7 +56,7 @@ const (
 	ServerTicksPerSecond      = 10
 	DefaultMapWidth           = 48
 	DefaultMapHeight          = 96
-	InitialTeamCombatUnits    = 5  // v1: starter roster is 1 Cmd + 5 LI
+	InitialTeamCombatUnits    = 5 // v1: starter roster is 1 Cmd + 5 LI
 	CombatUnitsPerTeamLevel   = 2
 	DefaultMovementMultiplier = 1
 	combatUnitCrossMapSeconds = 300
@@ -117,12 +117,12 @@ func NewGameSession() *GameSession {
 	formationPool := ecs.NewComponentPool[component.FormationComponent]()
 	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 	ownerPool := ecs.NewComponentPool[component.OwnerComponent]()
-		projPool := ecs.NewComponentPool[component.ProjectileComponent]()
+	projPool := ecs.NewComponentPool[component.ProjectileComponent]()
 	killPointsPool := ecs.NewComponentPool[component.KillPointsComponent]()
 	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
 	structPool := ecs.NewComponentPool[component.StructureComponent]()
 
-		gs.World.RegisterPool(component.PositionComponent{}, posPool)
+	gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
 	gs.World.RegisterPool(component.BoidComponent{}, boidPool)
 	gs.World.RegisterPool(component.HealthComponent{}, healthPool)
@@ -133,7 +133,7 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.FormationComponent{}, formationPool)
 	gs.World.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 	gs.World.RegisterPool(component.OwnerComponent{}, ownerPool)
-		gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
+	gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
 	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
 	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 	gs.World.RegisterPool(component.StructureComponent{}, structPool)
@@ -184,12 +184,12 @@ func NewGameSession() *GameSession {
 	gs.Lifecycle.Start() // start immediately for PvAI
 	gs.PlayerGold = make(map[uint32]int32)
 
-		// Fog system (per-player visibility)
-		gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
+	// Fog system (per-player visibility)
+	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
-		gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
-		gs.AISys.PlayerGold = gs.PlayerGold
-		gs.configureAIStrategy(gs.AISys)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys.PlayerGold = gs.PlayerGold
+	gs.configureAIStrategy(gs.AISys)
 
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -292,9 +292,9 @@ func (gs *GameSession) updateFog() {
 
 	// Vision source: playerID + tile position + radius
 	type visionSrc struct {
-		pid        uint32
+		pid          uint32
 		tileX, tileY int32
-		radius     int32
+		radius       int32
 	}
 	var sources []visionSrc
 
@@ -754,6 +754,9 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	if gs.AISys != nil && playerID == gs.AISys.AIPlayerID {
 		gs.AISys.RegisterSquad(squadID, uint32(cmdEntity))
 	}
+	if gs.AISys2 != nil && playerID == gs.AISys2.AIPlayerID {
+		gs.AISys2.RegisterSquad(squadID, uint32(cmdEntity))
+	}
 
 	// --- Spawn CombatUnits from roster ---
 	// Formation grid: same layout as spawnCombatUnitsWithType
@@ -863,10 +866,10 @@ func (gs *GameSession) FlushRosters(ctx context.Context) {
 
 	// Group living entities by playerID
 	type playerCmd struct {
-		entity    ecs.Entity
-		squadID   uint32
-		cmdComp   component.CommanderComponent
-		unitType  component.UnitTypeComponent
+		entity   ecs.Entity
+		squadID  uint32
+		cmdComp  component.CommanderComponent
+		unitType component.UnitTypeComponent
 	}
 	// playerID -> commander data
 	playerCmds := make(map[uint32]playerCmd)

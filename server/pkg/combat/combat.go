@@ -12,14 +12,14 @@ import (
 type CombatSystem struct {
 	Sh *spatial.Hash
 
-	posPool   *ecs.ComponentPool[component.PositionComponent]
-	healthPool *ecs.ComponentPool[component.HealthComponent]
-	attackPool *ecs.ComponentPool[component.AttackComponent]
-	boidPool   *ecs.ComponentPool[component.BoidComponent]
-	ownerPool  *ecs.ComponentPool[component.OwnerComponent]
+	posPool      *ecs.ComponentPool[component.PositionComponent]
+	healthPool   *ecs.ComponentPool[component.HealthComponent]
+	attackPool   *ecs.ComponentPool[component.AttackComponent]
+	boidPool     *ecs.ComponentPool[component.BoidComponent]
+	ownerPool    *ecs.ComponentPool[component.OwnerComponent]
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent]
-	MapW, MapH int32
-	TerrainFn  func(x, y int32) component.TerrainType // tile terrain lookup
+	MapW, MapH   int32
+	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
 }
 
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
@@ -38,7 +38,20 @@ func (s *CombatSystem) Init(w *ecs.World) {
 	}
 }
 
+// pendingDmg accumulates deferred damage for double-buffered combat.
+// Damage is collected during entity iteration and applied simultaneously
+// after all attacks resolve, eliminating entity-order first-strike bias.
+type pendingDmg struct {
+	damage   int32
+	attacker uint32
+}
+
 func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
+	// Double-buffered damage: collect all attacks first, apply simultaneously
+	// after iterating all entities. This eliminates entity-processing-order
+	// bias (lower entity IDs getting first-strike advantage every tick).
+	pending := make(map[uint32]pendingDmg)
+
 	s.attackPool.Each(func(e ecs.Entity, ac *component.AttackComponent) {
 		if ac.Cooldown > 0 && tick-ac.LastAttack < uint32(ac.Cooldown) {
 			return
@@ -73,7 +86,7 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 					rangeSq := (ac.Range * ac.Range) >> 12
 					if distSq <= rangeSq {
 						groundPos := component.PositionComponent{X: ac.GroundTargetX, Y: ac.GroundTargetY}
-						s.applySplash(groundPos, ac.Damage, e, ecs.Entity(0))
+						s.collectSplash(groundPos, ac.Damage, e, ecs.Entity(0), pending)
 						ac.LastAttack = tick
 					}
 				}
@@ -99,7 +112,7 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		}
 
 		// Calculate damage using the damage matrix
-		targetHealth, ok := s.healthPool.GetPtr(targetEntity)
+		_, ok = s.healthPool.GetPtr(targetEntity)
 		if !ok {
 			ac.TargetID = 0
 			return
@@ -121,31 +134,44 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			dmg = 1
 		}
 
-	// Apply damage to primary target (with stronghold terrain bonus)
-	effectiveDmg := dmg
-	if s.TerrainFn != nil {
-		tx := int32(fixed.ToFloat(targetPos.X))
-		ty := int32(fixed.ToFloat(targetPos.Y))
-		terrain := s.TerrainFn(tx, ty)
-		shLevel := strongholdLevelFromTerrain(terrain)
-		if shLevel > 0 {
-			bonusPct := StrongholdDefenseBonus(shLevel)
-			effectiveDmg = effectiveDmg * (100 - bonusPct) / 100
-			if effectiveDmg < 1 {
-				effectiveDmg = 1
+		// Apply damage to primary target (with stronghold terrain bonus)
+		effectiveDmg := dmg
+		if s.TerrainFn != nil {
+			tx := int32(fixed.ToFloat(targetPos.X))
+			ty := int32(fixed.ToFloat(targetPos.Y))
+			terrain := s.TerrainFn(tx, ty)
+			shLevel := strongholdLevelFromTerrain(terrain)
+			if shLevel > 0 {
+				bonusPct := StrongholdDefenseBonus(shLevel)
+				effectiveDmg = effectiveDmg * (100 - bonusPct) / 100
+				if effectiveDmg < 1 {
+					effectiveDmg = 1
+				}
 			}
 		}
-	}
-	targetHealth.HP -= effectiveDmg
-		targetHealth.LastAttacker = uint32(e)
 
-		// Cannon splash: apply 50% damage to units within 2 tiles
+		// Defer damage application (double-buffered)
+		tid := uint32(targetEntity)
+		pd := pending[tid]
+		pd.damage += effectiveDmg
+		pd.attacker = uint32(e)
+		pending[tid] = pd
+
+		// Cannon splash: defer splash damage too
 		if weapon == component.WeaponCannon {
-			s.applySplash(targetPos, dmg, e, targetEntity)
+			s.collectSplash(targetPos, dmg, e, targetEntity, pending)
 		}
 
 		ac.LastAttack = tick
 	})
+
+	// Apply all pending damage simultaneously — no entity gets first-strike
+	for targetID, pd := range pending {
+		if hp, ok := s.healthPool.GetPtr(ecs.Entity(targetID)); ok {
+			hp.HP -= pd.damage
+			hp.LastAttacker = pd.attacker
+		}
+	}
 }
 
 // isTargetValid checks if the current target is still alive and in range.
@@ -256,9 +282,11 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 	return best.id
 }
 
-// applySplash deals 50% damage to enemy units within 2 tiles of the impact point,
-// excluding the primary target (by entity ID) and the attacker's own faction.
-func (s *CombatSystem) applySplash(targetPos component.PositionComponent, baseDmg int32, attacker ecs.Entity, primaryTarget ecs.Entity) {
+// collectSplash computes 50% splash damage to enemy units within 2 tiles
+// of the impact point, excluding the primary target (by entity ID) and the
+// attacker's own faction. Damage is added to the pending map for simultaneous
+// application (double-buffered combat).
+func (s *CombatSystem) collectSplash(targetPos component.PositionComponent, baseDmg int32, attacker ecs.Entity, primaryTarget ecs.Entity, pending map[uint32]pendingDmg) {
 	splashRange := fixed.FromFloat(2.0)
 	ids := s.Sh.Query(targetPos.X, targetPos.Y, splashRange)
 	splashDmg := baseDmg / 2
@@ -293,11 +321,12 @@ func (s *CombatSystem) applySplash(targetPos component.PositionComponent, baseDm
 			continue
 		}
 
-		// Apply splash damage
-		if hp, ok := s.healthPool.GetPtr(entity); ok {
-			hp.HP -= splashDmg
-			hp.LastAttacker = uint32(attacker)
-		}
+		// Defer splash damage
+		tid := uint32(entity)
+		pd := pending[tid]
+		pd.damage += splashDmg
+		pd.attacker = uint32(attacker)
+		pending[tid] = pd
 	}
 }
 

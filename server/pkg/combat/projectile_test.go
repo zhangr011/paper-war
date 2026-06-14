@@ -246,11 +246,15 @@ func TestIsTargetValidOutOfRange(t *testing.T) {
 	healthPool.Add(target, component.HealthComponent{HP: 100, MaxHP: 100})
 
 	ac, _ := attackPool.GetPtr(attacker)
+	ac.TargetID = uint32(target) // assign the target
 	pos, _ := posPool.Get(attacker)
 
+	// isTargetValid no longer checks range — it only checks viability
+	// (alive, enemy faction, has position). An out-of-range target is
+	// still valid so the unit can pursue it via pathfinding.
 	valid := cs.isTargetValid(attacker, ac, pos)
-	if valid {
-		t.Error("target out of range should be invalid")
+	if !valid {
+		t.Error("out-of-range target should still be valid (for chasing)")
 	}
 }
 

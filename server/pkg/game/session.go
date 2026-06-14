@@ -1073,9 +1073,17 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			ox = -ox
 		}
 
+		// Small random jitter (±0.3 tiles) breaks the deterministic
+		// symmetry of mirror matches. Without this, the first entity
+		// processed each tick has a tiny first-mover advantage that
+		// compounds over hundreds of ticks, giving one faction a
+		// systematic win in AI-vs-AI clash mode.
+		jx := fixed.FromFloat((rand.Float64() - 0.5) * 0.6)
+		jy := fixed.FromFloat((rand.Float64() - 0.5) * 0.6)
+
 		gs.addComponent(unitEntity, component.PositionComponent{
-			X: cx + ox,
-			Y: cy + oy,
+			X: cx + ox + jx,
+			Y: cy + oy + jy,
 		})
 
 		gs.addComponent(unitEntity, component.VelocityComponent{

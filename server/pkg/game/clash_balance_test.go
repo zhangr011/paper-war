@@ -1,7 +1,9 @@
 package game
 
 import (
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
@@ -13,6 +15,11 @@ import (
 // does not have a deterministic faction bias. With MoveDisabled and
 // symmetric formations, matches should be balanced.
 func TestClashModeBalance(t *testing.T) {
+	// Seed the RNG so each match varies.  Without this, Go defaults to
+	// seed=1 and every match is a byte-identical replay, which makes any
+	// tiny entity-order asymmetry look like a 100% deterministic bias.
+	rand.Seed(time.Now().UnixNano())
+
 	wins := [3]int{} // 0=Faction0(Blue), 1=Faction1(Red), 2=draw
 	const runs = 20
 

@@ -18,6 +18,7 @@ type CombatSystem struct {
 	boidPool     *ecs.ComponentPool[component.BoidComponent]
 	ownerPool    *ecs.ComponentPool[component.OwnerComponent]
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent]
+	pathPool     *ecs.ComponentPool[component.PathfindingComponent]
 	MapW, MapH   int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
 }
@@ -35,6 +36,9 @@ func (s *CombatSystem) Init(w *ecs.World) {
 	}
 	if p := w.Pool(component.UnitTypeComponent{}); p != nil {
 		s.unitTypePool = p.(*ecs.ComponentPool[component.UnitTypeComponent])
+	}
+	if p := w.Pool(component.PathfindingComponent{}); p != nil {
+		s.pathPool = p.(*ecs.ComponentPool[component.PathfindingComponent])
 	}
 }
 
@@ -75,6 +79,13 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			ac.TargetID = s.findTarget(e, pos, ac.Range, weapon)
 		}
 
+		// If no target in attack range, try chase range (2x attack range)
+		// so units close the gap instead of standing idle.
+		if ac.TargetID == 0 {
+			chaseRange := ac.Range * 2
+			ac.TargetID = s.findTarget(e, pos, chaseRange, weapon)
+		}
+
 		if ac.TargetID == 0 {
 			// Ground attack: if GroundTarget is set and weapon is Cannon/Missile,
 			// fire at the ground position (deals splash to any unit in area)
@@ -107,7 +118,15 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		rangeSq := (ac.Range * ac.Range) >> 12
 
 		if distSq > rangeSq {
-			ac.TargetID = 0
+			// Target is out of attack range but still viable — pursue it
+			// by setting pathfinding destination. The movement system will
+			// close the gap; once in range, the unit attacks normally.
+			if s.pathPool != nil {
+				if path, ok := s.pathPool.GetPtr(e); ok {
+					path.TargetX = targetPos.X
+					path.TargetY = targetPos.Y
+				}
+			}
 			return
 		}
 
@@ -174,7 +193,9 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 	}
 }
 
-// isTargetValid checks if the current target is still alive and in range.
+// isTargetValid checks if the current target is still alive and an enemy.
+// Range is NOT checked here — the main loop handles range separately so
+// that out-of-range targets can be pursued via pathfinding.
 func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackComponent, pos component.PositionComponent) bool {
 	targetEntity := ecs.Entity(ac.TargetID)
 	targetHealth, ok := s.healthPool.Get(targetEntity)
@@ -193,11 +214,8 @@ func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackCo
 			return false
 		}
 	}
-	dx := targetPos.X - pos.X
-	dy := targetPos.Y - pos.Y
-	distSq := (dx*dx + dy*dy) >> 12
-	rangeSq := (ac.Range * ac.Range) >> 12
-	return distSq <= rangeSq
+	_ = targetPos // position existence verified above; range checked in main loop
+	return true
 }
 
 // findTarget implements smart auto-targeting with 4 priority tiers:

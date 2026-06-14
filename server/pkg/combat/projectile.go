@@ -71,6 +71,7 @@ func (s *ProjectileSystem) Tick(w *ecs.World, tick uint32) {
 							dmg = 1
 						}
 						hp.HP -= dmg
+						hp.LastAttacker = proj.SourceEntity
 					}
 				})
 			} else {
@@ -98,6 +99,7 @@ func (s *ProjectileSystem) Tick(w *ecs.World, tick uint32) {
 							dmg = 1
 						}
 						hp.HP -= dmg
+						hp.LastAttacker = proj.SourceEntity
 					}
 				}
 			}

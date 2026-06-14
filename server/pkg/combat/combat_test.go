@@ -200,6 +200,44 @@ func TestCombatSplash(t *testing.T) {
 	}
 }
 
+func TestSplashDamageSetsLastAttacker(t *testing.T) {
+	em, w, sh, posPool, healthPool, attackPool, boidPool, utPool := setupCombatWorld()
+
+	// Cannon attacker
+	attacker := em.Create()
+	posPool.Add(attacker, component.PositionComponent{X: 0, Y: 0})
+	attackPool.Add(attacker, component.AttackComponent{
+		Range: fixed.FromFloat(7.0), Damage: 20, Cooldown: 1,
+	})
+	boidPool.Add(attacker, component.BoidComponent{SquadID: 1, Role: component.RoleMelee})
+	utPool.Add(attacker, component.UnitTypeComponent{Type: component.UnitMotorArtillery, Weapon: component.WeaponCannon, Armor: component.ArmorHeavy})
+
+	// Primary target
+	target := em.Create()
+	posPool.Add(target, component.PositionComponent{X: fixed.FromFloat(5.0), Y: 0})
+	healthPool.Add(target, component.HealthComponent{HP: 100, MaxHP: 100})
+	boidPool.Add(target, component.BoidComponent{SquadID: 2, Role: component.RoleMelee})
+	utPool.Add(target, component.UnitTypeComponent{Type: component.UnitLightInfantry, Weapon: component.WeaponGun, Armor: component.ArmorLight})
+
+	// Adjacent enemy (should get splash damage + LastAttacker attribution)
+	adjacent := em.Create()
+	posPool.Add(adjacent, component.PositionComponent{X: fixed.FromFloat(5.5), Y: fixed.FromFloat(1.0)})
+	healthPool.Add(adjacent, component.HealthComponent{HP: 100, MaxHP: 100})
+	boidPool.Add(adjacent, component.BoidComponent{SquadID: 2, Role: component.RoleMelee})
+	utPool.Add(adjacent, component.UnitTypeComponent{Type: component.UnitLightInfantry, Weapon: component.WeaponGun, Armor: component.ArmorLight})
+
+	rebuildSpatialHash(sh, posPool)
+	w.Tick(1)
+
+	// Splash damage must set LastAttacker so kill credit works when the
+	// splash target later dies. Without this, splash kills were unattributed.
+	hp, _ := healthPool.Get(adjacent)
+	if hp.LastAttacker != uint32(attacker) {
+		t.Errorf("splash target LastAttacker = %d, want %d (cannon attacker entity)",
+			hp.LastAttacker, uint32(attacker))
+	}
+}
+
 func TestSmartTargetingPrioritizesCommander(t *testing.T) {
 	em, w, sh, posPool, healthPool, attackPool, boidPool, utPool := setupCombatWorld()
 

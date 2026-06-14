@@ -33,4 +33,5 @@ type ProjectileComponent struct {
 	Damage       int32
 	ImpactTick   uint32
 	SplashRadius int64
+	SourceEntity uint32 // entity ID of the unit that fired this projectile (for kill credit)
 }

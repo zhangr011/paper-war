@@ -296,6 +296,7 @@ func (s *CombatSystem) applySplash(targetPos component.PositionComponent, baseDm
 		// Apply splash damage
 		if hp, ok := s.healthPool.GetPtr(entity); ok {
 			hp.HP -= splashDmg
+			hp.LastAttacker = uint32(attacker)
 		}
 	}
 }

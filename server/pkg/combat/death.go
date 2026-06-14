@@ -93,43 +93,71 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 		}
 	})
 
+	// Pre-pass: snapshot attacker factions for all dead entities BEFORE any
+	// components are removed. This ensures mutual kills (attacker and victim
+	// both die in the same tick) are attributed correctly — without this,
+	// processing one death removes the attacker's components, making the
+	// other death's attacker lookup fail and creating unattributed kills.
+	attackerFaction := make(map[uint32]uint8)
+	attackerPlayerID := make(map[uint32]uint32)
+	if s.ownerPool != nil {
+		for _, e := range dead {
+			hp, _ := s.healthPool.Get(e)
+			if hp.LastAttacker != 0 {
+				killerEntity := ecs.Entity(hp.LastAttacker)
+				if killerOwner, ok := s.ownerPool.Get(killerEntity); ok {
+					attackerFaction[uint32(e)] = killerOwner.Faction
+					attackerPlayerID[uint32(e)] = killerOwner.PlayerID
+				}
+			}
+		}
+	}
+
 	for _, e := range dead {
 		hp, _ := s.healthPool.Get(e)
 
-		// --- Build KillEvent for stats attribution (before components removed) ---
+		// --- Build KillEvent for stats attribution ---
 		ke := KillEvent{KillerFaction: 0xFF}
 		if s.ownerPool != nil {
 			if deadOwner, ok := s.ownerPool.Get(e); ok {
 				ke.DeadFaction = deadOwner.Faction
 			}
 		}
+		// Commander kill: only count original commanders, not promoted ones
 		isCommanderDeath := false
 		if s.cmdPool != nil {
-			if cmd, ok := s.cmdPool.Get(e); ok && cmd.IsAlive {
+			if cmd, ok := s.cmdPool.Get(e); ok && cmd.IsAlive && !cmd.Promoted {
 				isCommanderDeath = true
 			}
 		}
 		ke.IsCommander = isCommanderDeath
 
-		// Award kill points to the killer
+		// Attribute kill to attacker's faction from pre-pass snapshot.
+		// This happens regardless of whether the attacker is still alive —
+		// the killing blow was already dealt.
+		if af, ok := attackerFaction[uint32(e)]; ok {
+			ke.KillerFaction = af
+		}
+
+		// Bounty value from dead unit's type, but only if there's an
+		// attributed killer (no bounty for unattributed deaths).
+		if ke.KillerFaction != 0xFF && s.unitTypePool != nil {
+			if deadUT, ok := s.unitTypePool.Get(e); ok {
+				ke.Bounty = component.CombatUnitTypeTable[deadUT.Type].KillBounty
+			}
+		}
+
+		// Award kill points and spendable gold to the PLAYER only if the
+		// attacker is still alive (dead players can't collect rewards).
 		if hp.LastAttacker != 0 && s.killPointsPool != nil {
 			killerEntity := ecs.Entity(hp.LastAttacker)
 			if killerHP, ok := s.healthPool.Get(killerEntity); ok && killerHP.HP > 0 {
 				if kp, ok := s.killPointsPool.GetPtr(killerEntity); ok {
 					kp.Points += s.killPointValue(e)
 				}
-
-				// Award Gold bounty to killer's player
-				if s.ownerPool != nil && s.unitTypePool != nil {
-					if killerOwner, ok := s.ownerPool.Get(killerEntity); ok {
-						ke.KillerFaction = killerOwner.Faction
-						if deadUT, ok := s.unitTypePool.Get(e); ok {
-							bounty := component.CombatUnitTypeTable[deadUT.Type].KillBounty
-							ke.Bounty = bounty
-							if bounty > 0 {
-								s.GoldBounties[killerOwner.PlayerID] += bounty
-							}
-						}
+				if ke.Bounty > 0 {
+					if pid, ok := attackerPlayerID[uint32(e)]; ok {
+						s.GoldBounties[pid] += ke.Bounty
 					}
 				}
 			}
@@ -230,9 +258,10 @@ func (s *DeathSystem) handleCommanderDeath(squadID uint32) {
 	// Add CommanderComponent if not present
 	if s.cmdPool != nil {
 		s.cmdPool.Add(bestEntity, component.CommanderComponent{
-			SquadID:   squadID,
-			IsAlive:   true,
+			SquadID:    squadID,
+			IsAlive:    true,
 			AuraRadius: bc.NeighborRange,
+			Promoted:   true,
 		})
 	}
 

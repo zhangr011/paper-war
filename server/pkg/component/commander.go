@@ -15,4 +15,5 @@ type CommanderComponent struct {
 	AuraMoraleBonus int32
 	TacticalState   TacticalState
 	IsAlive         bool
+	Promoted        bool // true if promoted from combat unit (not original commander)
 }

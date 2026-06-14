@@ -1149,6 +1149,11 @@ func (gs *GameSession) removeComponents(e ecs.Entity) {
 
 // HandleCommand processes a player command from the network.
 func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
+	// Spectators (clientID 0, clash/crash test) have no squad or gold — reject
+	// any economy command (recruit/build) even if a forged client sends one.
+	if clientID == 0 && (cmd.Type == network.CmdRecruit || cmd.Type == network.CmdBuild) {
+		return
+	}
 	switch cmd.Type {
 	case network.CmdMoveSquad:
 		gs.handleMoveSquad(cmd.SquadID, int64(cmd.TargetX), int64(cmd.TargetY))

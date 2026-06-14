@@ -253,6 +253,8 @@ export class App {
         // binary message follows immediately after this text message.
         if (this.game) {
           this.game.playerID = msg.player_id;
+          // Spectator mode (playerID 0 = clash/crash test): hide recruit/build/gold UI.
+          document.body.classList.toggle('spectator-mode', msg.player_id === 0);
           this.game.mapWidth = msg.map_w || this.game.mapWidth;
           this.game.mapHeight = msg.map_h || this.game.mapHeight;
           // Clear stale entity state — the next snapshot will repopulate.
@@ -354,6 +356,8 @@ export class App {
     this.findMatchBtn.disabled = false;
     if (this.clashBtn) this.clashBtn.disabled = false;
     this.lobbySpinner.style.display = 'none';
+    // Clear spectator mode so recruit/build/gold UI shows again in solo/PvP.
+    document.body.classList.remove('spectator-mode');
     this.showScreen('lobby');
   }
 
@@ -421,6 +425,8 @@ export class App {
     this.game = new Game(this.connection);
     window.__paperWarGame = this.game;
     this.game.playerID = matchInfo.player_id;
+    // Spectator mode (playerID 0 = clash/crash test): hide recruit/build/gold UI.
+    document.body.classList.toggle('spectator-mode', matchInfo.player_id === 0);
     this.game.mapWidth = matchInfo.map_w || 48;
     this.game.mapHeight = matchInfo.map_h || 96;
 

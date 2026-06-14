@@ -382,6 +382,16 @@ body {
   min-width: 0;
 }
 
+/* Spectator (clash/crash test) mode: hide player-economy UI.
+   playerID 0 = spectator with no squad/gold, so recruit/build/gold are meaningless. */
+body.spectator-mode .recruit-group,
+body.spectator-mode .build-group {
+  display: none !important;
+}
+body.spectator-mode #gold {
+  display: none !important;
+}
+
 .action-group-label {
   font-size: 11px;
   font-weight: 700;

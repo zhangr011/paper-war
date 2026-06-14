@@ -668,6 +668,8 @@ export class Game {
   // -----------------------------------------------------------------------
 
   handleRecruit(unitType) {
+    // Spectators (clash/crash test, playerID 0) have no squad/gold — ignore.
+    if (document.body.classList.contains('spectator-mode')) return;
     const cost = this.unitCosts[unitType] || 0;
     if (this.gold < cost) {
       if (this.audioStarted) this.sfx.uiError();
@@ -728,6 +730,8 @@ export class Game {
   // -----------------------------------------------------------------------
 
   toggleBuildMode(structType) {
+    // Spectators (clash/crash test, playerID 0) have no squad/gold — ignore.
+    if (document.body.classList.contains('spectator-mode')) return;
     if (this.buildMode === structType) {
       this.cancelBuildMode();
       return;

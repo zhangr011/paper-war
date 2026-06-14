@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper War</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Login screen -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <h1 class="login-title">Paper War</h1>
+      <p class="login-subtitle">Real-Time Strategy</p>
+      <form id="login-form" autocomplete="off">
+        <input type="text" id="login-username" placeholder="Enter your name" maxlength="20" required>
+        <button type="submit" class="login-btn">Join</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Lobby screen -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">War Room</h2>
+      <div class="lobby-player">
+        <span class="lobby-player-avatar">P</span>
+        <span class="lobby-player-name" id="lobby-player-name">Player</span>
+      </div>
+
+      <!-- Roster panel -->
+      <div class="lobby-roster" id="lobby-roster">
+        <h3 class="lobby-roster-title">Your Roster</h3>
+        <div class="roster-commander" id="roster-commander">
+          <span class="roster-label">Commander:</span>
+          <span class="roster-value" id="roster-cmd-name">Light Infantry (Gun)</span>
+          <span class="roster-cmd-level" id="roster-cmd-level">Lv 1</span>
+        </div>
+        <div class="roster-units" id="roster-units">
+          <div class="roster-unit-row">
+            <span class="roster-unit-icon" style="color:#8BC34A">&#9632;</span>
+            <span>Light Infantry x5</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commander selection -->
+      <div class="lobby-cmd-select" id="lobby-cmd-select">
+        <h3 class="lobby-roster-title">Select Commander Type</h3>
+        <div class="cmd-type-buttons">
+          <button class="cmd-type-btn selected" data-cmd-type="0">LI (Gun)</button>
+          <button class="cmd-type-btn" data-cmd-type="1">HI (Cannon)</button>
+          <button class="cmd-type-btn" data-cmd-type="2">Sniper</button>
+          <button class="cmd-type-btn" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
+      <div class="lobby-queue" id="lobby-queue">
+        <p class="lobby-status" id="lobby-status">Ready for battle</p>
+        <button class="lobby-btn lobby-btn-solo" id="solo-btn">Start Match</button>
+        <button class="lobby-btn lobby-btn-clash" id="clash-btn">Clash Test</button>
+        <button class="lobby-btn" id="find-match-btn">Find Match</button>
+        <button class="lobby-btn lobby-btn-cancel" id="cancel-queue-btn" style="display:none">Cancel</button>
+      </div>
+      <div class="lobby-spinner" id="lobby-spinner" style="display:none">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clash Config screen -->
+  <div id="clash-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">Clash Test Setup</h2>
+
+      <!-- Team 1 config -->
+      <div class="clash-section">
+        <h3 class="clash-section-title clash-team-blue">Team 1 (Blue)</h3>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Size:</span>
+          <button class="clash-size-btn selected" data-team="1" data-size="5">5</button>
+          <button class="clash-size-btn" data-team="1" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="1" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="1" data-size="20">20</button>
+        </div>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Commander:</span>
+          <button class="clash-cmd-btn selected" data-team="1" data-cmd-type="0">LI (Gun)</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="1">HI (Cannon)</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="2">Sniper</button>
+          <button class="clash-cmd-btn" data-team="1" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
+      <!-- Team 2 config -->
+      <div class="clash-section">
+        <h3 class="clash-section-title clash-team-red">Team 2 (Red)</h3>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Size:</span>
+          <button class="clash-size-btn selected" data-team="2" data-size="5">5</button>
+          <button class="clash-size-btn" data-team="2" data-size="10">10</button>
+          <button class="clash-size-btn" data-team="2" data-size="15">15</button>
+          <button class="clash-size-btn" data-team="2" data-size="20">20</button>
+        </div>
+        <div class="clash-team-row">
+          <span class="clash-team-label">Commander:</span>
+          <button class="clash-cmd-btn selected" data-team="2" data-cmd-type="0">LI (Gun)</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="1">HI (Cannon)</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="2">Sniper</button>
+          <button class="clash-cmd-btn" data-team="2" data-cmd-type="3">AAI (Missile)</button>
+        </div>
+      </div>
+
+      <!-- Terrain -->
+      <div class="clash-section">
+        <h3 class="clash-section-title">Terrain</h3>
+        <div class="clash-team-row">
+          <button class="clash-terrain-btn selected" data-terrain="random">Random</button>
+          <button class="clash-terrain-btn" data-terrain="plains">Plains</button>
+          <button class="clash-terrain-btn" data-terrain="forest">Forest</button>
+          <button class="clash-terrain-btn" data-terrain="road">Road</button>
+          <button class="clash-terrain-btn" data-terrain="river">River</button>
+          <button class="clash-terrain-btn" data-terrain="stronghold">Stronghold</button>
+          <button class="clash-terrain-btn" data-terrain="hills">Hills</button>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="clash-actions">
+        <button class="lobby-btn lobby-btn-cancel" id="clash-back-btn">Back</button>
+        <button class="lobby-btn lobby-btn-clash" id="clash-start-btn">Start Battle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game screen -->
+  <div id="game-screen" class="screen">
+
+  <!-- Top info bar -->
+  <header id="top-bar">
+    <div class="top-bar-left">
+      <span class="player-info">
+        <span class="player-avatar" id="player-avatar">P</span>
+        <span class="player-name" id="player-name">Commander</span>
+      </span>
+    </div>
+    <div class="top-bar-center">
+      <span class="resource" id="gold">
+        <span class="resource-icon">&#9733;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Gold</span>
+      </span>
+      <span class="resource" id="unit-count">
+        <span class="resource-icon">&#9876;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Units</span>
+      </span>
+      <span class="resource" id="score">
+        <span class="resource-icon">&#9650;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Score</span>
+      </span>
+    </div>
+    <div class="top-bar-right">
+      <span class="timer" id="timer">00:00</span>
+      <button class="icon-btn" id="mute-btn" title="Toggle Sound">🔊</button>
+      <button class="icon-btn" id="settings-btn" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- Main game viewport -->
+  <main id="game-viewport">
+    <canvas id="game-canvas"></canvas>
+    <div class="base-alert-overlay" id="base-alert-overlay"></div>
+  </main>
+
+  <!-- Bottom control bar -->
+  <footer id="bottom-bar">
+
+    <!-- Selection panel -->
+    <section class="panel" id="selection-panel">
+      <h3 class="panel-title">Selection</h3>
+      <div class="selection-info">
+        <div class="selection-row">
+          <span class="selection-label">Commander:</span>
+          <span class="selection-value" id="sel-commander">--</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Units:</span>
+          <span class="selection-value" id="sel-units">0</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Morale:</span>
+          <div class="morale-bar-container">
+            <div class="morale-bar" id="morale-bar" style="width: 75%"></div>
+          </div>
+          <span class="selection-value" id="sel-morale">75%</span>
+        </div>
+        <div class="selection-row">
+          <span class="selection-label">Status:</span>
+          <span class="selection-value" id="sel-status">Idle</span>
+        </div>
+      </div>
+      <button class="team-test-move-btn" id="team-test-move-btn" title="Move selected team to a random visible position">
+        Test Move
+      </button>
+    </section>
+
+    <!-- Minimap -->
+    <section class="panel" id="minimap-panel">
+      <canvas id="minimap-canvas" width="120" height="180"></canvas>
+    </section>
+
+    <!-- Action panel -->
+    <section class="panel" id="action-panel">
+      <h3 class="panel-title">Actions</h3>
+
+      <div class="action-group">
+        <span class="action-group-label">Commands</span>
+        <div class="action-buttons">
+          <button class="action-btn attack-ground-btn" id="attack-ground-btn" title="Attack Ground [A]">
+            <span class="action-key">A</span>
+            <span class="action-name">Atk Ground</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <span class="action-group-label">Tactics</span>
+        <div class="action-buttons">
+          <button class="action-btn tactic-charge" data-tactic="charge" title="Charge [Q]">
+            <span class="action-key">Q</span>
+            <span class="action-name">Charge</span>
+          </button>
+          <button class="action-btn tactic-retreat" data-tactic="retreat" title="Retreat [W]">
+            <span class="action-key">W</span>
+            <span class="action-name">Retreat</span>
+          </button>
+          <button class="action-btn tactic-defend" data-tactic="defend" title="Defend [E]">
+            <span class="action-key">E</span>
+            <span class="action-name">Defend</span>
+          </button>
+          <button class="action-btn tactic-rally" data-tactic="rally" title="Rally [R]">
+            <span class="action-key">R</span>
+            <span class="action-name">Rally</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group recruit-group">
+        <span class="action-group-label">Recruit</span>
+        <div class="action-buttons">
+          <button class="action-btn recruit-btn" data-unit-type="0" title="Light Infantry (15g)">
+            <span class="action-name">LI</span>
+            <span class="action-cost">15g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="1" title="Heavy Infantry (25g)">
+            <span class="action-name">HI</span>
+            <span class="action-cost">25g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="2" title="Sniper (50g)">
+            <span class="action-name">Sniper</span>
+            <span class="action-cost">50g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="3" title="Anti-Armor (30g)">
+            <span class="action-name">AAI</span>
+            <span class="action-cost">30g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="4" title="Motor Gun (25g)">
+            <span class="action-name">MG</span>
+            <span class="action-cost">25g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="5" title="Motor Artillery (50g)">
+            <span class="action-name">MA</span>
+            <span class="action-cost">50g</span>
+          </button>
+          <button class="action-btn recruit-btn" data-unit-type="6" title="Motor Missile (60g)">
+            <span class="action-name">MM</span>
+            <span class="action-cost">60g</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group build-group">
+        <span class="action-group-label">Build</span>
+        <div class="action-buttons">
+          <button class="action-btn build-btn" data-struct-type="1" title="Watchtower — reveals fog (50g)">
+            <span class="action-name">WT</span>
+            <span class="action-cost">50g</span>
+          </button>
+          <button class="action-btn build-btn" data-struct-type="2" title="Barricade — cover, blocks movement (20g)">
+            <span class="action-name">BAR</span>
+            <span class="action-cost">20g</span>
+          </button>
+          <button class="action-btn build-btn" data-struct-type="3" title="Turret — auto-attacks enemies (80g)">
+            <span class="action-name">TUR</span>
+            <span class="action-cost">80g</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </footer>
+
+  </div><!-- /game-screen -->
+
+  <script type="module" src="src/app.js?v=v6"></script>
+</body>
+</html>

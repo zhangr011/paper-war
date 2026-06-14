@@ -1,0 +1,3 @@
+# Commander Formation Template
+
+Each Commander has a Formation Template that defines the mix of CombatUnit types the Squad can recruit (e.g., all Gun, all Cannon, or a fixed ratio like 50/50). This replaced the simpler "Squad type = Commander type" model because it allows mixed-type Squads while keeping recruitment predictable. Template slots scale proportionally with Leading Skill. CombatUnits keep their individual types permanently — even through Commander promotion events, types never convert. This means a post-promotion Squad may temporarily have mixed types until attrition and re-recruitment shifts the composition.

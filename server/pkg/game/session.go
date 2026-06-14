@@ -545,9 +545,23 @@ func (gs *GameSession) EnableClashMode() {
 	// Clash mode: no fog for either AI so they always see each other
 	gs.AISys.FogSystem = nil
 	gs.AISys.RecruitDisabled = true
+	gs.AISys.MoveDisabled = true
 	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
 	gs.AISys2.PlayerGold = gs.PlayerGold
 	gs.AISys2.RecruitDisabled = true
+	gs.AISys2.MoveDisabled = true
+
+	// Give AISys2 the same strategic awareness as AISys.
+	// Without SetObjective, AISys2 stays idle and never advances,
+	// giving AISys (Red) a permanent initiative advantage.
+	if gs.Map != nil {
+		gs.AISys2.SetObjective(&gs.Map.Objective)
+		// Use spawn[0] (player 1) as AISys2's base if available.
+		if len(gs.Map.Spawns) >= 1 {
+			sp := gs.Map.Spawns[0]
+			gs.AISys2.SetBasePosition(fixed.FromFloat(float64(sp[0])), fixed.FromFloat(float64(sp[1])))
+		}
+	}
 }
 
 // SpawnTeam creates the standard team composition for the given level.
@@ -1034,15 +1048,30 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
-		// Arrange units in a grid pattern around the commander
+		// Arrange units in a grid pattern around the commander.
+		// Use float-centred column offsets so the formation is truly
+		// symmetric around the commander.  Integer division
+		// (col-(cols-1)/2) produces a lopsided grid whose centre is
+		// offset by half a column, which gives one faction's units a
+		// systematic range advantage over the other.
 		cols := 1
 		for cols*cols < formationCount {
 			cols++
 		}
 		row := i / cols
 		col := i % cols
-		ox := int64(col-(cols-1)/2) * spacing
+		colOffset := float64(col) - float64(cols-1)/2.0
+		ox := fixed.Mul(fixed.FromFloat(colOffset), spacing)
 		oy := int64(row+1) * spacing
+
+		// Mirror formation x-offsets for the enemy faction so the
+		// two formations face each other symmetrically.  Without
+		// this, both teams' col=0 units end up on the same physical
+		// side, giving one team a range advantage on the enemy
+		// commander.
+		if faction == component.FactionEnemy {
+			ox = -ox
+		}
 
 		gs.addComponent(unitEntity, component.PositionComponent{
 			X: cx + ox,

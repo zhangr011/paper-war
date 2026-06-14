@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/user/paper-war/server/pkg/component"
+	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/game"
 	"github.com/user/paper-war/server/pkg/network"
@@ -41,6 +43,11 @@ func resolveClientDir() string {
 }
 
 func main() {
+	// Seed the global RNG so each match plays out differently.
+	// Without this, Go defaults to seed=1 and every clash match is
+	// a byte-for-byte identical replay.
+	rand.Seed(time.Now().UnixNano())
+
 	// 1. Initialize game session (portrait map, ECS world, all systems)
 	gs := game.NewGameSession()
 
@@ -242,6 +249,18 @@ func main() {
 				t2Units -= n
 				squadID++
 			}
+
+			// Per-unit position jitter: add ±1 tile random offset to each
+			// combat unit so that deterministic entity-processing-order
+			// bias doesn't produce identical match outcomes every time.
+			posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+			boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+			boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+				if pos, ok := posPool.GetPtr(e); ok {
+					pos.X += fixed.FromFloat(rand.Float64()*2 - 1)
+					pos.Y += fixed.FromFloat(rand.Float64()*2 - 1)
+				}
+			})
 
 		hub.SendJSON(clientID, map[string]interface{}{
 			"type":      "match_found",

@@ -94,6 +94,7 @@ type AISystem struct {
 	EnemyUnits      map[component.CombatUnitType]int // enemy composition intel
 	visitedSH       map[int]bool            // strongholds already sent squads to
 	RecruitDisabled bool                    // true → AI never issues recruit commands (clash/spectator mode)
+	MoveDisabled    bool                    // true → AI never issues move commands (clash mirror mode)
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
@@ -171,16 +172,18 @@ func (as *AISystem) Update(
 		hpRatio := float64(health.HP) / float64(health.MaxHP)
 		if hpRatio < RetreatHPThreshold && hpRatio > 0 && state.State != StateRetreat {
 			state.State = StateRetreat
-			retreatX := fixed.FromFloat(1.0)
-			if fixed.ToFloat(pos.X) > float64(as.MapW)/2 {
-				retreatX = fixed.FromFloat(float64(as.MapW) - 2)
+			if !as.MoveDisabled {
+				retreatX := fixed.FromFloat(1.0)
+				if fixed.ToFloat(pos.X) > float64(as.MapW)/2 {
+					retreatX = fixed.FromFloat(float64(as.MapW) - 2)
+				}
+				cmds = append(cmds, AICommand{
+					Type:    CmdMove,
+					SquadID: squadID,
+					TargetX: retreatX,
+					TargetY: pos.Y,
+				})
 			}
-			cmds = append(cmds, AICommand{
-				Type:    CmdMove,
-				SquadID: squadID,
-				TargetX: retreatX,
-				TargetY: pos.Y,
-			})
 			continue
 		}
 
@@ -235,17 +238,23 @@ func (as *AISystem) Update(
 				})
 			} else {
 				state.State = StateApproach
-				cmds = append(cmds, AICommand{
-					Type:    CmdMove,
-					SquadID: squadID,
-					TargetX: bestEnemyX,
-					TargetY: bestEnemyY,
-				})
+				if !as.MoveDisabled {
+					cmds = append(cmds, AICommand{
+						Type:    CmdMove,
+						SquadID: squadID,
+						TargetX: bestEnemyX,
+						TargetY: bestEnemyY,
+					})
+				}
 			}
 			continue
 		}
 
 		// --- STRATEGIC BEHAVIORS (no enemy visible) ---
+		// Skip all strategic movement in clash mode (MoveDisabled)
+		if as.MoveDisabled {
+			continue
+		}
 
 		// Early-game exploration: first squad scouts fogged areas
 		if tick < ExploreDuration && squadID == as.firstSquadID() {

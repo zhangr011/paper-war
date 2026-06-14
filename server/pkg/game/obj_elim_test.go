@@ -10,9 +10,15 @@ func TestObjectiveEliminationInClash(t *testing.T) {
 	gs := NewGameSession()
 	gs.Lifecycle.Start()
 	gs.EnableClashMode()
+	// Re-enable movement for this test — we're testing the elimination
+	// objective mechanism, not clash balance.
+	gs.AISys.MoveDisabled = false
+	if gs.AISys2 != nil {
+		gs.AISys2.MoveDisabled = false
+	}
 
-	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(20.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(28.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(22.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(26.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
 
 	for i := 0; i < 500; i++ {
 		gs.Tick()

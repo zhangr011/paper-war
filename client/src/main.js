@@ -2,16 +2,24 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v6';
-import { Camera } from './camera.js?v=v6';
-import { StateManager } from './state.js?v=v6';
-import { Connection } from './connection.js?v=v6';
-import { InputHandler } from './input.js?v=v6';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v6';
-import { AudioEngine } from './audio/audioengine.js?v=v6';
-import { SFX } from './audio/sfx.js?v=v6';
-import { Ambient } from './audio/ambient.js?v=v6';
-import { Music } from './audio/music.js?v=v6';
+import { Renderer } from './gl.js?v=v7';
+import { Camera } from './camera.js?v=v7';
+import { StateManager } from './state.js?v=v7';
+import { Connection } from './connection.js?v=v7';
+import { InputHandler } from './input.js?v=v7';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v7';
+import { AudioEngine } from './audio/audioengine.js?v=v7';
+import { SFX } from './audio/sfx.js?v=v7';
+import { Ambient } from './audio/ambient.js?v=v7';
+import { Music } from './audio/music.js?v=v7';
+import {
+  generateUnitAtlas,
+  atlasCell,
+  currentFrame,
+  ATLAS_CELL,
+  ATLAS_W,
+  ATLAS_H,
+} from './unit_atlas.js?v=v7';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -132,6 +140,20 @@ export class Game {
 
     // Initialize modules
     this.renderer = new Renderer(this.canvas);
+
+    // Generate the procedural unit sprite atlas and upload it as the
+    // texture bound for the unit batch.  This runs once at startup —
+    // the same atlas serves the whole match.  Per-instance atlas
+    // coordinates are computed each frame in buildUnitDescriptors.
+    try {
+      const atlasCanvas = generateUnitAtlas();
+      this.renderer.setUnitTexture(atlasCanvas, ATLAS_W, ATLAS_H);
+    } catch (err) {
+      // Atlas generation is non-fatal — renderer falls back to the
+      // 1×1 white pixel so units render as flat tinted quads.
+      console.warn('[unit_atlas] failed, falling back to flat quads:', err);
+    }
+
     this.camera = new Camera(this.canvas.clientWidth, this.canvas.clientHeight);
     this.camera.mapWidth = MAP_WIDTH;
     this.camera.mapHeight = MAP_HEIGHT;
@@ -1324,23 +1346,45 @@ export class Game {
    * Build unit descriptors for rendering from the state's render units.
    * Each unit is converted to raw world-pixel coordinates and Y-sorted.
    * Camera offset is applied by the renderer (same as terrain tiles).
+   *
+   * Each descriptor carries atlas coordinates (spriteOffsetX/Y/W/H) so
+   * the renderer's InstancedBatch can sample the correct (type, state,
+   * frame) cell from the unit sprite atlas.  Frame advances from the
+   * render clock (performance.now), with per-unit phase variation
+   * derived from entityID so a squad doesn't animate in lockstep.
    */
   buildUnitDescriptors(units) {
     const descs = [];
     const zoom = this.camera.zoom;
+    // All unit sprites render at a uniform on-screen size equal to one
+    // atlas cell × zoom.  The instanced shader couples source-rect size
+    // with destination-quad size (spriteSize is used both for texcoord
+    // scaling and vertex scaling), so sampling a full 32×32 atlas cell
+    // requires the on-screen quad to also be 32×32.  Visual size
+    // variation between unit types comes from the silhouettes
+    // themselves — vehicles fill more of the cell than infantry.
+    const spriteW = ATLAS_CELL * zoom;
+    const spriteH = ATLAS_CELL * zoom;
+    const timeMs = performance.now();
 
     for (const unit of units) {
       if (!unit.alive) continue;
 
       // Raw world-pixel position (same formula as terrain tiles).
+      // Centre the 32×32 sprite on the unit's tile footprint: shift
+      // left by half the width difference vs. the legacy per-type size
+      // so the sprite visually anchors where the old quad used to be.
       const sx = unit.renderX * TILE_WIDTH * zoom;
       const sy = unit.renderY * TILE_HEIGHT * zoom;
 
-      // Size based on unit type
+      // Size index still drives tint selection (below).
       const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
-      const size = UNIT_SIZES[sizeIdx];
-      const w = size.w * zoom;
-      const h = size.h * zoom;
+
+      // Pick current animation cell from the atlas.
+      const unitType = Math.max(0, Math.min(6, unit.unitType || 0));
+      const state = Math.max(0, Math.min(3, unit.currState || 0));
+      const frame = currentFrame(state, unit.entityID || 0, timeMs);
+      const cell = atlasCell(unitType, state, frame);
 
       // Color: base type color, tinted by team
       const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
@@ -1350,10 +1394,13 @@ export class Game {
       let g = color.g;
       let b = color.b;
 
-      // State overlay: darken idle, brighten moving, redden attacking
-      if (unit.currState === 1) { r *= 1.2; g *= 1.1; b *= 1.0; }      // moving: brighter
-      else if (unit.currState === 2) { r = Math.min(1.0, r + 0.3); g *= 0.7; b *= 0.5; } // attacking: redder
-      else if (unit.currState === 3) { r *= 0.8; g *= 0.8; b *= 0.8; } // retreating: darker
+      // State overlay: darken idle, brighten moving, redden attacking.
+      // These multipliers now layer ON TOP of the animated sprite —
+      // subtle enough to read as state feedback without obscuring the
+      // silhouette.
+      if (unit.currState === 1) { r *= 1.15; g *= 1.1; b *= 1.0; }     // moving: brighter
+      else if (unit.currState === 2) { r = Math.min(1.0, r + 0.2); g *= 0.85; b *= 0.7; } // attacking: warm shift
+      else if (unit.currState === 3) { r *= 0.85; g *= 0.85; b *= 0.85; } // retreating: darker
 
       // Check if this unit is selected -> brighten
       const isSelected = this.selectedEntityIDs.has(unit.entityID);
@@ -1377,8 +1424,15 @@ export class Game {
       descs.push({
         x: sx,
         y: sy,
-        w: w,
-        h: h,
+        // w/h are kept for HP-bar / selection-highlight geometry (those
+        // use the sprite footprint for layout).
+        w: spriteW,
+        h: spriteH,
+        // Atlas source rect — what drawUnits forwards to pushInstance.
+        spriteOffsetX: cell.x,
+        spriteOffsetY: cell.y,
+        spriteW: cell.w,
+        spriteH: cell.h,
         r: r,
         g: g,
         b: b,

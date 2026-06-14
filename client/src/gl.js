@@ -594,12 +594,22 @@ export class Renderer {
     this.effectsBatch = new SpriteBatch(gl, spriteProgram);
     this.unitBatch = new InstancedBatch(gl, instancedProgram);
 
-    // Placeholder texture: 1x1 white pixel
+    // Placeholder texture: 1x1 white pixel. Used by terrain, object,
+    // fog, and effects batches — those rely on the fragment-shader
+    // noise/colour path, not on a real atlas.
     this.whiteTexture = createWhitePixelTexture(gl);
 
     // Default atlas size (will be updated when real atlas is loaded)
     this.atlasWidth = 1;
     this.atlasHeight = 1;
+
+    // Unit sprite atlas.  Populated by setUnitTexture() with a canvas
+    // drawn procedurally at startup (see unit_atlas.js).  Until that
+    // call lands, the unit pass falls back to the white pixel so
+    // rendering still works (every unit is a flat tinted quad).
+    this.unitTexture = this.whiteTexture;
+    this.unitAtlasWidth = 1;
+    this.unitAtlasHeight = 1;
 
     // GL state
     gl.enable(gl.BLEND);
@@ -613,6 +623,42 @@ export class Renderer {
     this.canvas.width = Math.floor(rect.width * this.dpr);
     this.canvas.height = Math.floor(rect.height * this.dpr);
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  /**
+   * Upload a procedurally-generated canvas (or any image source) as the
+   * unit sprite atlas texture.  Called once at startup after the unit
+   * atlas is drawn (see unit_atlas.js).  Uses NEAREST filtering to
+   * preserve pixel-art edges.
+   * @param {HTMLCanvasElement|ImageBitmap|HTMLImageElement} canvas
+   * @param {number} atlasW    atlas width  in pixels
+   * @param {number} atlasH    atlas height in pixels
+   */
+  setUnitTexture(canvas, atlasW, atlasH) {
+    const gl = this.gl;
+    // Dispose the previous texture if we allocated one (skip the shared
+    // white pixel — it's still in use by the other batches).
+    if (this.unitTexture && this.unitTexture !== this.whiteTexture) {
+      gl.deleteTexture(this.unitTexture);
+    }
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      canvas,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.unitTexture = tex;
+    this.unitAtlasWidth = atlasW;
+    this.unitAtlasHeight = atlasH;
   }
 
   /** Clear screen and reset all batch state. Call once per frame. */
@@ -704,18 +750,33 @@ export class Renderer {
 
   /**
    * Batch unit sprites via instanced rendering.
-   * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number}>} units
+   *
+   * Each descriptor may carry atlas coordinates (`spriteOffsetX/Y`,
+   * `spriteW/H` in atlas pixels).  When present, they select a sub-rect
+   * of the unit texture atlas.  When absent, the call falls back to
+   * (0, 0, w, h) — sampling the whole texture, which is the legacy
+   * flat-quad path used before the atlas was wired up.
+   *
+   * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number,
+   *                [spriteOffsetX]:number, [spriteOffsetY]:number,
+   *                [spriteW]:number, [spriteH]:number}>} units
    * @param {{ x:number, y:number }} camera
    */
   drawUnits(units, camera) {
     const batch = this.unitBatch;
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
+      // Atlas source rect.  Defaults to (0,0)→(w,h) which (with the
+      // 1×1 white fallback texture) renders the legacy tinted quad.
+      const sox = u.spriteOffsetX || 0;
+      const soy = u.spriteOffsetY || 0;
+      const sw  = u.spriteW !== undefined ? u.spriteW : u.w;
+      const sh  = u.spriteH !== undefined ? u.spriteH : u.h;
       batch.pushInstance(
         u.x - camera.x,
         u.y - camera.y,
-        0, 0,             // sprite offset (placeholder)
-        u.w, u.h,         // sprite size
+        sox, soy,         // atlas offset (px)
+        sw, sh,           // atlas sprite size (px)
         u.r, u.g, u.b, 1.0,
       );
     }
@@ -836,8 +897,11 @@ export class Renderer {
     // Pass 2.5: fog overlay (between terrain and units)
     this.fogBatch.flush(proj, tex, time);
 
-    // Pass 3: units (instanced) — no time arg needed, signature differs.
-    this.unitBatch.flush(proj, tex, aw, ah);
+    // Pass 3: units (instanced) — uses the dedicated unit atlas texture
+    // (set via setUnitTexture) rather than the shared white pixel.  This
+    // keeps the unit batch on its own texture binding so terrain/effects
+    // passes are unaffected.
+    this.unitBatch.flush(proj, this.unitTexture, this.unitAtlasWidth, this.unitAtlasHeight);
 
     // Pass 4: effects
     this.effectsBatch.flush(proj, tex, time);

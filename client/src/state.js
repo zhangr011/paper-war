@@ -219,7 +219,7 @@ export class StateManager {
     // Fog of war grid
     this.fogWidth = 0;
     this.fogHeight = 0;
-    this.fogVisible = null; // Uint8Array: 0=fogged, 1=visible
+    this.fogVisible = null; // Uint8Array: 0=unexplored, 1=explored, 2=visible
   }
 
   // -----------------------------------------------------------------------

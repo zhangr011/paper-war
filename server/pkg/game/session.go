@@ -1252,13 +1252,15 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	posPool.Each(func(e ecs.Entity, pos *component.PositionComponent) {
 		id := uint32(e)
 
-		// Fog filtering: own units always visible, enemy only if in fog-visible tile
+		// Fog filtering: own units always visible, enemy only if in currently-visible tile.
+		// IsCurrentlyVisible (FogVisible=2) — NOT IsVisible (which includes FogExplored=1).
+		// Explored tiles show terrain but must NOT show live enemy positions.
 		if fogGrid != nil {
 			owner, hasOwner := ownerPool.Get(e)
 			if hasOwner && owner.PlayerID != playerID {
 				tileX := int32(pos.X >> 12)
 				tileY := int32(pos.Y >> 12)
-				if !fogGrid.IsVisible(tileX, tileY) {
+				if !fogGrid.IsCurrentlyVisible(tileX, tileY) {
 					return
 				}
 			}

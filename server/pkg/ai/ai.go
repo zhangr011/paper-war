@@ -11,6 +11,19 @@ import (
 	"github.com/user/paper-war/server/pkg/tilemap"
 )
 
+// ============================================================================
+// AI v2 — Strategic + Tactical Improvements (ADR-0017)
+//
+// Changes from v1:
+//   - SquadAssessment: composition-aware engagement (range, strength, HP)
+//   - Range-aware combat: uses squad's actual weapon range, not hardcoded 5.0
+//   - Target prioritization: scores enemies by value, vulnerability, distance
+//   - Force-ratio retreat: disengages from unwinnable fights, regroups at base
+//   - Offensive push: actively advances toward enemy base (elimination objective)
+//   - Wave recruitment: coordinated bursts instead of trickle-spending
+//   - Persistent enemy intel with decay (robust adaptive recruitment)
+// ============================================================================
+
 const (
 	StateIdle     uint8 = 0
 	StatePatrol   uint8 = 1
@@ -20,9 +33,15 @@ const (
 	StateDefend   uint8 = 5  // defend capture target or base
 	StateScout    uint8 = 6  // exploring fogged areas
 	StateCapture  uint8 = 7  // moving to capture stronghold
+	StatePush     uint8 = 8  // offensive push toward enemy base
+	StateRegroup  uint8 = 9  // falling back to rally with reinforcements
 
-	EvalInterval        uint32 = 30
-	RetreatHPThreshold         = 0.0 // disabled — fight to the death
+	EvalInterval uint32 = 30
+
+	// --- v2 retreat thresholds ---
+	RetreatHPThreshold = 0.25 // retreat when squad HP ratio below this AND outnumbered
+	CriticallyLowHP    = 0.10 // always retreat below this regardless of odds
+	ForceRatioRetreat  = 1.5  // retreat if enemyStrength/squadStrength exceeds this
 
 	// Role definitions for recruitment strategy
 	RoleFrontline = 0
@@ -30,9 +49,16 @@ const (
 	RoleHeavy     = 2
 
 	// Strategic constants
-	ExploreDuration     uint32 = 150 // ~30s at 5Hz tick
-	BaseDefenseRadius          = 12.0
-	BaseDefenseThreshold       = 1 // enemies near base to trigger defense
+	ExploreDuration   uint32 = 150 // ~30s at 5Hz tick
+	BaseDefenseRadius        = 12.0
+	BaseDefenseThreshold     = 2 // enemies near base to trigger defense (scaled response)
+
+	// v2 constants
+	IntelDecayInterval  uint32 = 100 // decay enemy intel every 100 ticks (~20s)
+	IntelDecayFactor           = 0.7 // 30% reduction per decay cycle
+	RecruitWaveInterval uint32 = 60  // ~12s between recruitment waves
+	RecruitWaveMinGold  int32  = 30  // minimum gold to trigger a wave
+	DefaultEngageRange         = 5.0 // fallback when squad composition unknown
 )
 
 // roleTargetRatio is the ideal army composition ratio for each role.
@@ -40,13 +66,13 @@ var roleTargetRatio = [3]float64{0.40, 0.30, 0.30}
 
 // unitRole maps each combat unit type to its tactical role.
 var unitRole = map[component.CombatUnitType]int{
-	component.UnitLightInfantry:      RoleFrontline,
-	component.UnitHeavyInfantry:      RoleFrontline,
-	component.UnitSniper:             RoleRanged,
-	component.UnitAntiArmorInfantry:  RoleRanged,
-	component.UnitMotorGun:           RoleHeavy,
-	component.UnitMotorArtillery:     RoleHeavy,
-	component.UnitMotorMissile:       RoleHeavy,
+	component.UnitLightInfantry:     RoleFrontline,
+	component.UnitHeavyInfantry:     RoleFrontline,
+	component.UnitSniper:            RoleRanged,
+	component.UnitAntiArmorInfantry: RoleRanged,
+	component.UnitMotorGun:          RoleHeavy,
+	component.UnitMotorArtillery:    RoleHeavy,
+	component.UnitMotorMissile:      RoleHeavy,
 }
 
 // roleUnits lists unit types available for each role, sorted by cost ascending.
@@ -81,20 +107,60 @@ const (
 	CmdRecruit uint8 = 3
 )
 
+// SquadAssessment holds computed combat stats for an AI squad.
+// Enables range-aware engagement, force-ratio evaluation, and composition tactics.
+type SquadAssessment struct {
+	UnitCount   int
+	MaxRange    int64 // max weapon range among squad members (fixed-point tiles)
+	TotalHP     int32
+	TotalMaxHP  int32
+	HPRatio     float64 // 0.0 - 1.0
+	RangedCount int     // units with ranged/heavy roles
+	MeleeCount  int     // units with frontline role
+	Strength    int     // weighted combat strength (heavy armor = 2, others = 1)
+}
+
+// IsRangedDominant returns true if ranged+heavy units outnumber frontline units.
+func (a SquadAssessment) IsRangedDominant() bool {
+	return a.RangedCount > a.MeleeCount
+}
+
+// CommitRange returns the distance at which the squad should stop closing and hold fire.
+// Ranged-dominant squads hold at their max range; melee-dominant squads close to 5.
+func (a SquadAssessment) CommitRange() int64 {
+	defaultRange := fixed.FromFloat(DefaultEngageRange)
+	if a.IsRangedDominant() && a.MaxRange > defaultRange {
+		return a.MaxRange
+	}
+	return defaultRange
+}
+
 type AISystem struct {
-	States       map[uint32]*AIState
-	AIPlayerID   uint32
-	FogSystem    *fog.FogSystem
-	MapW, MapH   int32
-	Objective    *tilemap.Objective      // objective for AI awareness
-	PlayerGold   map[uint32]int32        // reference to session gold pool
-	BaseX        int64                   // AI home base position (fixed-point)
-	BaseY        int64
-	Strongholds  [][2]int32              // stronghold tile positions on map
-	EnemyUnits      map[component.CombatUnitType]int // enemy composition intel
-	visitedSH       map[int]bool            // strongholds already sent squads to
-	RecruitDisabled bool                    // true → AI never issues recruit commands (clash/spectator mode)
-	MoveDisabled    bool                    // true → AI never issues move commands (clash mirror mode)
+	States     map[uint32]*AIState
+	AIPlayerID uint32
+	FogSystem  *fog.FogSystem
+	MapW, MapH int32
+	Objective  *tilemap.Objective // objective for AI awareness
+	PlayerGold map[uint32]int32   // reference to session gold pool
+
+	// Base positions (fixed-point)
+	BaseX       int64 // AI home base
+	BaseY       int64
+	EnemyBaseX  int64 // enemy spawn for offensive pressure
+	EnemyBaseY  int64
+
+	Strongholds [][2]int32 // stronghold tile positions on map
+
+	// Enemy composition intel — persistent across ticks (decays periodically)
+	EnemyUnits map[component.CombatUnitType]int
+
+	visitedSH       map[int]bool // strongholds already sent squads to
+	RecruitDisabled bool         // true → AI never issues recruit commands (clash/spectator mode)
+	MoveDisabled    bool         // true → AI never issues move commands (clash mirror mode)
+
+	// v2 internal state
+	lastIntelDecay  uint32
+	lastRecruitWave uint32
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
@@ -119,6 +185,12 @@ func (as *AISystem) SetBasePosition(x, y int64) {
 	as.BaseY = y
 }
 
+// SetEnemyBasePosition sets the enemy's spawn for offensive push logic.
+func (as *AISystem) SetEnemyBasePosition(x, y int64) {
+	as.EnemyBaseX = x
+	as.EnemyBaseY = y
+}
+
 // SetStrongholds provides the list of stronghold positions for capture logic.
 func (as *AISystem) SetStrongholds(positions [][2]int32) {
 	as.Strongholds = positions
@@ -134,6 +206,11 @@ func (as *AISystem) RegisterSquad(squadID, commanderID uint32) {
 	as.States[squadID] = state
 }
 
+// hasEnemyBase returns true if the enemy spawn position is known.
+func (as *AISystem) hasEnemyBase() bool {
+	return as.EnemyBaseX != 0 || as.EnemyBaseY != 0
+}
+
 func (as *AISystem) Update(
 	tick uint32,
 	cmdPool *ecs.ComponentPool[component.CommanderComponent],
@@ -141,6 +218,7 @@ func (as *AISystem) Update(
 	ownerPool *ecs.ComponentPool[component.OwnerComponent],
 	healthPool *ecs.ComponentPool[component.HealthComponent],
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent],
+	boidPool *ecs.ComponentPool[component.BoidComponent],
 ) []AICommand {
 	var cmds []AICommand
 	var aiFog *fog.FogGrid
@@ -148,17 +226,16 @@ func (as *AISystem) Update(
 		aiFog = as.FogSystem.GetGrid(as.AIPlayerID)
 	}
 
-	// Refresh enemy composition intel each tick
-	as.EnemyUnits = make(map[component.CombatUnitType]int)
-
-	// v1: AI recruitment check (skipped in clash/spectator mode)
-	if !as.RecruitDisabled {
-		cmds = append(cmds, as.recruitDecisions()...)
+	// Decay enemy intel periodically (keeps stale sightings from dominating)
+	if tick-as.lastIntelDecay >= IntelDecayInterval {
+		as.decayIntel()
+		as.lastIntelDecay = tick
 	}
 
-	// Track whether base is under threat
-	baseThreat := false
-	baseDefSq := fixed.FromFloat(BaseDefenseRadius) * fixed.FromFloat(BaseDefenseRadius)
+	// v2: Recruitment uses persistent intel (not reset each tick)
+	if !as.RecruitDisabled {
+		cmds = append(cmds, as.recruitDecisions(tick)...)
+	}
 
 	for squadID, state := range as.States {
 		cmdEntity := ecs.Entity(state.CommanderID)
@@ -168,68 +245,86 @@ func (as *AISystem) Update(
 			continue
 		}
 
-		// Emergency retreat: bypass cooldown
-		hpRatio := float64(health.HP) / float64(health.MaxHP)
-		if hpRatio < RetreatHPThreshold && hpRatio > 0 && state.State != StateRetreat {
+		// --- ASSESS SQUAD COMPOSITION ---
+		assessment := as.assessSquad(squadID, boidPool, healthPool, unitTypePool,
+			cmdEntity, &health)
+
+		// --- EMERGENCY RETREAT (bypass cooldown) ---
+		// Critically low HP units always retreat, regardless of force ratio.
+		hpRatio := assessment.HPRatio
+		if hpRatio > 0 && hpRatio < CriticallyLowHP && state.State != StateRetreat {
 			state.State = StateRetreat
 			if !as.MoveDisabled {
-				retreatX := fixed.FromFloat(1.0)
-				if fixed.ToFloat(pos.X) > float64(as.MapW)/2 {
-					retreatX = fixed.FromFloat(float64(as.MapW) - 2)
-				}
-				cmds = append(cmds, AICommand{
-					Type:    CmdMove,
-					SquadID: squadID,
-					TargetX: retreatX,
-					TargetY: pos.Y,
-				})
+				cmds = append(cmds, as.retreatCommand(squadID, pos))
 			}
 			continue
 		}
 
-		// Cooldown
+		// Cooldown for strategic decisions
 		if tick < state.NextEvalTick {
 			continue
 		}
 		state.NextEvalTick = tick + EvalInterval
 
-		// v1: Capture objective defense
+		// Clear retreat if HP has recovered sufficiently
+		if state.State == StateRetreat && hpRatio > RetreatHPThreshold+0.15 {
+			state.State = StateIdle
+		}
+
+		// --- CAPTURE OBJECTIVE DEFENSE ---
 		if as.Objective != nil && as.Objective.Type == tilemap.ObjectiveCapture {
 			cmds = append(cmds, as.captureDefense(squadID, state, pos)...)
 			continue
 		}
 
-		// Scan for nearest enemy and collect intel
-		bestDist, bestEnemyID, bestEnemyX, bestEnemyY := as.scanEnemies(
-			cmdPool, posPool, ownerPool, healthPool, unitTypePool, aiFog, pos)
+		// --- SCAN ENEMIES (scored target selection + force ratio) ---
+		_, bestDist, bestEnemyID, bestEnemyX, bestEnemyY, enemyStrength :=
+			as.scanEnemiesScored(cmdPool, posPool, ownerPool, healthPool, unitTypePool, aiFog, pos)
 
-		// --- BASE DEFENSE ---
-		// Check if any enemy is near the AI's base
+		// --- BASE DEFENSE (scaled response) ---
+		// Only recall non-engaged squads when a significant force threatens the base.
 		if as.BaseX != 0 || as.BaseY != 0 {
 			nearBase := as.countEnemiesNearBase(
 				cmdPool, posPool, ownerPool, healthPool, unitTypePool, aiFog)
-			if nearBase >= BaseDefenseThreshold {
-				baseThreat = true
-				// Recall this squad to defend base (unless already attacking)
-				if state.State != StateAttack {
-					state.State = StateDefend
+			if nearBase >= BaseDefenseThreshold &&
+				state.State != StateAttack && state.State != StateApproach {
+				state.State = StateDefend
+				if !as.MoveDisabled {
 					cmds = append(cmds, AICommand{
 						Type:    CmdMove,
 						SquadID: squadID,
 						TargetX: as.BaseX,
 						TargetY: as.BaseY,
 					})
-					continue
 				}
+				continue
 			}
 		}
 
 		// --- COMBAT (highest priority if enemies visible) ---
 		if bestEnemyID != 0 {
 			state.TargetUnitID = bestEnemyID
-			attackRange := fixed.FromFloat(5.0)
-			attackRangeSq := attackRange * attackRange
-			if bestDist <= attackRangeSq {
+
+			// Force-ratio check: retreat if badly outnumbered and not at full strength.
+			squadStrength := assessment.Strength
+			if squadStrength > 0 && enemyStrength > 0 &&
+				float64(enemyStrength)/float64(squadStrength) > ForceRatioRetreat &&
+				hpRatio < 0.60 {
+				state.State = StateRetreat
+				if !as.MoveDisabled {
+					cmds = append(cmds, as.retreatCommand(squadID, pos))
+				}
+				continue
+			}
+
+			// v2: Range-aware engagement.
+			// Issue attack always (units fire when in individual range).
+			// Issue move only if enemy is beyond the squad's commit range.
+			commitRange := assessment.CommitRange()
+			commitRangeSq := commitRange * commitRange
+
+			if bestDist <= commitRangeSq {
+				// Within commit range — hold position and fire.
 				state.State = StateAttack
 				cmds = append(cmds, AICommand{
 					Type:     CmdAttack,
@@ -237,7 +332,13 @@ func (as *AISystem) Update(
 					TargetID: bestEnemyID,
 				})
 			} else {
+				// Beyond commit range — close distance while firing.
 				state.State = StateApproach
+				cmds = append(cmds, AICommand{
+					Type:     CmdAttack,
+					SquadID:  squadID,
+					TargetID: bestEnemyID,
+				})
 				if !as.MoveDisabled {
 					cmds = append(cmds, AICommand{
 						Type:    CmdMove,
@@ -251,9 +352,13 @@ func (as *AISystem) Update(
 		}
 
 		// --- STRATEGIC BEHAVIORS (no enemy visible) ---
-		// Skip all strategic movement in clash mode (MoveDisabled)
 		if as.MoveDisabled {
 			continue
+		}
+
+		// Clear combat states
+		if state.State == StateAttack || state.State == StateApproach {
+			state.State = StateIdle
 		}
 
 		// Early-game exploration: first squad scouts fogged areas
@@ -261,6 +366,16 @@ func (as *AISystem) Update(
 			scoutCmd := as.exploreCommand(squadID, state, pos, aiFog)
 			if scoutCmd != nil {
 				cmds = append(cmds, *scoutCmd)
+				continue
+			}
+		}
+
+		// v2: Offensive push for elimination objective — advance toward enemy base.
+		if as.Objective != nil && as.Objective.Type == tilemap.ObjectiveElimination &&
+			as.hasEnemyBase() {
+			pushCmd := as.offensivePushCommand(squadID, state, pos)
+			if pushCmd != nil {
+				cmds = append(cmds, *pushCmd)
 				continue
 			}
 		}
@@ -287,16 +402,81 @@ func (as *AISystem) Update(
 		}
 	}
 
-	// Suppress unused warning — baseThreat could be used for future prioritization
-	_ = baseThreat
-	_ = baseDefSq
-
 	return cmds
 }
 
-// scanEnemies finds the nearest enemy unit and records enemy composition.
-// Returns (distSq, enemyID, enemyX, enemyY). enemyID=0 if none found.
-func (as *AISystem) scanEnemies(
+// assessSquad computes combat stats for a squad by iterating its members.
+// Includes the commander plus all combat units (BoidComponent with matching SquadID).
+func (as *AISystem) assessSquad(
+	squadID uint32,
+	boidPool *ecs.ComponentPool[component.BoidComponent],
+	healthPool *ecs.ComponentPool[component.HealthComponent],
+	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent],
+	cmdEntity ecs.Entity,
+	cmdHealth *component.HealthComponent,
+) SquadAssessment {
+	a := SquadAssessment{
+		MaxRange: fixed.FromFloat(DefaultEngageRange),
+	}
+
+	// Helper to process a single entity's contribution
+	processUnit := func(e ecs.Entity, hp component.HealthComponent) {
+		a.UnitCount++
+		a.TotalHP += hp.HP
+		a.TotalMaxHP += hp.MaxHP
+
+		ut, ok := unitTypePool.Get(e)
+		if !ok {
+			a.Strength += 1
+			a.MeleeCount++
+			return
+		}
+
+		stats := component.CombatUnitTypeTable[ut.Type]
+		rangeFix := fixed.FromFloat(float64(stats.Range))
+		if rangeFix > a.MaxRange {
+			a.MaxRange = rangeFix
+		}
+
+		if ut.Armor == component.ArmorHeavy {
+			a.Strength += 2
+		} else {
+			a.Strength += 1
+		}
+
+		role := unitRole[ut.Type]
+		if role == RoleRanged || role == RoleHeavy {
+			a.RangedCount++
+		} else {
+			a.MeleeCount++
+		}
+	}
+
+	// Include commander
+	processUnit(cmdEntity, *cmdHealth)
+
+	// Iterate squad members
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.SquadID != squadID || bc.Role == component.RoleCommander {
+			return
+		}
+		hp, hasHP := healthPool.Get(e)
+		if !hasHP || hp.HP <= 0 {
+			return
+		}
+		processUnit(e, hp)
+	})
+
+	if a.TotalMaxHP > 0 {
+		a.HPRatio = float64(a.TotalHP) / float64(a.TotalMaxHP)
+	}
+	return a
+}
+
+// scanEnemiesScored finds the best-scoring enemy target and counts enemy strength.
+// Returns (bestScore, distSq, enemyID, enemyX, enemyY, enemyStrength).
+// enemyID=0 if no visible enemy found. Also accumulates persistent enemy intel.
+func (as *AISystem) scanEnemiesScored(
 	cmdPool *ecs.ComponentPool[component.CommanderComponent],
 	posPool *ecs.ComponentPool[component.PositionComponent],
 	ownerPool *ecs.ComponentPool[component.OwnerComponent],
@@ -304,12 +484,13 @@ func (as *AISystem) scanEnemies(
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent],
 	aiFog *fog.FogGrid,
 	pos component.PositionComponent,
-) (bestDist int64, bestEnemyID uint32, bestEnemyX, bestEnemyY int64) {
+) (bestScore float64, bestDist int64, bestEnemyID uint32, bestEnemyX, bestEnemyY int64, enemyStrength int) {
+	bestScore = -1
 	bestDist = -1
 
-	// Scan enemy commanders first (highest priority targets)
-	cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
-		if !cmd.IsAlive {
+	// Single pass through healthPool — catches both commanders and combat units.
+	healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
+		if hp.HP <= 0 {
 			return
 		}
 		owner, hasOwner := ownerPool.Get(e)
@@ -323,14 +504,39 @@ func (as *AISystem) scanEnemies(
 		if aiFog != nil && !aiFog.IsVisible(int32(ePos.X>>12), int32(ePos.Y>>12)) {
 			return
 		}
-		// Record enemy commander type
-		if ut, ok := unitTypePool.Get(e); ok {
+
+		// Record persistent enemy intel
+		ut, hasUT := unitTypePool.Get(e)
+		if hasUT {
 			as.EnemyUnits[ut.Type]++
 		}
+
+		// Strength estimate
+		_, isCommander := cmdPool.Get(e)
+		if hasUT && ut.Armor == component.ArmorHeavy {
+			enemyStrength += 2
+		} else {
+			enemyStrength += 1
+		}
+
+		// Distance
 		dx := ePos.X - pos.X
 		dy := ePos.Y - pos.Y
 		dist := dx*dx + dy*dy
-		if bestDist < 0 || dist < bestDist {
+
+		// Score this target
+		hpRatio := 1.0
+		if hp.MaxHP > 0 {
+			hpRatio = float64(hp.HP) / float64(hp.MaxHP)
+		}
+		enemyArmor := component.ArmorLight
+		if hasUT {
+			enemyArmor = ut.Armor
+		}
+		score := scoreTarget(dist, isCommander, hpRatio, enemyArmor)
+
+		if score > bestScore {
+			bestScore = score
 			bestDist = dist
 			bestEnemyID = uint32(e)
 			bestEnemyX = ePos.X
@@ -338,40 +544,117 @@ func (as *AISystem) scanEnemies(
 		}
 	})
 
-	// Fall back to any enemy unit
-	if bestEnemyID == 0 {
-		healthPool.Each(func(e ecs.Entity, hp *component.HealthComponent) {
-			if hp.HP <= 0 {
-				return
-			}
-			owner, hasOwner := ownerPool.Get(e)
-			if !hasOwner || owner.PlayerID == as.AIPlayerID {
-				return
-			}
-			ePos, hasEPos := posPool.Get(e)
-			if !hasEPos {
-				return
-			}
-			if aiFog != nil && !aiFog.IsVisible(int32(ePos.X>>12), int32(ePos.Y>>12)) {
-				return
-			}
-			// Record enemy unit type
-			if ut, ok := unitTypePool.Get(e); ok {
-				as.EnemyUnits[ut.Type]++
-			}
-			dx := ePos.X - pos.X
-			dy := ePos.Y - pos.Y
-			dist := dx*dx + dy*dy
-			if bestDist < 0 || dist < bestDist {
-				bestDist = dist
-				bestEnemyID = uint32(e)
-				bestEnemyX = ePos.X
-				bestEnemyY = ePos.Y
-			}
-		})
+	return
+}
+
+// scoreTarget returns a priority score for an enemy unit. Higher = better target.
+//
+// Factors:
+//   - Distance: closer is preferred (inverse distance)
+//   - Commander: 3x priority (elimination win condition)
+//   - Low HP: finish kills for bounty and to reduce enemy force
+//   - Heavy armor: high-threat, worth prioritizing
+func scoreTarget(distSq int64, isCommander bool, hpRatio float64, enemyArmor component.ArmorType) float64 {
+	if distSq <= 0 {
+		distSq = 1
+	}
+	// Convert from fixed-point squared to tiles: sqrt(distSq) / One
+	distTiles := math.Sqrt(float64(distSq)) / float64(fixed.One)
+
+	// Base: inverse distance (closer = better, with +1 to avoid div-by-zero)
+	score := 10.0 / (distTiles + 1.0)
+
+	// Commander priority — winning the game matters most
+	if isCommander {
+		score *= 3.0
 	}
 
-	return
+	// Low HP bonus — finish off weakened enemies (bounty + removes threat)
+	if hpRatio < 0.3 {
+		score *= 1.8
+	} else if hpRatio < 0.5 {
+		score *= 1.3
+	}
+
+	// Heavy armor priority — high-threat units worth focusing
+	if enemyArmor == component.ArmorHeavy {
+		score *= 1.2
+	}
+
+	return score
+}
+
+// retreatCommand creates a move command toward the AI's base (or own side of map).
+func (as *AISystem) retreatCommand(squadID uint32, pos component.PositionComponent) AICommand {
+	retreatX := as.BaseX
+	retreatY := as.BaseY
+	if retreatX == 0 && retreatY == 0 {
+		retreatX = fixed.FromFloat(1.0)
+		if fixed.ToFloat(pos.X) > float64(as.MapW)/2 {
+			retreatX = fixed.FromFloat(float64(as.MapW) - 2)
+		}
+		retreatY = pos.Y
+	}
+	return AICommand{
+		Type:    CmdMove,
+		SquadID: squadID,
+		TargetX: retreatX,
+		TargetY: retreatY,
+	}
+}
+
+// offensivePushCommand sends a squad toward the enemy base via the nearest-to-enemy
+// stronghold as a natural waypoint (creates force concentration at forward positions).
+// Returns nil if the squad is already near the enemy base.
+func (as *AISystem) offensivePushCommand(squadID uint32, state *AIState, pos component.PositionComponent) *AICommand {
+	targetX := as.EnemyBaseX
+	targetY := as.EnemyBaseY
+
+	// Already at enemy base — let other behaviors take over (scout/patrol in enemy area)
+	dx := targetX - pos.X
+	dy := targetY - pos.Y
+	arriveThreshold := fixed.FromFloat(10.0) * fixed.FromFloat(10.0)
+	if dx*dx+dy*dy < arriveThreshold {
+		return nil
+	}
+
+	// Use the stronghold closest to the enemy base as a rally waypoint.
+	// This naturally concentrates multiple squads before the final push.
+	bestSH := -1
+	bestSHDistToEnemy := int64(-1)
+	for i, sh := range as.Strongholds {
+		shX := fixed.FromFloat(float64(sh[0]))
+		shY := fixed.FromFloat(float64(sh[1]))
+		sdx := shX - targetX
+		sdy := shY - targetY
+		dToEnemy := sdx*sdx + sdy*sdy
+		if bestSHDistToEnemy < 0 || dToEnemy < bestSHDistToEnemy {
+			bestSHDistToEnemy = dToEnemy
+			bestSH = i
+		}
+	}
+
+	if bestSH >= 0 {
+		sh := as.Strongholds[bestSH]
+		shX := fixed.FromFloat(float64(sh[0]))
+		shY := fixed.FromFloat(float64(sh[1]))
+		// If we haven't reached the waypoint stronghold yet, go there first
+		dxSH := shX - pos.X
+		dySH := shY - pos.Y
+		waypointThreshold := fixed.FromFloat(6.0) * fixed.FromFloat(6.0)
+		if dxSH*dxSH+dySH*dySH > waypointThreshold {
+			targetX = shX
+			targetY = shY
+		}
+	}
+
+	state.State = StatePush
+	return &AICommand{
+		Type:    CmdMove,
+		SquadID: squadID,
+		TargetX: targetX,
+		TargetY: targetY,
+	}
 }
 
 // countEnemiesNearBase returns how many enemy units are within BaseDefenseRadius of AI base.
@@ -529,9 +812,14 @@ func (as *AISystem) captureDefense(squadID uint32, state *AIState, pos component
 	}}
 }
 
+// ============================================================================
+// RECRUITMENT
+// ============================================================================
+
 // recruitDecisions returns recruit commands based on adaptive role-balanced strategy.
-// Role ratios shift based on observed enemy composition.
-func (as *AISystem) recruitDecisions() []AICommand {
+// v2: Wave-based timing — accumulates gold for coordinated bursts instead of trickle.
+// Role ratios shift based on observed enemy composition (persistent intel).
+func (as *AISystem) recruitDecisions(tick uint32) []AICommand {
 	if as.PlayerGold == nil {
 		return nil
 	}
@@ -539,6 +827,16 @@ func (as *AISystem) recruitDecisions() []AICommand {
 	if gold < 15 { // cheapest unit is LI at 15
 		return nil
 	}
+
+	// Wave-based timing: wait between waves unless gold is piling up.
+	// First wave (lastRecruitWave == 0) is always immediate.
+	if as.lastRecruitWave > 0 && tick-as.lastRecruitWave < RecruitWaveInterval {
+		// In cooldown — only recruit if gold is excessive (3x wave minimum)
+		if gold < RecruitWaveMinGold*3 {
+			return nil
+		}
+	}
+	as.lastRecruitWave = tick
 
 	// Compute adaptive role ratios based on enemy intel
 	adaptiveRatio := as.adaptiveRoleRatio()
@@ -640,6 +938,18 @@ func (as *AISystem) adaptiveRoleRatio() [3]float64 {
 	}
 
 	return ratio
+}
+
+// decayIntel reduces enemy composition counts to age out stale sightings.
+func (as *AISystem) decayIntel() {
+	for ut, count := range as.EnemyUnits {
+		decayed := int(float64(count) * IntelDecayFactor)
+		if decayed <= 0 {
+			delete(as.EnemyUnits, ut)
+		} else {
+			as.EnemyUnits[ut] = decayed
+		}
+	}
 }
 
 // pickRoleWithRatio returns the role index most underrepresented relative to given ratios.

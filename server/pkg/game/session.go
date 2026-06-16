@@ -364,10 +364,20 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 		return
 	}
 
-	// Set AI base position from map spawns (spawn[1] = AI/player 2)
+	// Set AI base position and enemy base position from map spawns.
+	// Spawns[0] = player 1, Spawns[1] = player 2 (AI in PvAI).
 	if len(gs.Map.Spawns) >= 2 {
-		sp := gs.Map.Spawns[1]
-		aiSys.SetBasePosition(fixed.FromFloat(float64(sp[0])), fixed.FromFloat(float64(sp[1])))
+		var mySp, enemySp [2]int32
+		if aiSys.AIPlayerID == 2 {
+			mySp = gs.Map.Spawns[1]
+			enemySp = gs.Map.Spawns[0]
+		} else {
+			// Clash mode: AISys2 plays as player 1
+			mySp = gs.Map.Spawns[0]
+			enemySp = gs.Map.Spawns[1]
+		}
+		aiSys.SetBasePosition(fixed.FromFloat(float64(mySp[0])), fixed.FromFloat(float64(mySp[1])))
+		aiSys.SetEnemyBasePosition(fixed.FromFloat(float64(enemySp[0])), fixed.FromFloat(float64(enemySp[1])))
 	}
 
 	// Wire build system spawn positions for placement range checks
@@ -417,12 +427,13 @@ func (gs *GameSession) runAI() {
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 
 	runAISys := func(aiSys *ai.AISystem) {
 		if aiSys == nil {
 			return
 		}
-		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool, unitTypePool)
+		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
 		for _, cmd := range aiCmds {
 			switch cmd.Type {
 			case ai.CmdMove:

@@ -458,6 +458,9 @@ export class Game {
         this.handleTactic('defend');
       } else if (key === 'r') {
         this.handleTactic('rally');
+      } else if (key >= '1' && key <= '4') {
+        // Formation hotkeys: 1=Line, 2=Wedge, 3=Circle, 4=Scatter
+        this.handleFormation(parseInt(key, 10) - 1);
       } else if (key === 'Escape') {
         this.cancelBuildMode();
       } else if (key === ' ') {
@@ -474,6 +477,13 @@ export class Game {
     document.querySelectorAll('[data-tactic]').forEach(btn => {
       btn.addEventListener('click', () => {
         this.handleTactic(btn.dataset.tactic);
+      });
+    });
+
+    // --- Formation buttons ---
+    document.querySelectorAll('.formation-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.handleFormation(parseInt(btn.dataset.formation, 10));
       });
     });
   }
@@ -688,6 +698,25 @@ export class Game {
         break;
       }
     }
+  }
+
+  handleFormation(formationType) {
+    if (this.input.selectedSquads.size === 0) return;
+    if (this.audioStarted) this.sfx.uiTactic();
+
+    for (const squadID of this.input.selectedSquads) {
+      this.connection.sendChangeFormation(squadID, formationType);
+    }
+
+    // Update active button state
+    document.querySelectorAll('.formation-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.formation, 10) === formationType);
+    });
+
+    // Update selection panel formation indicator
+    const formationNames = ['Line', 'Wedge', 'Circle', 'Scatter'];
+    const label = document.getElementById('sel-formation');
+    if (label) label.textContent = formationNames[formationType] ?? '--';
   }
 
   // -----------------------------------------------------------------------

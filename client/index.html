@@ -201,6 +201,10 @@
           <span class="selection-label">Status:</span>
           <span class="selection-value" id="sel-status">Idle</span>
         </div>
+        <div class="selection-row">
+          <span class="selection-label">Formation:</span>
+          <span class="selection-value" id="sel-formation">Line</span>
+        </div>
       </div>
       <button class="team-test-move-btn" id="team-test-move-btn" title="Move selected team to a random visible position">
         Test Move
@@ -244,6 +248,28 @@
           <button class="action-btn tactic-rally" data-tactic="rally" title="Rally [R]">
             <span class="action-key">R</span>
             <span class="action-name">Rally</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <span class="action-group-label">Formation</span>
+        <div class="action-buttons">
+          <button class="action-btn formation-btn active" data-formation="0" title="Line formation [1]">
+            <span class="action-key">1</span>
+            <span class="action-name">Line</span>
+          </button>
+          <button class="action-btn formation-btn" data-formation="1" title="Wedge / Column [2]">
+            <span class="action-key">2</span>
+            <span class="action-name">Wedge</span>
+          </button>
+          <button class="action-btn formation-btn" data-formation="2" title="Circle / Surround [3]">
+            <span class="action-key">3</span>
+            <span class="action-name">Circle</span>
+          </button>
+          <button class="action-btn formation-btn" data-formation="3" title="Scatter / Spread [4]">
+            <span class="action-key">4</span>
+            <span class="action-name">Scatter</span>
           </button>
         </div>
       </div>
@@ -305,6 +331,6 @@
 
   </div><!-- /game-screen -->
 
-  <script type="module" src="src/app.js?v=v8"></script>
+  <script type="module" src="src/app.js?v=v9"></script>
 </body>
 </html>

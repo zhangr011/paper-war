@@ -21,7 +21,7 @@ func TestClashModeBalance(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 
 	wins := [3]int{} // 0=Faction0(Blue), 1=Faction1(Red), 2=draw
-	const runs = 20
+	const runs = 40
 
 	for i := 0; i < runs; i++ {
 		gs := NewGameSession()
@@ -74,9 +74,10 @@ func TestClashModeBalance(t *testing.T) {
 	t.Logf("Clash balance over %d matches: Blue=%d, Red=%d, Draw=%d",
 		runs, wins[0], wins[1], wins[2])
 
-	// No single faction should win > 75% of matches
+	// No single faction should win > 70% of matches.  At 40 runs this
+	// gives ~3% false-positive rate for a fair coin, vs ~20% at 20 runs.
 	for faction, w := range wins[:2] {
-		if w >= int(float64(runs)*0.75) {
+		if w >= int(float64(runs)*0.70) {
 			name := "Blue"
 			if faction == 1 {
 				name = "Red"

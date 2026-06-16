@@ -2,16 +2,16 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v7';
-import { Camera } from './camera.js?v=v7';
-import { StateManager } from './state.js?v=v7';
-import { Connection } from './connection.js?v=v7';
-import { InputHandler } from './input.js?v=v7';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v7';
-import { AudioEngine } from './audio/audioengine.js?v=v7';
-import { SFX } from './audio/sfx.js?v=v7';
-import { Ambient } from './audio/ambient.js?v=v7';
-import { Music } from './audio/music.js?v=v7';
+import { Renderer } from './gl.js?v=v8';
+import { Camera } from './camera.js?v=v8';
+import { StateManager } from './state.js?v=v8';
+import { Connection } from './connection.js?v=v8';
+import { InputHandler } from './input.js?v=v8';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v8';
+import { AudioEngine } from './audio/audioengine.js?v=v8';
+import { SFX } from './audio/sfx.js?v=v8';
+import { Ambient } from './audio/ambient.js?v=v8';
+import { Music } from './audio/music.js?v=v8';
 import {
   generateUnitAtlas,
   atlasCell,
@@ -19,7 +19,7 @@ import {
   ATLAS_CELL,
   ATLAS_W,
   ATLAS_H,
-} from './unit_atlas.js?v=v7';
+} from './unit_atlas.js?v=v8';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -291,6 +291,11 @@ export class Game {
         if (u.team !== undefined) converted.team = u.team;
         return converted;
       });
+
+      // Start game timer on first snapshot (match start signal)
+      if (this.gameStartTime === 0) {
+        this.gameStartTime = performance.now();
+      }
 
       this.state.applySnapshot(snap.tick, snap.prevTick, units, snap.events, snap.fog);
 

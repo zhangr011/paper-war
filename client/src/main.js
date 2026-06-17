@@ -415,7 +415,14 @@ export class Game {
 
     const testMoveBtn = document.getElementById('team-test-move-btn');
     if (testMoveBtn) {
-      testMoveBtn.addEventListener('click', () => this.handleTestMove());
+      // Dev/test-only: hidden unless ?debug in URL. Lives in the selection
+      // panel and would otherwise clip on small screens.
+      const isDebug = new URLSearchParams(window.location.search).has('debug');
+      if (!isDebug) {
+        testMoveBtn.style.display = 'none';
+      } else {
+        testMoveBtn.addEventListener('click', () => this.handleTestMove());
+      }
     }
 
     // --- Recruit buttons ---

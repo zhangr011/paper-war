@@ -74,16 +74,26 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			}
 		}
 
-		// Auto-acquire target using smart targeting (4 priority tiers)
+		// Auto-acquire target using smart targeting with focus-fire on wounded enemies.
+		// Pass currentTarget for hysteresis — findTarget only switches to a new
+		// target if it's meaningfully better (lower priority tier, or same tier
+		// but wounded while current isn't). Prevents DPS waste from flip-flopping.
 		if ac.TargetID == 0 || !s.isTargetValid(e, ac, pos) {
-			ac.TargetID = s.findTarget(e, pos, ac.Range, weapon)
-		}
-
-		// If no target in attack range, try chase range (2x attack range)
-		// so units close the gap instead of standing idle.
-		if ac.TargetID == 0 {
-			chaseRange := ac.Range * 2
-			ac.TargetID = s.findTarget(e, pos, chaseRange, weapon)
+			ac.TargetID = s.findTarget(e, pos, ac.Range, weapon, 0)
+			// If no target in attack range, try chase range (2x attack range)
+			// so units close the gap instead of standing idle.
+			if ac.TargetID == 0 {
+				chaseRange := ac.Range * 2
+				ac.TargetID = s.findTarget(e, pos, chaseRange, weapon, 0)
+			}
+		} else {
+			// Already have a valid target — opportunistically switch to a
+			// meaningfully better one (e.g., a wounded enemy appeared in range).
+			// Hysteresis inside findTarget prevents frivolous switching.
+			newID := s.findTarget(e, pos, ac.Range, weapon, ac.TargetID)
+			if newID != 0 {
+				ac.TargetID = newID
+			}
 		}
 
 		if ac.TargetID == 0 {
@@ -218,19 +228,31 @@ func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackCo
 	return true
 }
 
-// findTarget implements smart auto-targeting with 4 priority tiers:
-// 1. Closest enemy Commander in range
-// 2. Closest enemy the weapon is strong against (dmg >= 100)
-// 3. Closest enemy the weapon can damage (dmg > 0)
-// 4. Closest enemy regardless
-func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionComponent, range_ int64, weapon component.WeaponType) uint32 {
+// findTarget implements smart auto-targeting with focus-fire on wounded enemies.
+//
+// Priority tiers (lower = preferred):
+//   1. Closest enemy Commander in range
+//   2. Closest wounded enemy (HP < 50% max) in range — focus-fire snowball
+//   3. Closest enemy the weapon is strong against (dmg >= 100)
+//   4. Closest enemy the weapon can damage (dmg > 0)
+//   5. Closest enemy regardless
+//
+// Within a tier, candidates are ranked by distance (closest first).
+//
+// Hysteresis: if currentTarget is non-zero and still in range, the function
+// only switches to a new target if it is meaningfully better — either in a
+// lower priority tier, or wounded while the current target isn't. This
+// prevents DPS waste from frivolous flip-flopping between near-equivalent
+// targets while still allowing the squad to converge on newly-wounded enemies.
+func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionComponent, range_ int64, weapon component.WeaponType, currentTarget uint32) uint32 {
 	ids := s.Sh.Query(pos.X, pos.Y, range_)
 	selfID := uint64(attacker)
 
 	type candidate struct {
 		id       uint32
 		distSq   int64
-		priority int // 1=commander, 2=strong, 3=canDamage, 4=any
+		priority int // 1=commander, 2=wounded, 3=strong, 4=canDamage, 5=any
+		wounded  bool
 	}
 
 	var candidates []candidate
@@ -249,9 +271,16 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 			}
 		}
 
-		// Skip dead targets
-		if hp, ok := s.healthPool.Get(entity); !ok || hp.HP <= 0 {
+		// Skip dead targets and capture HP for wounded-priority classification
+		hp, ok := s.healthPool.Get(entity)
+		if !ok || hp.HP <= 0 {
 			continue
+		}
+		// Wounded = below 50% of max. Treats fresh units (>=50%) as full-strength
+		// so the squad doesn't constantly retarget during the opening volley.
+		wounded := false
+		if hp.MaxHP > 0 && hp.HP*2 < hp.MaxHP {
+			wounded = true
 		}
 
 		tp, ok := s.posPool.Get(entity)
@@ -263,37 +292,69 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 		ds := (dx*dx + dy*dy) >> 12
 
 		// Determine priority
-		priority := 4 // any enemy
+		priority := 5 // any enemy
 		if s.unitTypePool != nil {
 			if ut, ok := s.unitTypePool.Get(entity); ok {
 				dmg := component.DamageMultiplier(weapon, ut.Armor)
 				if dmg >= 100 {
-					priority = 2 // strong against
+					priority = 3 // strong against
 				} else if dmg > 0 {
-					priority = 3 // can damage
+					priority = 4 // can damage
 				}
 			}
 		}
 
-		// Check if commander (tier 1)
+		// Wounded enemies jump to tier 2 (above strong-against, below commanders)
+		if wounded {
+			priority = 2
+		}
+
+		// Check if commander (tier 1 — highest priority)
 		if s.boidPool != nil {
 			if bc, ok := s.boidPool.Get(entity); ok && bc.Role == component.RoleCommander {
 				priority = 1
 			}
 		}
 
-		candidates = append(candidates, candidate{id: uint32(id), distSq: ds, priority: priority})
+		candidates = append(candidates, candidate{
+			id: uint32(id), distSq: ds, priority: priority, wounded: wounded,
+		})
 	}
 
 	if len(candidates) == 0 {
 		return 0
 	}
 
-	// Sort by priority (lower is better), then by distance
+	// Pick best by (priority asc, distSq asc)
 	best := candidates[0]
 	for _, c := range candidates[1:] {
 		if c.priority < best.priority || (c.priority == best.priority && c.distSq < best.distSq) {
 			best = c
+		}
+	}
+
+	// Hysteresis: if we have a current target, only switch if the new one is
+	// meaningfully better. This is what prevents flip-flopping in crowded battles.
+	if currentTarget != 0 {
+		var current *candidate
+		for i := range candidates {
+			if candidates[i].id == currentTarget {
+				current = &candidates[i]
+				break
+			}
+		}
+		if current != nil && current.id != best.id {
+			// Switch only if best is in a strictly lower priority tier, OR
+			// same tier but best is wounded while current isn't.
+			shouldSwitch := false
+			if best.priority < current.priority {
+				shouldSwitch = true
+			} else if best.priority == current.priority && best.wounded && !current.wounded {
+				shouldSwitch = true
+			}
+			if !shouldSwitch {
+				return current.id
+			}
 		}
 	}
 

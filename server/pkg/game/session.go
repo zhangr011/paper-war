@@ -12,6 +12,7 @@ import (
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/fog"
+	"github.com/user/paper-war/server/pkg/formation"
 	"github.com/user/paper-war/server/pkg/movement"
 	"github.com/user/paper-war/server/pkg/network"
 	"github.com/user/paper-war/server/pkg/objective"
@@ -1541,15 +1542,46 @@ func (gs *GameSession) handleChangeFormation(squadID uint32, formationType uint8
 	squadID = gs.resolveSquadID(squadID)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	formationPool := gs.World.Pool(component.FormationComponent{}).(*ecs.ComponentPool[component.FormationComponent])
+	formationRolePool := gs.World.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent])
 
+	// 1. Update FormationType on FormationComponent for all squad members.
+	// 2. Collect roles in entity order for CalcOffsets.
+	type entry struct {
+		entity ecs.Entity
+		role   component.BoidRole
+	}
+	var members []entry
 	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
 		if bc.SquadID != squadID {
 			return
 		}
-		if formation, ok := formationPool.GetPtr(e); ok {
-			formation.FormationType = component.FormationType(formationType)
+		if fc, ok := formationPool.GetPtr(e); ok {
+			fc.FormationType = component.FormationType(formationType)
+		}
+		if bc.Role != component.RoleCommander {
+			members = append(members, entry{entity: e, role: bc.Role})
 		}
 	})
+
+	if len(members) == 0 {
+		return
+	}
+
+	// 3. Compute new offsets via formation.CalcOffsets.
+	roles := make([]component.BoidRole, len(members))
+	for i, m := range members {
+		roles[i] = m.role
+	}
+	spacing := fixed.FromFloat(0.6)
+	offsets := formation.CalcOffsets(component.FormationType(formationType), spacing, roles)
+
+	// 4. Apply new offsets to FormationRoleComponent.
+	for i, m := range members {
+		if fr, ok := formationRolePool.GetPtr(m.entity); ok {
+			fr.OffsetX = offsets[i].DX
+			fr.OffsetY = offsets[i].DY
+		}
+	}
 }
 
 func (gs *GameSession) handleTacticalOrder(squadID uint32, orderType uint8) {

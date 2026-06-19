@@ -1819,9 +1819,13 @@ export class Game {
     if (!board) {
       board = document.createElement('div');
       board.id = 'spectator-scoreboard';
-      board.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
-        'z-index:100;font-family:sans-serif;display:flex;align-items:center;gap:12px;' +
-        'background:rgba(0,0,0,0.6);padding:6px 16px;border-radius:6px;color:#fff;font-size:14px;';
+      // Design #28: scoreboard overlays the parchment top-bar without a dark
+      // backing. Use text-shadow for legibility against the paper texture.
+      board.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);' +
+        'z-index:100;font-family:inherit;display:flex;align-items:center;gap:10px;' +
+        'background:transparent;padding:4px 12px;color:#fff;font-size:13px;font-weight:600;' +
+        'text-shadow:0 1px 2px rgba(60,40,20,0.9),0 0 4px rgba(60,40,20,0.7);' +
+        'pointer-events:none;';
       document.body.appendChild(board);
     }
 

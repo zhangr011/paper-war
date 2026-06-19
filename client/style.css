@@ -3,11 +3,14 @@
    ============================================ */
 
 :root {
-  --paper-bg: #E8D0A9;
+  /* Design #28 palette — tuned via OpenCV diff against design/main.png.
+     multiply-blend of parchment-tile (avg RGB 231,207,168) over these
+     base colors produces the design's warm cream (~RGB 195,175,145). */
+  --paper-bg: #E6E2D8;        /* warm cream — multiply with parchment-tile hits target RGB(195,175,145) */
   --paper-light: #F0E6D2;
   --paper-dark: #D4B88C;
   --map-bg: #1A3A1A;
-  --panel-header: #4A6B8A;
+  --panel-header: #2C394F;    /* deep slate navy — matches main.png header strips */
   --border-color: #A08060;
   --border-light: #C4AA82;
   --text-dark: #3A2A1A;

@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Paper War</title>
-  <link rel="stylesheet" href="style.css?v=v1">
+  <!-- Paper UIKit design system fonts: Teko (display/numerals) + Inter (body).
+       Loaded from Google Fonts with preconnect for faster cold-start. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=v2">
 </head>
 <body>
 
@@ -146,17 +151,22 @@
       </span>
     </div>
     <div class="top-bar-center">
-      <span class="resource" id="gold">
+      <span class="resource card" id="gold">
         <span class="resource-icon">&#9733;</span>
         <span class="resource-value">0</span>
         <span class="resource-label">Gold</span>
       </span>
-      <span class="resource" id="unit-count">
+      <span class="resource card" id="unit-count">
         <span class="resource-icon">&#9876;</span>
         <span class="resource-value">0</span>
         <span class="resource-label">Units</span>
       </span>
-      <span class="resource" id="score">
+      <span class="resource card" id="bases">
+        <span class="resource-icon">&#9873;</span>
+        <span class="resource-value">0</span>
+        <span class="resource-label">Bases</span>
+      </span>
+      <span class="resource card" id="score">
         <span class="resource-icon">&#9650;</span>
         <span class="resource-value">0</span>
         <span class="resource-label">Score</span>

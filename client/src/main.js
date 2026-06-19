@@ -1745,6 +1745,11 @@ export class Game {
     const goldEl = document.querySelector('#gold .resource-value');
     if (goldEl) goldEl.textContent = this.gold;
 
+    // BASES card — count of player-placed defensive structures (Paper UIKit design system).
+    // Bases card is hidden in spectator mode (no economy) via the .spectator-mode rule below.
+    const basesEl = document.querySelector('#bases .resource-value');
+    if (basesEl) basesEl.textContent = (this.placedStructures ? this.placedStructures.length : 0);
+
     const scoreEl = document.querySelector('#score .resource-value');
     if (scoreEl) scoreEl.textContent = this.score;
 

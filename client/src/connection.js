@@ -281,6 +281,16 @@ export class Connection {
       return;
     }
 
+    // Snapshot must be at least the header size (4 tick + 4 prevTick + 2 unitCount
+    // + 1 eventCount + 1 baseAlert = 12 bytes). Shorter buffers are malformed
+    // (e.g. fragmented/truncated WS frames from a misbehaving upstream) and would
+    // otherwise throw "Offset is outside the bounds of the DataView" at getUint32
+    // below. See issue #33.
+    if (checkView.byteLength < 12) {
+      console.warn('snapshot too short:', checkView.byteLength);
+      return;
+    }
+
     // --- Snapshot handling (existing code) ---
     // Check for appended fog data (marker 0xFF 0xFD)
     let fogData = null;

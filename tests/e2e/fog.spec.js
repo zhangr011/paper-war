@@ -115,6 +115,30 @@ test('enemy units are not present in fogged tiles', async ({ page }) => {
   await startSoloGame(page);
   await waitForFog(page);
 
+  // Wait for units to be populated. Without this, the first snapshot may
+  // arrive with fog data but no units yet (snapshot ordering), causing
+  // totalUnits=0 — a race, not a real bug.  3-second budget matches the
+  // 5Hz tick × ~15 snapshots, more than enough for full unit population.
+  await page.waitForFunction(
+    () => window.__paperWarGame?.state?.units?.size > 0,
+    { timeout: 3000 },
+  ).catch(() => { /* tolerate — the assertion below will give a clearer message */ });
+
+  // Capture diagnostic detail alongside the assertion values so failures
+  // are debuggable from the test output instead of being opaque zeroes.
+  const diag = await page.evaluate(() => {
+    const game = window.__paperWarGame;
+    const state = game && game.state ? game.state : null;
+    return {
+      hasGame: !!game,
+      hasState: !!state,
+      snapshotCount: game ? game.snapshotCount : -1,
+      unitsSize: state ? state.units.size : -1,
+      hasFog: !!(state && state.fogVisible && state.fogVisible.length),
+      playerID: game ? game.playerID : -1,
+    };
+  });
+
   const result = await page.evaluate(() => {
     const game = window.__paperWarGame;
     const state = game.state;
@@ -155,8 +179,9 @@ test('enemy units are not present in fogged tiles', async ({ page }) => {
     };
   });
 
-  // Game should have units
-  expect(result.totalUnits).toBeGreaterThan(0);
+  // Game should have units — include diagnostic context on failure so the
+  // root cause (snapshot race vs. real bug) is visible in test output.
+  expect(result.totalUnits, `diag=${JSON.stringify(diag)}`).toBeGreaterThan(0);
 
   // Player should have own units
   expect(result.ownUnitCount).toBeGreaterThan(0);

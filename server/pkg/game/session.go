@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"encoding/binary"
 	"math/rand"
 	"time"
 
@@ -1342,15 +1343,31 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	snap := gs.SnapGen.Generate(gs.tickCount, visStates, visIDs)
 
 	// Attach death events from DeathSystem
-	if gs.deathSys != nil && len(gs.deathSys.Deaths) > 0 {
-		for _, entityID := range gs.deathSys.Deaths {
+	if gs.deathSys != nil && len(gs.deathSys.DeathRecords) > 0 {
+		deadIDs := make([]uint32, 0, len(gs.deathSys.DeathRecords))
+		for _, rec := range gs.deathSys.DeathRecords {
+			// Issue #28 — enriched EventDeath payload:
+			//   entityID (uint32, 4B)
+			//   X         (int64,   8B)  — fixed-point position at death
+			//   Y         (int64,   8B)  — fixed-point position at death
+			//   tick      (uint32,  4B)  — simulation tick of death
+			// Total: 24 bytes.  The client uses X/Y to anchor the die
+			// animation at the exact death location rather than at the
+			// interpolated render position (which may have drifted).
+			data := make([]byte, 24)
+			le := binary.LittleEndian
+			le.PutUint32(data[0:4], rec.EntityID)
+			le.PutUint64(data[4:12], uint64(rec.X))
+			le.PutUint64(data[12:20], uint64(rec.Y))
+			le.PutUint32(data[20:24], rec.Tick)
 			snap.Events = append(snap.Events, network.Event{
 				Type: network.EventDeath,
-				Data: []byte{byte(entityID), byte(entityID >> 8), byte(entityID >> 16), byte(entityID >> 24)},
+				Data: data,
 			})
+			deadIDs = append(deadIDs, rec.EntityID)
 		}
 		// Clean up snapshot generator's prevStates for dead entities
-		gs.SnapGen.ClearPrevStates(gs.deathSys.Deaths)
+		gs.SnapGen.ClearPrevStates(deadIDs)
 	}
 	// Compute base alert: is the player's spawn under attack?
 	snap.BaseAlert = gs.checkBaseAlert(playerID)

@@ -396,12 +396,6 @@ export class StateManager {
           unit.currAngle = u.angle;
         }
         if (u.changedMask & CHANGED_HP) {
-          // Issue #28 — detect HP→0 transition to trigger the die animation.
-          // We set dyingAt once (idempotent) so subsequent snapshots that
-          // also report HP=0 don't reset the timer.
-          if (u.hp <= 0 && unit.currHP > 0 && unit.dyingAt === 0) {
-            unit.dyingAt = performance.now();
-          }
           unit.currHP = u.hp;
         }
         if (u.changedMask & CHANGED_TARGET_ID) {
@@ -571,17 +565,18 @@ export class StateManager {
     const now = performance.now();
     const result = [];
     for (const unit of this.units.values()) {
-      if (!unit.alive) continue;
       if (unit.dyingAt > 0) {
         if (now - unit.dyingAt > DEATH_FADE_MS) {
           // Fade complete — remove from active roster.
-          unit.alive = false;
           this.units.delete(unit.entityID);
           continue;
         }
-        // Still inside the die-animation window — include it.
+        // Still inside the die-animation window — include it even if
+        // the death event already flipped `alive` to false.  The die
+        // sprite atlas cell plays the collapse animation; the renderer
+        // fades alpha as `now - dyingAt → DEATH_FADE_MS`.
         result.push(unit);
-      } else {
+      } else if (unit.alive) {
         result.push(unit);
       }
     }
@@ -689,23 +684,57 @@ export class StateManager {
   }
 
   /**
-   * Handle a death event — mark the unit as not alive.
-   * Accepts either a parsed event {entityID} or a raw Uint8Array.
-   * @param {{entityID?:number, byteLength?:number, buffer?:ArrayBuffer, byteOffset?:number}} data
+   * Handle a death event — lock the unit into the die state and anchor
+   * its render position at the death location.
+   *
+   * Issue #28 — the server now includes the unit's fixed-point X/Y at
+   * the moment of death (captured BEFORE component teardown) plus the
+   * simulation tick.  We snap both prev and curr position to that
+   * location so the renderer plays the collapse animation at the exact
+   * tile the unit occupied, not at the extrapolated interpolated
+   * position which may have drifted past it.
+   *
+   * Accepts either a parsed event {entityID, x, y, tick} or a raw
+   * Uint8Array (legacy 4-byte payload — entityID only, no position).
+   * @param {{entityID?:number, x?:number, y?:number, tick?:number, byteLength?:number, buffer?:ArrayBuffer, byteOffset?:number}} data
    * @private
    */
   _handleDeath(data) {
     let entityID;
+    let deathX = null;
+    let deathY = null;
     if (data && typeof data.entityID === 'number') {
       entityID = data.entityID;
+      if (typeof data.x === 'number' && typeof data.y === 'number') {
+        deathX = fixedToFloat(data.x);
+        deathY = fixedToFloat(data.y);
+      }
     } else if (data && data.byteLength >= 4) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       entityID = view.getUint32(0, true);
+      // Enriched 24-byte payload (issue #28): X (int64) + Y (int64) + tick
+      if (data.byteLength >= 24) {
+        deathX = fixedToFloat(Number(view.getBigInt64(4, true)));
+        deathY = fixedToFloat(Number(view.getBigInt64(12, true)));
+      }
     }
     if (entityID !== undefined) {
       const unit = this.units.get(entityID);
       if (unit) {
         unit.alive = false;
+        // Idempotent: only set dyingAt on the first death event for this
+        // unit.  Subsequent events (or HP=0 snapshots) don't reset the
+        // timer — the die animation plays exactly once.
+        if (unit.dyingAt === 0) {
+          unit.dyingAt = performance.now();
+        }
+        // Snap render position to the authoritative death location so
+        // the collapse animation stays anchored even if interpolation
+        // had been leading/extrapolating the unit past the death tile.
+        if (deathX !== null && deathY !== null) {
+          unit.prevX = unit.currX = deathX;
+          unit.prevY = unit.currY = deathY;
+        }
       }
     }
   }

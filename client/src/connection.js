@@ -375,8 +375,18 @@ export class Connection {
           break;
         }
         case EVENT_DEATH: {
-          // entityID(uint32) = 4
+          // Issue #28 — enriched payload:
+          //   entityID (uint32, 4B)
+          //   X         (int64,   8B)  — fixed-point (FractionBits=12) position at death
+          //   Y         (int64,   8B)  — fixed-point position at death
+          //   tick      (uint32,  4B)  — simulation tick of death
+          // Total: 24 bytes.  X/Y anchor the die animation at the exact
+          // death tile; tick lets the client reconstruct when the unit
+          // died even if the event is processed a few snapshots late.
           evt.entityID = view.getUint32(off, true); off += 4;
+          evt.x = Number(view.getBigInt64(off, true)); off += 8;
+          evt.y = Number(view.getBigInt64(off, true)); off += 8;
+          evt.tick = view.getUint32(off, true); off += 4;
           break;
         }
         case EVENT_TERRAIN_CHANGE: {

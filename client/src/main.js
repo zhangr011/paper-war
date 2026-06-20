@@ -12,6 +12,7 @@ import { AudioEngine } from './audio/audioengine.js?v=v8';
 import { SFX } from './audio/sfx.js?v=v8';
 import { Ambient } from './audio/ambient.js?v=v8';
 import { Music } from './audio/music.js?v=v8';
+import { formatMatchResultHeading } from './match_result.js?v=v8';
 import {
   generateUnitAtlas,
   atlasCell,
@@ -1936,17 +1937,9 @@ export class Game {
       document.body.appendChild(overlay);
     }
     const pid = this.connection.playerID;
-    let heading, headingColor;
-    if (pid === 0) {
-      // Spectator: show neutral result (winner=0 is FactionPlayer/Blue, winner=1 is FactionEnemy/Red)
-      const teamName = winner === 0 ? 'Blue' : 'Red';
-      heading = `Team ${teamName} Wins!`;
-      headingColor = winner === 0 ? '#4488FF' : '#FF4444';
-    } else {
-      const isWin = winner === (pid - 1); // pid 1 = faction 0, pid 2 = faction 1
-      heading = isWin ? 'Victory!' : 'Defeat';
-      headingColor = isWin ? '#4CAF50' : '#FF4444';
-    }
+    // Heading decision is extracted to match_result.js so the spectator-vs-
+    // player branching is unit-testable without a Game instance.
+    const { heading, color: headingColor } = formatMatchResultHeading(pid, winner);
 
     // Build AAR stats table if stats available
     let statsHTML = '';

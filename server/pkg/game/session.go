@@ -491,6 +491,10 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 
 	gs.objectiveSys.Reset(gs.Map)
 
+	// Reset match statistics — without this, stats accumulate across matches
+	// in the same server session (issue #34: result statistics error again).
+	gs.stats = NewMatchStats()
+
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)
 	gs.lastSentGold = make(map[uint32]int32)
@@ -539,6 +543,10 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 
 	// Reset objective system (reuse existing, update map)
 	gs.objectiveSys.Reset(gs.Map)
+
+	// Reset match statistics — without this, stats accumulate across matches
+	// in the same server session (issue #34: result statistics error again).
+	gs.stats = NewMatchStats()
 
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)

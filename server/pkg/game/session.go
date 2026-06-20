@@ -1278,16 +1278,19 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 			Y:     pos.Y,
 			Angle: pos.Angle,
 		}
+		// Track owner/squad for the AI-state lookup below.
+		var unitOwner uint8
+		var unitSquad uint32
+		var hasSquad bool
 		if vel, ok := velPool.Get(e); ok {
 			state.Vx = vel.Vx
 			state.Vy = vel.Vy
-			if vel.Vx != 0 || vel.Vy != 0 {
-				state.State = 1
-			}
 		}
 		if boid, ok := boidPool.Get(e); ok {
 			ui.SquadID = boid.SquadID
 			state.SquadID = boid.SquadID
+			unitSquad = boid.SquadID
+			hasSquad = true
 		}
 		if health, ok := healthPool.Get(e); ok {
 			state.HP = health.HP
@@ -1301,6 +1304,34 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		}
 		if owner, hasOwner := ownerPool.Get(e); hasOwner {
 			state.Team = uint8(owner.PlayerID)
+			unitOwner = uint8(owner.PlayerID)
+		}
+		// Issue #28 — copy the AI squad state into the per-unit wire state.
+		// Previously this was hardcoded to 0/1 from velocity, so the client
+		// never saw Attack (3) / Defend (5) / etc., and the attack/die
+		// animations never triggered.  Now we look up the owning player's
+		// AISystem and forward its squad-level State verbatim.  Player-
+		// controlled squads (no AI state) fall through to a velocity
+		// heuristic so the client still sees a move/idle signal.
+		if hasSquad {
+			var aiSys *ai.AISystem
+			// AISys owns player 2's squads; AISys2 owns player 1's (clash).
+			if unitOwner == 1 && gs.AISys2 != nil {
+				aiSys = gs.AISys2
+			} else if gs.AISys != nil {
+				aiSys = gs.AISys
+			}
+			if aiSys != nil {
+				if aiState, ok := aiSys.States[unitSquad]; ok {
+					state.State = aiState.State
+				}
+			}
+		}
+		// Velocity fallback — only when no AI state was assigned (player-
+		// controlled units without an AIState entry).  Preserves the old
+		// behaviour for those units so the client still gets a move/idle cue.
+		if state.State == 0 && (state.Vx != 0 || state.Vy != 0) {
+			state.State = 1
 		}
 		units = append(units, ui)
 		allStates = append(allStates, state)

@@ -18,7 +18,17 @@ func TestFormationOffsetsRawValues(t *testing.T) {
     
     commanderPos := fixed.FromFloat(10)
     spacing := fixed.FromFloat(1.2)
-    
+
+    // Issue #01 regression: assert that combat units (non-commanders) have
+    // NON-ZERO formation offsets.  Before the fix, FormationRoleComponent
+    // was created with only Role set, leaving OffsetX/OffsetY as Go zero
+    // values — every unit collapsed onto the commander's tile.
+    type roleOffset struct {
+        role    component.BoidRole
+        offsetX int64
+        offsetY int64
+    }
+    var offsets []roleOffset
     frPool.Each(func(e ecs.Entity, fr *component.FormationRoleComponent) {
         bc, _ := boidPool.Get(e)
         if bc.Role == component.RoleCommander {
@@ -27,14 +37,38 @@ func TestFormationOffsetsRawValues(t *testing.T) {
         pos, _ := posPool.Get(e)
         t.Logf("unit %d: offsetX=%d offsetY=%d posX=%d posY=%d dxFromCmd=%d dyFromCmd=%d",
             e, fr.OffsetX, fr.OffsetY, pos.X, pos.Y,
-            pos.X - commanderPos, pos.Y - commanderPos)
-        
-        // Check spacing is meaningful
+            pos.X-commanderPos, pos.Y-commanderPos)
+
         oxTiles := fixed.ToFloat(fr.OffsetX)
         oyTiles := fixed.ToFloat(fr.OffsetY)
         t.Logf("  offset: %.2f x %.2f tiles", oxTiles, oyTiles)
         t.Logf("  spacing value: %d (=%.2f tiles)", spacing, fixed.ToFloat(spacing))
+
+        offsets = append(offsets, roleOffset{bc.Role, fr.OffsetX, fr.OffsetY})
     })
+
+    if len(offsets) == 0 {
+        t.Fatal("no combat-unit FormationRoleComponents found — test setup is wrong")
+    }
+    // Every combat unit must have a non-zero formation slot.  (Y offset is
+    // always > 0 because the grid is built as row+1 behind the commander,
+    // so checking only X would miss the most common regression: X all zero.)
+    for i, o := range offsets {
+        if o.offsetX == 0 && o.offsetY == 0 {
+            t.Errorf("unit %d has zero offsets — formation collapse bug (#01) regressed", i)
+        }
+    }
+    // Sanity: at least one unit should have a non-zero X offset (otherwise
+    // the column spread logic is broken even if Y is set).
+    nonzeroX := 0
+    for _, o := range offsets {
+        if o.offsetX != 0 {
+            nonzeroX++
+        }
+    }
+    if nonzeroX == 0 {
+        t.Errorf("no combat unit has a non-zero X offset — formation column logic broken")
+    }
     
     // Also log what the grid calc would be
     unitCount := 5

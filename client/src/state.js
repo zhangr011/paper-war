@@ -47,6 +47,19 @@ const MAX_EXTRAPOLATION_T = MAX_EXTRAPOLATION_MS / TICK_DURATION_MS;
 // naturally instead of continuing at full speed into infinity.
 const EXTRAPOLATION_VELOCITY_DECAY = 0.7;
 
+// Issue #28 — Death animation lifecycle.
+// After a unit's HP hits 0, the renderer plays the die animation for
+// this many milliseconds before the unit is removed from the render
+// list.  Tuned to match the die state's 4 frames × ~150 ms.
+const DEATH_FADE_MS = 600;
+
+// Issue #28 — Facing dead-zone.
+// Position deltas below this threshold don't update facing, so units
+// that are essentially stationary don't flicker between directions.
+// In tile-space (state.js stores positions as tile floats), 0.01 tile
+// per tick ≈ 0.1 tile/sec at 10Hz — well below visible movement.
+const FACING_DEADZONE_SQ = 0.01 * 0.01;
+
 // Accelerated correction: when the interpolated position is far from the
 // target, blend toward it faster to avoid a visible "slide".
 const CORRECTION_THRESHOLD = 5.0; // world units (only genuine desyncs, not normal movement)
@@ -141,6 +154,19 @@ class UnitState {
     this.renderX = 0;
     this.renderY = 0;
     this.renderAngle = 0;
+
+    // Facing (cardinal direction) — issue #28.
+    //   0=S, 1=E, 2=N, 3=W (see unit_atlas.js DIR_* constants)
+    // Computed in update() from (prev→curr) position delta.  Defaults
+    // to S so freshly-spawned stationary units have a valid atlas row.
+    this.facing = 0;
+
+    // Death lifecycle — issue #28.
+    //   0          = alive (or not yet killed)
+    //   <timestamp> = time HP first hit 0 (set once, never reset)
+    // The renderer plays the die animation for ~600 ms after dyingAt,
+    // then the unit is removed from getRenderUnits().
+    this.dyingAt = 0;
 
     // Non-interpolated fields (use curr directly)
     this.targetID = 0;
@@ -370,6 +396,12 @@ export class StateManager {
           unit.currAngle = u.angle;
         }
         if (u.changedMask & CHANGED_HP) {
+          // Issue #28 — detect HP→0 transition to trigger the die animation.
+          // We set dyingAt once (idempotent) so subsequent snapshots that
+          // also report HP=0 don't reset the timer.
+          if (u.hp <= 0 && unit.currHP > 0 && unit.dyingAt === 0) {
+            unit.dyingAt = performance.now();
+          }
           unit.currHP = u.hp;
         }
         if (u.changedMask & CHANGED_TARGET_ID) {
@@ -501,6 +533,25 @@ export class StateManager {
 
       // Angle does not use accelerated correction (it would cause spinning)
       unit.renderAngle = ra;
+
+      // Issue #28 — update facing from the (prev → curr) position delta.
+      // We use the snapshot delta rather than the interpolated render
+      // delta because the latter can briefly be zero at t≈0 even when
+      // the unit is moving, causing flicker.  The deadzone prevents
+      // jitter when the unit is essentially stationary.
+      const dxSnap = unit.currX - unit.prevX;
+      const dySnap = unit.currY - unit.prevY;
+      const distSq = dxSnap * dxSnap + dySnap * dySnap;
+      if (distSq > FACING_DEADZONE_SQ) {
+        // Cardinal snap: pick the axis with the larger magnitude.
+        // Ties go to the horizontal axis (E/W), which feels natural for
+        // a side-view bias.  Coordinate system: +y is south on screen.
+        if (Math.abs(dxSnap) >= Math.abs(dySnap)) {
+          unit.facing = dxSnap > 0 ? 1 /*DIR_E*/ : 3 /*DIR_W*/;
+        } else {
+          unit.facing = dySnap > 0 ? 0 /*DIR_S*/ : 2 /*DIR_N*/;
+        }
+      }
     }
   }
 
@@ -510,12 +561,29 @@ export class StateManager {
 
   /**
    * Get all alive units with their interpolated render positions.
+   *
+   * Issue #28 — units in the death-fade window (HP just hit 0) are
+   * still included so the renderer can play the die animation.  They
+   * are removed automatically once `now - dyingAt > DEATH_FADE_MS`.
    * @returns {UnitState[]}
    */
   getRenderUnits() {
+    const now = performance.now();
     const result = [];
     for (const unit of this.units.values()) {
-      if (unit.alive) result.push(unit);
+      if (!unit.alive) continue;
+      if (unit.dyingAt > 0) {
+        if (now - unit.dyingAt > DEATH_FADE_MS) {
+          // Fade complete — remove from active roster.
+          unit.alive = false;
+          this.units.delete(unit.entityID);
+          continue;
+        }
+        // Still inside the die-animation window — include it.
+        result.push(unit);
+      } else {
+        result.push(unit);
+      }
     }
     return result;
   }

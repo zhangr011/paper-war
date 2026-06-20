@@ -19,6 +19,19 @@ import {
   ATLAS_CELL,
   ATLAS_W,
   ATLAS_H,
+  // Issue #28 — direction & state constants for the new 5-state × 4-dir atlas.
+  STATES,
+  DIRECTIONS,
+  STATE_IDLE,
+  STATE_IDLE2,
+  STATE_MOVE,
+  STATE_ATTACK,
+  STATE_DIE,
+  DIR_S,
+  DIR_E,
+  DIR_N,
+  DIR_W,
+  FRAMES_PER_STATE,
 } from './unit_atlas.js?v=v8';
 
 // ---------------------------------------------------------------------------
@@ -145,7 +158,20 @@ export class Game {
     // texture bound for the unit batch.  This runs once at startup —
     // the same atlas serves the whole match.  Per-instance atlas
     // coordinates are computed each frame in buildUnitDescriptors.
+    //
+    // Issue #28 — atlas grew from 7×4=28 rows to 7×5×4=140 rows
+    // (512×4480).  WebGL 2 guarantees MAX_TEXTURE_SIZE >= 4096; most
+    // hardware supports 8192+.  Verify the limit and warn if we exceed
+    // it (units would render as flat quads via the white-pixel fallback).
     try {
+      const gl = this.renderer.gl;
+      const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      if (maxTex && (ATLAS_W > maxTex || ATLAS_H > maxTex)) {
+        console.warn(
+          `[unit_atlas] atlas ${ATLAS_W}×${ATLAS_H} exceeds MAX_TEXTURE_SIZE ${maxTex}; ` +
+          `unit sprites will be incomplete.  Consider packing the atlas wider.`,
+        );
+      }
       const atlasCanvas = generateUnitAtlas();
       this.renderer.setUnitTexture(atlasCanvas, ATLAS_W, ATLAS_H);
     } catch (err) {
@@ -1422,10 +1448,58 @@ export class Game {
       const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
 
       // Pick current animation cell from the atlas.
+      // Issue #28 — map server AI state (0=Idle,1=Patrol,2=Approach,
+      // 3=Attack,4=Retreat,5=Defend,6=Scout,7=Capture,8=Push,9=Regroup)
+      // onto atlas state (0=Idle,1=Idle2,2=Move,3=Attack,4=Die) and pick
+      // the cardinal facing from unit.facing.
       const unitType = Math.max(0, Math.min(6, unit.unitType || 0));
-      const state = Math.max(0, Math.min(3, unit.currState || 0));
-      const frame = currentFrame(state, unit.entityID || 0, timeMs);
-      const cell = atlasCell(unitType, state, frame);
+      const serverState = unit.currState || 0;
+      const eid = unit.entityID || 0;
+
+      let state;
+      let frame;
+      let dir = Math.max(DIR_S, Math.min(DIR_W, unit.facing ?? DIR_S));
+
+      if (unit.dyingAt > 0) {
+        // Death animation: drive frame from elapsed time so the 4-frame
+        // collapse plays once over the 600ms fade window, then holds on
+        // the final pose until the unit is removed by getRenderUnits().
+        state = STATE_DIE;
+        const dieFrames = FRAMES_PER_STATE[STATE_DIE];
+        const dieElapsed = timeMs - unit.dyingAt;
+        const DIE_DURATION_MS = 600;
+        const dieT = Math.min(1, dieElapsed / DIE_DURATION_MS);
+        frame = Math.min(dieFrames - 1, Math.floor(dieT * dieFrames));
+      } else {
+        // Server state → atlas state mapping.  All "moving" AI states
+        // (Patrol/Approach/Scout/Capture/Push/Regroup) collapse to
+        // MOVE; Retreat also reads as MOVE (walking backward, the
+        // facing system handles the direction).  Defend maps to IDLE2
+        // (alert/idle variant) so defenders visually differ from
+        // idle garrison units.
+        switch (serverState) {
+          case 3: state = STATE_ATTACK; break;
+          case 5: state = STATE_IDLE2; break;
+          case 4: state = STATE_MOVE; break;  // retreat — same walk cycle
+          case 1: case 2: case 6: case 7: case 8: case 9:
+            state = STATE_MOVE; break;
+          case 0: default:
+            state = STATE_IDLE;
+            // Idle-flicker: ~10% of the time, idle units briefly play
+            // the idle2 variant (head turn / shuffle).  Phase is per-
+            // entity so a squad doesn't animate in lockstep.  (Spec:
+            // issue #28 "plays ~10% of the time on idle units".)
+            {
+              const phase = (timeMs / 5000) + eid * 0.37;
+              const frac = phase - Math.floor(phase);
+              if (frac < 0.10) state = STATE_IDLE2;
+            }
+            break;
+        }
+        frame = currentFrame(state, eid, timeMs);
+      }
+
+      const cell = atlasCell(unitType, state, dir, frame);
 
       // Color: base type color, tinted by team
       const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
@@ -1438,10 +1512,12 @@ export class Game {
       // State overlay: darken idle, brighten moving, redden attacking.
       // These multipliers now layer ON TOP of the animated sprite —
       // subtle enough to read as state feedback without obscuring the
-      // silhouette.
-      if (unit.currState === 1) { r *= 1.15; g *= 1.1; b *= 1.0; }     // moving: brighter
-      else if (unit.currState === 2) { r = Math.min(1.0, r + 0.2); g *= 0.85; b *= 0.7; } // attacking: warm shift
-      else if (unit.currState === 3) { r *= 0.85; g *= 0.85; b *= 0.85; } // retreating: darker
+      // silhouette.  Issue #28: keys off the resolved atlas `state`
+      // rather than the raw server state so the tint matches the art.
+      if (state === STATE_MOVE) { r *= 1.15; g *= 1.1; b *= 1.0; }     // moving: brighter
+      else if (state === STATE_ATTACK) { r = Math.min(1.0, r + 0.2); g *= 0.85; b *= 0.7; } // attacking: warm shift
+      else if (state === STATE_DIE) { r *= 0.6; g *= 0.6; b *= 0.6; } // dying: heavily darkened
+      else if (state === STATE_IDLE2) { r *= 0.95; g *= 0.95; b *= 1.0; } // idle2: subtle cool
 
       // Check if this unit is selected -> brighten
       const isSelected = this.selectedEntityIDs.has(unit.entityID);

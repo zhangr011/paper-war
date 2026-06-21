@@ -26,6 +26,23 @@ export class SFX {
 
   // --- Low-level synth helpers ---
 
+  /**
+   * Create a GainNode connected to the SFX bus that auto-disconnects after
+   * `holdMs`. Without this every SFX call leaks gain nodes — they remain
+   * reachable via sfxGain indefinitely even after their envelopes have
+   * finished. (Issue #30 memory leak.)
+   */
+  _gain(peak, attack, decay, startTime) {
+    const gain = this.engine.ctx.createGain();
+    gain.connect(this.engine.sfxGain);
+    this._env(gain, peak, attack, decay, startTime);
+    // Disconnect shortly after the envelope finishes. The +50ms pad covers
+    // the exponential ramp tail without cutting audible content.
+    setTimeout(() => { try { gain.disconnect(); } catch (e) {} },
+               (attack + decay) * 1000 + 50);
+    return gain;
+  }
+
   _env(gainNode, peak, attack, decay, startTime) {
     const g = gainNode.gain;
     g.setValueAtTime(0, startTime);
@@ -39,6 +56,10 @@ export class SFX {
     osc.frequency.setValueAtTime(freq, startTime);
     osc.start(startTime);
     osc.stop(startTime + duration);
+    // Issue #30: disconnect from the audio graph on ended so the node
+    // can be GC'd. Without this, every SFX call leaks 3-5 nodes that stay
+    // reachable via the graph connection to sfxGain indefinitely.
+    osc.onended = () => { try { osc.disconnect(); } catch (e) {} };
     return osc;
   }
 
@@ -51,6 +72,10 @@ export class SFX {
     src.connect(filter);
     src.start(startTime);
     src.stop(startTime + duration);
+    // Issue #30: same as _osc — disconnect on end so the node is GC-able.
+    src.onended = () => {
+      try { src.disconnect(); filter.disconnect(); } catch (e) {}
+    };
     return { src, filter };
   }
 
@@ -81,19 +106,15 @@ export class SFX {
     // HI: heavier
     else if (unitType === UNIT_HI) { peak = 0.18; decay = 0.08; filterFreq = 2000; }
 
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, peak, attack, decay, t);
+    const gain = this._gain(peak, attack, decay, t);
 
     const { src } = this._noiseFilter('bandpass', filterFreq, 2, t, decay);
     src.connect(gain);
 
     // Add a sharp transient click
     const click = this._osc('square', 800, t, 0.01);
-    const clickGain = this.engine.ctx.createGain();
-    this._env(clickGain, peak * 0.5, 0.001, 0.008, t);
+    const clickGain = this._gain(peak * 0.5, 0.001, 0.008, t);
     click.connect(clickGain);
-    clickGain.connect(this.engine.sfxGain);
 
     setTimeout(() => this.engine.releaseVoice(), (attack + decay) * 1000 + 50);
   }
@@ -108,9 +129,7 @@ export class SFX {
     const t = this.engine.now;
     const peak = 0.4, attack = 0.005, decay = 0.5;
 
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, peak, attack, decay, t);
+    const gain = this._gain(peak, attack, decay, t);
 
     // Low rumble noise
     const { src, filter } = this._noiseFilter('lowpass', 200, 1, t, decay);
@@ -125,6 +144,9 @@ export class SFX {
     subGain.gain.exponentialRampToValueAtTime(0.001, t + decay);
     sub.connect(subGain);
     subGain.connect(this.engine.sfxGain);
+    // Issue #30: disconnect the unattached subGain when its envelope ends.
+    setTimeout(() => { try { subGain.disconnect(); } catch (e) {} },
+               decay * 1000 + 100);
 
     setTimeout(() => this.engine.releaseVoice(), decay * 1000 + 100);
   }
@@ -139,9 +161,7 @@ export class SFX {
     const t = this.engine.now;
     const peak = 0.35, attack = 0.002, decay = 0.2;
 
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, peak, attack, decay, t);
+    const gain = this._gain(peak, attack, decay, t);
 
     const osc = this._osc('sine', 120, t, decay);
     osc.frequency.exponentialRampToValueAtTime(40, t + decay);
@@ -149,10 +169,8 @@ export class SFX {
 
     // Add noise transient
     const { src } = this._noiseFilter('highpass', 1000, 1, t, 0.03);
-    const ng = this.engine.ctx.createGain();
-    this._env(ng, 0.2, 0.001, 0.025, t);
+    const ng = this._gain(0.2, 0.001, 0.025, t);
     src.connect(ng);
-    ng.connect(this.engine.sfxGain);
 
     setTimeout(() => this.engine.releaseVoice(), decay * 1000 + 50);
   }
@@ -166,9 +184,7 @@ export class SFX {
     const t = this.engine.now;
     const peak = 0.12, attack = 0.005, decay = 0.2;
 
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, peak, attack, decay, t);
+    const gain = this._gain(peak, attack, decay, t);
 
     const osc = this._osc('triangle', 400, t, decay);
     osc.frequency.exponentialRampToValueAtTime(80, t + decay);
@@ -188,9 +204,7 @@ export class SFX {
     const decay = 1.2;
 
     freqs.forEach((f, i) => {
-      const gain = this.engine.ctx.createGain();
-      gain.connect(this.engine.sfxGain);
-      this._env(gain, 0.25, 0.01 + i * 0.08, decay, t);
+      const gain = this._gain(0.25, 0.01 + i * 0.08, decay, t);
 
       const osc = this._osc('sawtooth', f, t, decay + 0.2);
       osc.frequency.exponentialRampToValueAtTime(f * 0.5, t + decay);
@@ -216,9 +230,7 @@ export class SFX {
     // Solid thunk
     if (!this.engine.ctx) return;
     const t = this.engine.now;
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, 0.3, 0.001, 0.12, t);
+    const gain = this._gain(0.3, 0.001, 0.12, t);
     const osc = this._osc('sine', 100, t, 0.15);
     osc.frequency.exponentialRampToValueAtTime(50, t + 0.12);
     osc.connect(gain);
@@ -228,9 +240,7 @@ export class SFX {
     // Low buzz
     if (!this.engine.ctx) return;
     const t = this.engine.now;
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, 0.15, 0.005, 0.15, t);
+    const gain = this._gain(0.15, 0.005, 0.15, t);
     const osc = this._osc('square', 150, t, 0.16);
     osc.connect(gain);
   }
@@ -239,9 +249,7 @@ export class SFX {
     // Command chirp — quick rising sweep
     if (!this.engine.ctx) return;
     const t = this.engine.now;
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, 0.15, 0.002, 0.1, t);
+    const gain = this._gain(0.15, 0.002, 0.1, t);
     const osc = this._osc('sine', 500, t, 0.12);
     osc.frequency.linearRampToValueAtTime(900, t + 0.08);
     osc.connect(gain);
@@ -260,12 +268,17 @@ export class SFX {
       const start = t + cycle * 0.5;
       for (const freq of [800, 600]) {
         const noteStart = start + (freq === 600 ? 0.25 : 0);
+        // Custom gain envelope (not _gain) because this one uses setValueAtTime
+        // + linearRampToValueAtTime rather than the standard _env shape.
         const gain = this.engine.ctx.createGain();
         gain.connect(this.engine.sfxGain);
         gain.gain.setValueAtTime(0, noteStart);
         gain.gain.linearRampToValueAtTime(0.2, noteStart + 0.02);
         gain.gain.setValueAtTime(0.2, noteStart + 0.2);
         gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.25);
+        // Issue #30: disconnect after envelope completes.
+        setTimeout(() => { try { gain.disconnect(); } catch (e) {} },
+                   (noteStart - t + 0.3) * 1000);
 
         const osc = this._osc('square', freq, noteStart, 0.26);
         osc.connect(gain);
@@ -280,9 +293,7 @@ export class SFX {
   _blip(freq, peak, decay) {
     if (!this.engine.ctx) return;
     const t = this.engine.now;
-    const gain = this.engine.ctx.createGain();
-    gain.connect(this.engine.sfxGain);
-    this._env(gain, peak, 0.001, decay, t);
+    const gain = this._gain(peak, 0.001, decay, t);
     const osc = this._osc('sine', freq, t, decay + 0.01);
     osc.connect(gain);
   }

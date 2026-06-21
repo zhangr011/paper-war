@@ -658,10 +658,12 @@ export class StateManager {
     for (let i = 0; i < events.length; i++) {
       const ev = events[i];
 
-      // Store for polling consumers
-      this.pendingEvents.push(ev);
-
-      // Dispatch to callbacks
+      // Dispatch to callbacks. (Issue #30: we used to also push into
+      // `pendingEvents` for "polling consumers", but no consumer ever
+      // called drainEvents() — the array grew unbounded during combat
+      // and leaked ~22 KB/min plus retained event payloads. The
+      // dispatch path above already routes every event to its handler
+      // (audio / renderer / fog), so the buffer was pure overhead.)
       switch (ev.type) {
         case EVENT_DAMAGE:
           if (this.onDamage) this.onDamage(ev.data);

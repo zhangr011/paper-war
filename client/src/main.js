@@ -505,9 +505,12 @@ export class Game {
         // Formation hotkeys: 1=Line, 2=Wedge, 3=Circle, 4=Scatter
         this.handleFormation(parseInt(key, 10) - 1);
       } else if (key === 'Escape') {
-        // Settings panel takes precedence over build-mode cancel.
+        // Settings panel takes precedence, then attack-ground, then build mode.
+        // (Issue #35: this branch was dead code before the input.js fix.)
         if (this._settingsOpen) {
           this.closeSettings();
+        } else if (this.attackGroundMode) {
+          this.toggleAttackGround(); // exits attack-ground mode
         } else {
           this.cancelBuildMode();
         }

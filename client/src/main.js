@@ -480,6 +480,15 @@ export class Game {
       muteBtn.addEventListener('click', () => this.toggleMute());
     }
 
+    // --- Settings / Leave-Match overlay (issues #31, #32) ---
+    // Gear button in the top-right HUD opens a small panel with a Forfeit
+    // button. Without this, the only way out of a solo match is to win,
+    // lose, or reload the page. Esc also toggles the panel.
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => this.toggleSettings());
+    }
+
     // --- Keyboard shortcut: A for Attack Ground ---
     this.input.onKeyDown = (key) => {
       if (key === 'a' || key === 'A') {
@@ -496,7 +505,12 @@ export class Game {
         // Formation hotkeys: 1=Line, 2=Wedge, 3=Circle, 4=Scatter
         this.handleFormation(parseInt(key, 10) - 1);
       } else if (key === 'Escape') {
-        this.cancelBuildMode();
+        // Settings panel takes precedence over build-mode cancel.
+        if (this._settingsOpen) {
+          this.closeSettings();
+        } else {
+          this.cancelBuildMode();
+        }
       } else if (key === ' ') {
         // Spacebar: jump camera to player base
         if (this.mapData && this.mapData.spawns && this.mapData.spawns[0]) {
@@ -813,6 +827,85 @@ export class Game {
     this.initAudio();
     this.audioEngine.toggleMute();
     this.updateMuteButton();
+  }
+
+  // -----------------------------------------------------------------------
+  // Settings / Leave-Match overlay (issues #31, #32)
+  // -----------------------------------------------------------------------
+
+  toggleSettings() {
+    if (this._settingsOpen) this.closeSettings();
+    else this.openSettings();
+  }
+
+  openSettings() {
+    let overlay = document.getElementById('settings-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'settings-overlay';
+      overlay.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'width:100%', 'height:100%',
+        'background:rgba(0,0,0,0.7)',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'z-index:9999', 'font-family:var(--font-display,sans-serif)',
+      ].join(';');
+      // Panel mirrors the parchment style of the match-result overlay.
+      const panel = document.createElement('div');
+      panel.style.cssText = [
+        'background:',
+        'var(--tex-parchment-warm) repeat center / 64px 64px,',
+        'var(--paper-light)',
+        ';background-blend-mode:multiply',
+        ';border:2px solid var(--border-color)',
+        ';border-radius:var(--radius-md)',
+        ';padding:24px 32px',
+        ';min-width:300px',
+        ';max-width:90vw',
+        ';text-align:center',
+        ';box-shadow:0 8px 24px rgba(0,0,0,0.4)',
+      ].join('');
+      panel.innerHTML =
+        '<h2 style="margin:0 0 20px;color:var(--text-dark);font-size:24px">Settings</h2>' +
+        '<button id="settings-forfeit" ' +
+          'style="display:block;width:100%;margin-bottom:10px;padding:10px 16px;' +
+          'background:var(--paper-light);border:1px solid var(--border-color);' +
+          'border-radius:var(--radius-sm);color:var(--text-dark);' +
+          'font-family:inherit;font-size:15px;cursor:pointer">Forfeit / Leave Match</button>' +
+        '<button id="settings-close" ' +
+          'style="display:block;width:100%;padding:10px 16px;' +
+          'background:var(--paper-light);border:1px solid var(--border-color);' +
+          'border-radius:var(--radius-sm);color:var(--text-dark);' +
+          'font-family:inherit;font-size:15px;cursor:pointer">Close (Esc)</button>';
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      document.getElementById('settings-forfeit').addEventListener('click', () => {
+        // Tear down the game and return to lobby. cleanupGame() stops the
+        // game loop, restores login callbacks, and re-enables lobby buttons.
+        // The overlay is torn down too so it isn't lingering over the lobby.
+        this.closeSettings();
+        const app = window.__paperWarApp;
+        if (app) {
+          app.cleanupGame();
+          if (app.lobbyStatus) app.lobbyStatus.textContent = 'Forfeited previous match';
+        }
+      });
+      document.getElementById('settings-close').addEventListener('click', () => {
+        this.closeSettings();
+      });
+      // Click on the dim backdrop (outside the panel) also closes.
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) this.closeSettings();
+      });
+    }
+    overlay.style.display = 'flex';
+    this._settingsOpen = true;
+  }
+
+  closeSettings() {
+    const overlay = document.getElementById('settings-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._settingsOpen = false;
   }
 
   // -----------------------------------------------------------------------
@@ -1926,6 +2019,9 @@ export class Game {
   }
 
   showMatchResult(winner, reason, stats) {
+    // If the settings overlay is open, dismiss it — the match-result overlay
+    // takes over and we don't want the settings panel lingering into the lobby.
+    if (this._settingsOpen) this.closeSettings();
     // Show a simple overlay with the result
     let overlay = document.getElementById('match-result-overlay');
     if (!overlay) {

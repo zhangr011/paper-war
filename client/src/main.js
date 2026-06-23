@@ -1532,7 +1532,12 @@ export class Game {
     const timeMs = performance.now();
 
     for (const unit of units) {
-      if (!unit.alive) continue;
+      // getRenderUnits() already filtered to (alive || dyingAt>0 &&
+      // within DEATH_FADE_MS).  Skip the alive check here so dying units
+      // can flow into the STATE_DIE branch below — otherwise the die
+      // animation never plays.  (Issue #28 regression found in
+      // verification: this `continue` masked the new death path.)
+      if (!unit.alive && !(unit.dyingAt > 0)) continue;
 
       // Raw world-pixel position (same formula as terrain tiles).
       // Centre the 32×32 sprite on the unit's tile footprint: shift

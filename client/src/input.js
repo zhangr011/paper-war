@@ -182,13 +182,17 @@ export class InputHandler {
   _onKeyDown(e) {
     this.keys.add(e.key.toLowerCase());
 
-    // Tactical hotkeys
-    const tacticalMap = { q: 0, w: 1, e: 2, r: 3 };
-    const tac = tacticalMap[e.key.toLowerCase()];
-    if (tac !== undefined && this.selectedSquads.size > 0) {
-      for (const squadID of this.selectedSquads) {
-        this.connection.sendTacticalOrder(squadID, tac);
-      }
+    // Dispatch to the high-level handler (main.js). This fires real
+    // gameplay hotkeys: A=attack-ground, Q/W/E/R=tactics, 1-4=formation,
+    // Escape=cancel/settings, Space=jump-to-base. (Issue #35: this call
+    // was missing entirely, so all those bindings were dead code.)
+    //
+    // Skip OS auto-repeat (e.repeat) so toggles like attack-ground don't
+    // flip on every repeat event and one-shot commands don't flood the
+    // server. The `keys` Set above is still updated so continuous pan
+    // (WASD / arrows in update()) keeps working while a key is held.
+    if (!e.repeat && typeof this.onKeyDown === 'function') {
+      this.onKeyDown(e.key);
     }
   }
 

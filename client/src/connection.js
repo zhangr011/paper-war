@@ -281,6 +281,16 @@ export class Connection {
       return;
     }
 
+    // Snapshot must be at least the header size (4 tick + 4 prevTick + 2 unitCount
+    // + 1 eventCount + 1 baseAlert = 12 bytes). Shorter buffers are malformed
+    // (e.g. fragmented/truncated WS frames from a misbehaving upstream) and would
+    // otherwise throw "Offset is outside the bounds of the DataView" at getUint32
+    // below. See issue #33.
+    if (checkView.byteLength < 12) {
+      console.warn('snapshot too short:', checkView.byteLength);
+      return;
+    }
+
     // --- Snapshot handling (existing code) ---
     // Check for appended fog data (marker 0xFF 0xFD)
     let fogData = null;
@@ -375,8 +385,18 @@ export class Connection {
           break;
         }
         case EVENT_DEATH: {
-          // entityID(uint32) = 4
+          // Issue #28 — enriched payload:
+          //   entityID (uint32, 4B)
+          //   X         (int64,   8B)  — fixed-point (FractionBits=12) position at death
+          //   Y         (int64,   8B)  — fixed-point position at death
+          //   tick      (uint32,  4B)  — simulation tick of death
+          // Total: 24 bytes.  X/Y anchor the die animation at the exact
+          // death tile; tick lets the client reconstruct when the unit
+          // died even if the event is processed a few snapshots late.
           evt.entityID = view.getUint32(off, true); off += 4;
+          evt.x = Number(view.getBigInt64(off, true)); off += 8;
+          evt.y = Number(view.getBigInt64(off, true)); off += 8;
+          evt.tick = view.getUint32(off, true); off += 4;
           break;
         }
         case EVENT_TERRAIN_CHANGE: {

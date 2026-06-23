@@ -12,6 +12,7 @@ import { AudioEngine } from './audio/audioengine.js?v=v8';
 import { SFX } from './audio/sfx.js?v=v8';
 import { Ambient } from './audio/ambient.js?v=v8';
 import { Music } from './audio/music.js?v=v8';
+import { formatMatchResultHeading } from './match_result.js?v=v8';
 import {
   generateUnitAtlas,
   atlasCell,
@@ -19,6 +20,19 @@ import {
   ATLAS_CELL,
   ATLAS_W,
   ATLAS_H,
+  // Issue #28 — direction & state constants for the new 5-state × 4-dir atlas.
+  STATES,
+  DIRECTIONS,
+  STATE_IDLE,
+  STATE_IDLE2,
+  STATE_MOVE,
+  STATE_ATTACK,
+  STATE_DIE,
+  DIR_S,
+  DIR_E,
+  DIR_N,
+  DIR_W,
+  FRAMES_PER_STATE,
 } from './unit_atlas.js?v=v8';
 
 // ---------------------------------------------------------------------------
@@ -145,7 +159,20 @@ export class Game {
     // texture bound for the unit batch.  This runs once at startup —
     // the same atlas serves the whole match.  Per-instance atlas
     // coordinates are computed each frame in buildUnitDescriptors.
+    //
+    // Issue #28 — atlas grew from 7×4=28 rows to 7×5×4=140 rows
+    // (512×4480).  WebGL 2 guarantees MAX_TEXTURE_SIZE >= 4096; most
+    // hardware supports 8192+.  Verify the limit and warn if we exceed
+    // it (units would render as flat quads via the white-pixel fallback).
     try {
+      const gl = this.renderer.gl;
+      const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      if (maxTex && (ATLAS_W > maxTex || ATLAS_H > maxTex)) {
+        console.warn(
+          `[unit_atlas] atlas ${ATLAS_W}×${ATLAS_H} exceeds MAX_TEXTURE_SIZE ${maxTex}; ` +
+          `unit sprites will be incomplete.  Consider packing the atlas wider.`,
+        );
+      }
       const atlasCanvas = generateUnitAtlas();
       this.renderer.setUnitTexture(atlasCanvas, ATLAS_W, ATLAS_H);
     } catch (err) {
@@ -453,6 +480,15 @@ export class Game {
       muteBtn.addEventListener('click', () => this.toggleMute());
     }
 
+    // --- Settings / Leave-Match overlay (issues #31, #32) ---
+    // Gear button in the top-right HUD opens a small panel with a Forfeit
+    // button. Without this, the only way out of a solo match is to win,
+    // lose, or reload the page. Esc also toggles the panel.
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => this.toggleSettings());
+    }
+
     // --- Keyboard shortcut: A for Attack Ground ---
     this.input.onKeyDown = (key) => {
       if (key === 'a' || key === 'A') {
@@ -469,7 +505,15 @@ export class Game {
         // Formation hotkeys: 1=Line, 2=Wedge, 3=Circle, 4=Scatter
         this.handleFormation(parseInt(key, 10) - 1);
       } else if (key === 'Escape') {
-        this.cancelBuildMode();
+        // Settings panel takes precedence, then attack-ground, then build mode.
+        // (Issue #35: this branch was dead code before the input.js fix.)
+        if (this._settingsOpen) {
+          this.closeSettings();
+        } else if (this.attackGroundMode) {
+          this.toggleAttackGround(); // exits attack-ground mode
+        } else {
+          this.cancelBuildMode();
+        }
       } else if (key === ' ') {
         // Spacebar: jump camera to player base
         if (this.mapData && this.mapData.spawns && this.mapData.spawns[0]) {
@@ -786,6 +830,85 @@ export class Game {
     this.initAudio();
     this.audioEngine.toggleMute();
     this.updateMuteButton();
+  }
+
+  // -----------------------------------------------------------------------
+  // Settings / Leave-Match overlay (issues #31, #32)
+  // -----------------------------------------------------------------------
+
+  toggleSettings() {
+    if (this._settingsOpen) this.closeSettings();
+    else this.openSettings();
+  }
+
+  openSettings() {
+    let overlay = document.getElementById('settings-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'settings-overlay';
+      overlay.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'width:100%', 'height:100%',
+        'background:rgba(0,0,0,0.7)',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'z-index:9999', 'font-family:var(--font-display,sans-serif)',
+      ].join(';');
+      // Panel mirrors the parchment style of the match-result overlay.
+      const panel = document.createElement('div');
+      panel.style.cssText = [
+        'background:',
+        'var(--tex-parchment-warm) repeat center / 64px 64px,',
+        'var(--paper-light)',
+        ';background-blend-mode:multiply',
+        ';border:2px solid var(--border-color)',
+        ';border-radius:var(--radius-md)',
+        ';padding:24px 32px',
+        ';min-width:300px',
+        ';max-width:90vw',
+        ';text-align:center',
+        ';box-shadow:0 8px 24px rgba(0,0,0,0.4)',
+      ].join('');
+      panel.innerHTML =
+        '<h2 style="margin:0 0 20px;color:var(--text-dark);font-size:24px">Settings</h2>' +
+        '<button id="settings-forfeit" ' +
+          'style="display:block;width:100%;margin-bottom:10px;padding:10px 16px;' +
+          'background:var(--paper-light);border:1px solid var(--border-color);' +
+          'border-radius:var(--radius-sm);color:var(--text-dark);' +
+          'font-family:inherit;font-size:15px;cursor:pointer">Forfeit / Leave Match</button>' +
+        '<button id="settings-close" ' +
+          'style="display:block;width:100%;padding:10px 16px;' +
+          'background:var(--paper-light);border:1px solid var(--border-color);' +
+          'border-radius:var(--radius-sm);color:var(--text-dark);' +
+          'font-family:inherit;font-size:15px;cursor:pointer">Close (Esc)</button>';
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      document.getElementById('settings-forfeit').addEventListener('click', () => {
+        // Tear down the game and return to lobby. cleanupGame() stops the
+        // game loop, restores login callbacks, and re-enables lobby buttons.
+        // The overlay is torn down too so it isn't lingering over the lobby.
+        this.closeSettings();
+        const app = window.__paperWarApp;
+        if (app) {
+          app.cleanupGame();
+          if (app.lobbyStatus) app.lobbyStatus.textContent = 'Forfeited previous match';
+        }
+      });
+      document.getElementById('settings-close').addEventListener('click', () => {
+        this.closeSettings();
+      });
+      // Click on the dim backdrop (outside the panel) also closes.
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) this.closeSettings();
+      });
+    }
+    overlay.style.display = 'flex';
+    this._settingsOpen = true;
+  }
+
+  closeSettings() {
+    const overlay = document.getElementById('settings-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._settingsOpen = false;
   }
 
   // -----------------------------------------------------------------------
@@ -1409,7 +1532,12 @@ export class Game {
     const timeMs = performance.now();
 
     for (const unit of units) {
-      if (!unit.alive) continue;
+      // getRenderUnits() already filtered to (alive || dyingAt>0 &&
+      // within DEATH_FADE_MS).  Skip the alive check here so dying units
+      // can flow into the STATE_DIE branch below — otherwise the die
+      // animation never plays.  (Issue #28 regression found in
+      // verification: this `continue` masked the new death path.)
+      if (!unit.alive && !(unit.dyingAt > 0)) continue;
 
       // Raw world-pixel position (same formula as terrain tiles).
       // Centre the 32×32 sprite on the unit's tile footprint: shift
@@ -1422,10 +1550,58 @@ export class Game {
       const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
 
       // Pick current animation cell from the atlas.
+      // Issue #28 — map server AI state (0=Idle,1=Patrol,2=Approach,
+      // 3=Attack,4=Retreat,5=Defend,6=Scout,7=Capture,8=Push,9=Regroup)
+      // onto atlas state (0=Idle,1=Idle2,2=Move,3=Attack,4=Die) and pick
+      // the cardinal facing from unit.facing.
       const unitType = Math.max(0, Math.min(6, unit.unitType || 0));
-      const state = Math.max(0, Math.min(3, unit.currState || 0));
-      const frame = currentFrame(state, unit.entityID || 0, timeMs);
-      const cell = atlasCell(unitType, state, frame);
+      const serverState = unit.currState || 0;
+      const eid = unit.entityID || 0;
+
+      let state;
+      let frame;
+      let dir = Math.max(DIR_S, Math.min(DIR_W, unit.facing ?? DIR_S));
+
+      if (unit.dyingAt > 0) {
+        // Death animation: drive frame from elapsed time so the 4-frame
+        // collapse plays once over the 600ms fade window, then holds on
+        // the final pose until the unit is removed by getRenderUnits().
+        state = STATE_DIE;
+        const dieFrames = FRAMES_PER_STATE[STATE_DIE];
+        const dieElapsed = timeMs - unit.dyingAt;
+        const DIE_DURATION_MS = 600;
+        const dieT = Math.min(1, dieElapsed / DIE_DURATION_MS);
+        frame = Math.min(dieFrames - 1, Math.floor(dieT * dieFrames));
+      } else {
+        // Server state → atlas state mapping.  All "moving" AI states
+        // (Patrol/Approach/Scout/Capture/Push/Regroup) collapse to
+        // MOVE; Retreat also reads as MOVE (walking backward, the
+        // facing system handles the direction).  Defend maps to IDLE2
+        // (alert/idle variant) so defenders visually differ from
+        // idle garrison units.
+        switch (serverState) {
+          case 3: state = STATE_ATTACK; break;
+          case 5: state = STATE_IDLE2; break;
+          case 4: state = STATE_MOVE; break;  // retreat — same walk cycle
+          case 1: case 2: case 6: case 7: case 8: case 9:
+            state = STATE_MOVE; break;
+          case 0: default:
+            state = STATE_IDLE;
+            // Idle-flicker: ~10% of the time, idle units briefly play
+            // the idle2 variant (head turn / shuffle).  Phase is per-
+            // entity so a squad doesn't animate in lockstep.  (Spec:
+            // issue #28 "plays ~10% of the time on idle units".)
+            {
+              const phase = (timeMs / 5000) + eid * 0.37;
+              const frac = phase - Math.floor(phase);
+              if (frac < 0.10) state = STATE_IDLE2;
+            }
+            break;
+        }
+        frame = currentFrame(state, eid, timeMs);
+      }
+
+      const cell = atlasCell(unitType, state, dir, frame);
 
       // Color: base type color, tinted by team
       const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
@@ -1438,10 +1614,12 @@ export class Game {
       // State overlay: darken idle, brighten moving, redden attacking.
       // These multipliers now layer ON TOP of the animated sprite —
       // subtle enough to read as state feedback without obscuring the
-      // silhouette.
-      if (unit.currState === 1) { r *= 1.15; g *= 1.1; b *= 1.0; }     // moving: brighter
-      else if (unit.currState === 2) { r = Math.min(1.0, r + 0.2); g *= 0.85; b *= 0.7; } // attacking: warm shift
-      else if (unit.currState === 3) { r *= 0.85; g *= 0.85; b *= 0.85; } // retreating: darker
+      // silhouette.  Issue #28: keys off the resolved atlas `state`
+      // rather than the raw server state so the tint matches the art.
+      if (state === STATE_MOVE) { r *= 1.15; g *= 1.1; b *= 1.0; }     // moving: brighter
+      else if (state === STATE_ATTACK) { r = Math.min(1.0, r + 0.2); g *= 0.85; b *= 0.7; } // attacking: warm shift
+      else if (state === STATE_DIE) { r *= 0.6; g *= 0.6; b *= 0.6; } // dying: heavily darkened
+      else if (state === STATE_IDLE2) { r *= 0.95; g *= 0.95; b *= 1.0; } // idle2: subtle cool
 
       // Check if this unit is selected -> brighten
       const isSelected = this.selectedEntityIDs.has(unit.entityID);
@@ -1745,6 +1923,11 @@ export class Game {
     const goldEl = document.querySelector('#gold .resource-value');
     if (goldEl) goldEl.textContent = this.gold;
 
+    // BASES card — count of player-placed defensive structures (Paper UIKit design system).
+    // Bases card is hidden in spectator mode (no economy) via the .spectator-mode rule below.
+    const basesEl = document.querySelector('#bases .resource-value');
+    if (basesEl) basesEl.textContent = (this.placedStructures ? this.placedStructures.length : 0);
+
     const scoreEl = document.querySelector('#score .resource-value');
     if (scoreEl) scoreEl.textContent = this.score;
 
@@ -1819,9 +2002,13 @@ export class Game {
     if (!board) {
       board = document.createElement('div');
       board.id = 'spectator-scoreboard';
-      board.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);' +
-        'z-index:100;font-family:sans-serif;display:flex;align-items:center;gap:12px;' +
-        'background:rgba(0,0,0,0.6);padding:6px 16px;border-radius:6px;color:#fff;font-size:14px;';
+      // Design #28: scoreboard overlays the parchment top-bar without a dark
+      // backing. Use text-shadow for legibility against the paper texture.
+      board.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);' +
+        'z-index:100;font-family:inherit;display:flex;align-items:center;gap:10px;' +
+        'background:transparent;padding:4px 12px;color:#fff;font-size:13px;font-weight:600;' +
+        'text-shadow:0 1px 2px rgba(60,40,20,0.9),0 0 4px rgba(60,40,20,0.7);' +
+        'pointer-events:none;';
       document.body.appendChild(board);
     }
 
@@ -1840,6 +2027,9 @@ export class Game {
   }
 
   showMatchResult(winner, reason, stats) {
+    // If the settings overlay is open, dismiss it — the match-result overlay
+    // takes over and we don't want the settings panel lingering into the lobby.
+    if (this._settingsOpen) this.closeSettings();
     // Show a simple overlay with the result
     let overlay = document.getElementById('match-result-overlay');
     if (!overlay) {
@@ -1851,17 +2041,9 @@ export class Game {
       document.body.appendChild(overlay);
     }
     const pid = this.connection.playerID;
-    let heading, headingColor;
-    if (pid === 0) {
-      // Spectator: show neutral result (winner=0 is FactionPlayer/Blue, winner=1 is FactionEnemy/Red)
-      const teamName = winner === 0 ? 'Blue' : 'Red';
-      heading = `Team ${teamName} Wins!`;
-      headingColor = winner === 0 ? '#4488FF' : '#FF4444';
-    } else {
-      const isWin = winner === (pid - 1); // pid 1 = faction 0, pid 2 = faction 1
-      heading = isWin ? 'Victory!' : 'Defeat';
-      headingColor = isWin ? '#4CAF50' : '#FF4444';
-    }
+    // Heading decision is extracted to match_result.js so the spectator-vs-
+    // player branching is unit-testable without a Game instance.
+    const { heading, color: headingColor } = formatMatchResultHeading(pid, winner);
 
     // Build AAR stats table if stats available
     let statsHTML = '';

@@ -47,6 +47,19 @@ const MAX_EXTRAPOLATION_T = MAX_EXTRAPOLATION_MS / TICK_DURATION_MS;
 // naturally instead of continuing at full speed into infinity.
 const EXTRAPOLATION_VELOCITY_DECAY = 0.7;
 
+// Issue #28 — Death animation lifecycle.
+// After a unit's HP hits 0, the renderer plays the die animation for
+// this many milliseconds before the unit is removed from the render
+// list.  Tuned to match the die state's 4 frames × ~150 ms.
+const DEATH_FADE_MS = 600;
+
+// Issue #28 — Facing dead-zone.
+// Position deltas below this threshold don't update facing, so units
+// that are essentially stationary don't flicker between directions.
+// In tile-space (state.js stores positions as tile floats), 0.01 tile
+// per tick ≈ 0.1 tile/sec at 10Hz — well below visible movement.
+const FACING_DEADZONE_SQ = 0.01 * 0.01;
+
 // Accelerated correction: when the interpolated position is far from the
 // target, blend toward it faster to avoid a visible "slide".
 const CORRECTION_THRESHOLD = 5.0; // world units (only genuine desyncs, not normal movement)
@@ -141,6 +154,19 @@ class UnitState {
     this.renderX = 0;
     this.renderY = 0;
     this.renderAngle = 0;
+
+    // Facing (cardinal direction) — issue #28.
+    //   0=S, 1=E, 2=N, 3=W (see unit_atlas.js DIR_* constants)
+    // Computed in update() from (prev→curr) position delta.  Defaults
+    // to S so freshly-spawned stationary units have a valid atlas row.
+    this.facing = 0;
+
+    // Death lifecycle — issue #28.
+    //   0          = alive (or not yet killed)
+    //   <timestamp> = time HP first hit 0 (set once, never reset)
+    // The renderer plays the die animation for ~600 ms after dyingAt,
+    // then the unit is removed from getRenderUnits().
+    this.dyingAt = 0;
 
     // Non-interpolated fields (use curr directly)
     this.targetID = 0;
@@ -501,6 +527,25 @@ export class StateManager {
 
       // Angle does not use accelerated correction (it would cause spinning)
       unit.renderAngle = ra;
+
+      // Issue #28 — update facing from the (prev → curr) position delta.
+      // We use the snapshot delta rather than the interpolated render
+      // delta because the latter can briefly be zero at t≈0 even when
+      // the unit is moving, causing flicker.  The deadzone prevents
+      // jitter when the unit is essentially stationary.
+      const dxSnap = unit.currX - unit.prevX;
+      const dySnap = unit.currY - unit.prevY;
+      const distSq = dxSnap * dxSnap + dySnap * dySnap;
+      if (distSq > FACING_DEADZONE_SQ) {
+        // Cardinal snap: pick the axis with the larger magnitude.
+        // Ties go to the horizontal axis (E/W), which feels natural for
+        // a side-view bias.  Coordinate system: +y is south on screen.
+        if (Math.abs(dxSnap) >= Math.abs(dySnap)) {
+          unit.facing = dxSnap > 0 ? 1 /*DIR_E*/ : 3 /*DIR_W*/;
+        } else {
+          unit.facing = dySnap > 0 ? 0 /*DIR_S*/ : 2 /*DIR_N*/;
+        }
+      }
     }
   }
 
@@ -510,12 +555,30 @@ export class StateManager {
 
   /**
    * Get all alive units with their interpolated render positions.
+   *
+   * Issue #28 — units in the death-fade window (HP just hit 0) are
+   * still included so the renderer can play the die animation.  They
+   * are removed automatically once `now - dyingAt > DEATH_FADE_MS`.
    * @returns {UnitState[]}
    */
   getRenderUnits() {
+    const now = performance.now();
     const result = [];
     for (const unit of this.units.values()) {
-      if (unit.alive) result.push(unit);
+      if (unit.dyingAt > 0) {
+        if (now - unit.dyingAt > DEATH_FADE_MS) {
+          // Fade complete — remove from active roster.
+          this.units.delete(unit.entityID);
+          continue;
+        }
+        // Still inside the die-animation window — include it even if
+        // the death event already flipped `alive` to false.  The die
+        // sprite atlas cell plays the collapse animation; the renderer
+        // fades alpha as `now - dyingAt → DEATH_FADE_MS`.
+        result.push(unit);
+      } else if (unit.alive) {
+        result.push(unit);
+      }
     }
     return result;
   }
@@ -595,10 +658,12 @@ export class StateManager {
     for (let i = 0; i < events.length; i++) {
       const ev = events[i];
 
-      // Store for polling consumers
-      this.pendingEvents.push(ev);
-
-      // Dispatch to callbacks
+      // Dispatch to callbacks. (Issue #30: we used to also push into
+      // `pendingEvents` for "polling consumers", but no consumer ever
+      // called drainEvents() — the array grew unbounded during combat
+      // and leaked ~22 KB/min plus retained event payloads. The
+      // dispatch path above already routes every event to its handler
+      // (audio / renderer / fog), so the buffer was pure overhead.)
       switch (ev.type) {
         case EVENT_DAMAGE:
           if (this.onDamage) this.onDamage(ev.data);
@@ -621,23 +686,57 @@ export class StateManager {
   }
 
   /**
-   * Handle a death event — mark the unit as not alive.
-   * Accepts either a parsed event {entityID} or a raw Uint8Array.
-   * @param {{entityID?:number, byteLength?:number, buffer?:ArrayBuffer, byteOffset?:number}} data
+   * Handle a death event — lock the unit into the die state and anchor
+   * its render position at the death location.
+   *
+   * Issue #28 — the server now includes the unit's fixed-point X/Y at
+   * the moment of death (captured BEFORE component teardown) plus the
+   * simulation tick.  We snap both prev and curr position to that
+   * location so the renderer plays the collapse animation at the exact
+   * tile the unit occupied, not at the extrapolated interpolated
+   * position which may have drifted past it.
+   *
+   * Accepts either a parsed event {entityID, x, y, tick} or a raw
+   * Uint8Array (legacy 4-byte payload — entityID only, no position).
+   * @param {{entityID?:number, x?:number, y?:number, tick?:number, byteLength?:number, buffer?:ArrayBuffer, byteOffset?:number}} data
    * @private
    */
   _handleDeath(data) {
     let entityID;
+    let deathX = null;
+    let deathY = null;
     if (data && typeof data.entityID === 'number') {
       entityID = data.entityID;
+      if (typeof data.x === 'number' && typeof data.y === 'number') {
+        deathX = fixedToFloat(data.x);
+        deathY = fixedToFloat(data.y);
+      }
     } else if (data && data.byteLength >= 4) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       entityID = view.getUint32(0, true);
+      // Enriched 24-byte payload (issue #28): X (int64) + Y (int64) + tick
+      if (data.byteLength >= 24) {
+        deathX = fixedToFloat(Number(view.getBigInt64(4, true)));
+        deathY = fixedToFloat(Number(view.getBigInt64(12, true)));
+      }
     }
     if (entityID !== undefined) {
       const unit = this.units.get(entityID);
       if (unit) {
         unit.alive = false;
+        // Idempotent: only set dyingAt on the first death event for this
+        // unit.  Subsequent events (or HP=0 snapshots) don't reset the
+        // timer — the die animation plays exactly once.
+        if (unit.dyingAt === 0) {
+          unit.dyingAt = performance.now();
+        }
+        // Snap render position to the authoritative death location so
+        // the collapse animation stays anchored even if interpolation
+        // had been leading/extrapolating the unit past the death tile.
+        if (deathX !== null && deathY !== null) {
+          unit.prevX = unit.currX = deathX;
+          unit.prevY = unit.currY = deathY;
+        }
       }
     }
   }

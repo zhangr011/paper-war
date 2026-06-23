@@ -32,7 +32,19 @@ type DeathSystem struct {
 
 	// Deaths collects entityIDs of units that died this tick.
 	// Used by GenerateSnapshot to send death events to clients.
+	//
+	// Issue #28 — superseded by DeathRecords (which carries position+tick
+	// alongside the entityID).  Kept as a derived accessor below for any
+	// caller that only needs IDs (e.g. snapshot generator cleanup).
 	Deaths []uint32
+
+	// DeathRecords collects full per-death context the snapshot encoder
+	// needs to emit an enriched EventDeath payload (entityID + X + Y +
+	// tick).  Position is captured BEFORE the entity's components are
+	// torn down, so the client can play the die animation at the exact
+	// location the unit was when it died — not at the extrapolated
+	// interpolated render position, which may have drifted.
+	DeathRecords []DeathRecord
 
 	// KillEvents collects faction-attributed kill data each tick.
 	// Cleared at start of each Tick. Session reads this to feed MatchStats.
@@ -46,6 +58,23 @@ type KillEvent struct {
 	DeadFaction   uint8  // faction of the dead unit
 	IsCommander   bool   // true if the dead unit was a squad commander
 	Bounty        int32  // gold bounty awarded to the killer (0 if no killer)
+}
+
+// DeathRecord captures the simulation-side context of a single unit death
+// so the snapshot encoder can emit an enriched EventDeath payload.
+//
+//   - EntityID: which unit died (so the client can look up its render state)
+//   - X, Y:     fixed-point (FractionBits=12) position at moment of death.
+//               Captured BEFORE the PositionComponent is removed, so the
+//               client can play the die animation at the death location
+//               rather than at the extrapolated interpolation position.
+//   - Tick:     simulation tick on which the death occurred.  Lets the
+//               client reconstruct exactly when the unit died even if the
+//               death event is processed a few snapshots late.
+type DeathRecord struct {
+	EntityID uint32
+	X, Y     int64
+	Tick     uint32
 }
 
 func (s *DeathSystem) Name() string  { return "DeathSystem" }
@@ -84,6 +113,7 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 	s.GoldBounties = make(map[uint32]int32)
 	s.Promotions = make(map[uint32]ecs.Entity)
 	s.Deaths = nil
+	s.DeathRecords = nil
 	s.KillEvents = nil
 
 	var dead []ecs.Entity
@@ -175,6 +205,24 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 		// Clear attack targets referencing this entity
 		targetID := uint32(e)
 		s.Deaths = append(s.Deaths, targetID)
+
+		// Issue #28 — capture position BEFORE posPool.Remove(e) tears it
+		// down.  The client uses this to anchor the die animation at the
+		// exact tile the unit occupied when it died, rather than at the
+		// extrapolated interpolation position (which may have drifted
+		// past the actual death location between snapshots).
+		var deathX, deathY int64
+		if pos, ok := s.posPool.Get(e); ok {
+			deathX = pos.X
+			deathY = pos.Y
+		}
+		s.DeathRecords = append(s.DeathRecords, DeathRecord{
+			EntityID: targetID,
+			X:        deathX,
+			Y:        deathY,
+			Tick:     tick,
+		})
+
 		s.attackPool.Each(func(other ecs.Entity, ac *component.AttackComponent) {
 			if ac.TargetID == targetID {
 				ac.TargetID = 0

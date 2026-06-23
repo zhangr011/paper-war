@@ -289,6 +289,30 @@ test('events are processed immediately on arrival', () => {
   assert.equal(damageCount, 1, 'damage event processed immediately');
 });
 
+// --- Issue #30 regression: events MUST NOT accumulate in pendingEvents ---
+// _processEvents used to push every event into a pendingEvents buffer that
+// was never drained (no consumer ever called drainEvents). Over a 30-60 min
+// match this leaked unbounded memory proportional to combat activity.
+test('events do not accumulate in pendingEvents (issue #30 regression)', () => {
+  const sm = new StateManager();
+  sm.onDamage = () => {};
+
+  // Push many damage events across multiple snapshots
+  for (let tick = 1; tick <= 10; tick++) {
+    const events = [];
+    for (let i = 0; i < 50; i++) {
+      events.push({ type: 0, data: new Uint8Array(8) });
+    }
+    sm.applySnapshot(tick, tick - 1, [], events, null);
+  }
+
+  // 500 events were processed; none should be retained.
+  assert.equal(sm.pendingEvents.length, 0,
+    `pendingEvents must stay empty (no consumer drains it), got ${sm.pendingEvents.length}`);
+  // drainEvents() still works — returns [] without error (backward compat).
+  assert.deepEqual(sm.drainEvents(), [], 'drainEvents returns empty array');
+});
+
 // --- Fog updated immediately ---
 
 test('fog grid is updated immediately on arrival', () => {

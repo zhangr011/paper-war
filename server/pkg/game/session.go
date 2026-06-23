@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"encoding/binary"
 	"math/rand"
 	"time"
 
@@ -490,6 +491,10 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 
 	gs.objectiveSys.Reset(gs.Map)
 
+	// Reset match statistics — without this, stats accumulate across matches
+	// in the same server session (issue #34: result statistics error again).
+	gs.stats = NewMatchStats()
+
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)
 	gs.lastSentGold = make(map[uint32]int32)
@@ -538,6 +543,10 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 
 	// Reset objective system (reuse existing, update map)
 	gs.objectiveSys.Reset(gs.Map)
+
+	// Reset match statistics — without this, stats accumulate across matches
+	// in the same server session (issue #34: result statistics error again).
+	gs.stats = NewMatchStats()
 
 	// Reset gold state
 	gs.PlayerGold = make(map[uint32]int32)
@@ -1277,16 +1286,19 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 			Y:     pos.Y,
 			Angle: pos.Angle,
 		}
+		// Track owner/squad for the AI-state lookup below.
+		var unitOwner uint8
+		var unitSquad uint32
+		var hasSquad bool
 		if vel, ok := velPool.Get(e); ok {
 			state.Vx = vel.Vx
 			state.Vy = vel.Vy
-			if vel.Vx != 0 || vel.Vy != 0 {
-				state.State = 1
-			}
 		}
 		if boid, ok := boidPool.Get(e); ok {
 			ui.SquadID = boid.SquadID
 			state.SquadID = boid.SquadID
+			unitSquad = boid.SquadID
+			hasSquad = true
 		}
 		if health, ok := healthPool.Get(e); ok {
 			state.HP = health.HP
@@ -1300,6 +1312,34 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		}
 		if owner, hasOwner := ownerPool.Get(e); hasOwner {
 			state.Team = uint8(owner.PlayerID)
+			unitOwner = uint8(owner.PlayerID)
+		}
+		// Issue #28 — copy the AI squad state into the per-unit wire state.
+		// Previously this was hardcoded to 0/1 from velocity, so the client
+		// never saw Attack (3) / Defend (5) / etc., and the attack/die
+		// animations never triggered.  Now we look up the owning player's
+		// AISystem and forward its squad-level State verbatim.  Player-
+		// controlled squads (no AI state) fall through to a velocity
+		// heuristic so the client still sees a move/idle signal.
+		if hasSquad {
+			var aiSys *ai.AISystem
+			// AISys owns player 2's squads; AISys2 owns player 1's (clash).
+			if unitOwner == 1 && gs.AISys2 != nil {
+				aiSys = gs.AISys2
+			} else if gs.AISys != nil {
+				aiSys = gs.AISys
+			}
+			if aiSys != nil {
+				if aiState, ok := aiSys.States[unitSquad]; ok {
+					state.State = aiState.State
+				}
+			}
+		}
+		// Velocity fallback — only when no AI state was assigned (player-
+		// controlled units without an AIState entry).  Preserves the old
+		// behaviour for those units so the client still gets a move/idle cue.
+		if state.State == 0 && (state.Vx != 0 || state.Vy != 0) {
+			state.State = 1
 		}
 		units = append(units, ui)
 		allStates = append(allStates, state)
@@ -1342,15 +1382,31 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	snap := gs.SnapGen.Generate(gs.tickCount, visStates, visIDs)
 
 	// Attach death events from DeathSystem
-	if gs.deathSys != nil && len(gs.deathSys.Deaths) > 0 {
-		for _, entityID := range gs.deathSys.Deaths {
+	if gs.deathSys != nil && len(gs.deathSys.DeathRecords) > 0 {
+		deadIDs := make([]uint32, 0, len(gs.deathSys.DeathRecords))
+		for _, rec := range gs.deathSys.DeathRecords {
+			// Issue #28 — enriched EventDeath payload:
+			//   entityID (uint32, 4B)
+			//   X         (int64,   8B)  — fixed-point position at death
+			//   Y         (int64,   8B)  — fixed-point position at death
+			//   tick      (uint32,  4B)  — simulation tick of death
+			// Total: 24 bytes.  The client uses X/Y to anchor the die
+			// animation at the exact death location rather than at the
+			// interpolated render position (which may have drifted).
+			data := make([]byte, 24)
+			le := binary.LittleEndian
+			le.PutUint32(data[0:4], rec.EntityID)
+			le.PutUint64(data[4:12], uint64(rec.X))
+			le.PutUint64(data[12:20], uint64(rec.Y))
+			le.PutUint32(data[20:24], rec.Tick)
 			snap.Events = append(snap.Events, network.Event{
 				Type: network.EventDeath,
-				Data: []byte{byte(entityID), byte(entityID >> 8), byte(entityID >> 16), byte(entityID >> 24)},
+				Data: data,
 			})
+			deadIDs = append(deadIDs, rec.EntityID)
 		}
 		// Clean up snapshot generator's prevStates for dead entities
-		gs.SnapGen.ClearPrevStates(gs.deathSys.Deaths)
+		gs.SnapGen.ClearPrevStates(deadIDs)
 	}
 	// Compute base alert: is the player's spawn under attack?
 	snap.BaseAlert = gs.checkBaseAlert(playerID)

@@ -1231,7 +1231,42 @@ func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 		gs.handleTacticalOrder(cmd.SquadID, cmd.OrderType)
 	case network.CmdBuild:
 		gs.handleBuild(clientID, cmd.RecruitType, int64(cmd.TargetX), int64(cmd.TargetY))
+	case network.CmdRecruit:
+		// Human-player recruit. Spectators were already rejected above.
+		// Resolves the requesting player's commander entity and forwards
+		// the recruit request to the shared recruit system (same path
+		// the AI uses via handleAIRecruit). Without this case the entire
+		// human recruit flow is silently dropped — players could never
+		// spend gold to replace losses.
+		gs.handlePlayerRecruit(clientID, component.CombatUnitType(cmd.RecruitType))
 	}
+}
+
+// handlePlayerRecruit processes a human-player recruit command.
+// Mirror of handleAIRecruit but resolves the commander by clientID
+// instead of AISys.AIPlayerID.
+func (gs *GameSession) handlePlayerRecruit(clientID uint32, unitType component.CombatUnitType) {
+	if gs.recruitSys == nil {
+		return
+	}
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+
+	var cmdEntity ecs.Entity
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.Role == component.RoleCommander {
+			if owner, ok := ownerPool.Get(e); ok && owner.PlayerID == clientID {
+				cmdEntity = e
+			}
+		}
+	})
+	if cmdEntity == 0 {
+		return
+	}
+	gs.recruitSys.Recruit(combat.RecruitRequest{
+		CommanderEntity: cmdEntity,
+		UnitType:        unitType,
+	})
 }
 
 // GenerateSnapshot produces a binary snapshot for a specific player.

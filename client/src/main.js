@@ -253,6 +253,37 @@ export class Game {
 
     // Clean up dead units periodically
     this.framesSinceCleanup = 0;
+
+    // --- Render-descriptor pools (issue #30 follow-up: avoid ~40k
+    // short-lived objects/sec from per-frame array builds) ---
+    // Each builder below reuses objects from its pool, mutating fields
+    // in place. Setting `pool.length = 0` resets without deallocating
+    // the backing storage; subsequent writes to `pool[i]` reuse the
+    // already-allocated object slots. After a few frames the pools
+    // reach steady state and per-frame allocation drops to ~zero.
+    this._terrainTilePool = [];     // buildTerrainTiles
+    this._terrainObjectPool = [];   // buildTerrainObjects
+    this._fogTilePool = [];         // buildFogTiles
+    this._unitDescPool = [];        // buildUnitDescriptors
+    this._structDescPool = [];      // buildStructureDescriptors
+  }
+
+  /**
+   * Append a fresh descriptor to a pool, reusing an existing slot if
+   * one is available. Returns the (empty) object so the caller can
+   * populate it. Caller MUST set pool.length = 0 at the start of the
+   * build to mark the pool as empty without freeing slots.
+   */
+  _pooledPush(pool) {
+    // pool.length tracks live count. pool[pool.length] either hits
+    // an existing slot (reuse) or extends the array (one-time grow).
+    const i = pool.length;
+    let obj = pool[i];
+    if (!obj) {
+      obj = {};
+      pool[i] = obj;  // writing past .length grows the array
+    }
+    return obj;
   }
 
   // Set terrain data received from server.
@@ -1180,7 +1211,9 @@ export class Game {
    * hills is still applied here; everything else is delegated to the GPU.
    */
   buildTerrainTiles(visible) {
-    const tiles = [];
+    // Reuse the pool array — length=0 keeps backing storage, no per-frame alloc.
+    const tiles = this._terrainTilePool;
+    tiles.length = 0;
     const { minTX, maxTX, minTY, maxTY } = visible;
 
     const mw = this.mapWidth;
@@ -1281,7 +1314,10 @@ export class Game {
           tileType = 0;
         }
 
-        tiles.push({ x: sx, y: sy, w: tw, h: th, r, g, b, tileType, seed });
+        const t = this._pooledPush(tiles);
+        t.x = sx; t.y = sy; t.w = tw; t.h = th;
+        t.r = r; t.g = g; t.b = b;
+        t.tileType = tileType; t.seed = seed;
       }
     }
 
@@ -1294,7 +1330,8 @@ export class Game {
    * Uses deterministic hash from tile coordinates for consistent placement.
    */
   buildTerrainObjects(visible) {
-    const objects = [];
+    const objects = this._terrainObjectPool;
+    objects.length = 0;
     const { minTX, maxTX, minTY, maxTY } = visible;
     const mw = this.mapWidth;
     const mh = this.mapHeight;
@@ -1327,26 +1364,28 @@ export class Game {
             const treeH = 8 * zoom;
 
             // Tree trunk (small brown rect)
-            objects.push({
-              x: sx + ox + treeW / 2 - zoom,
-              y: sy + oy + treeH,
-              w: 2 * zoom,
-              h: 3 * zoom,
-              r: 0.25, g: 0.15, b: 0.08,
-              sortY: sy + oy + treeH,
-            });
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox + treeW / 2 - zoom;
+              o.y = sy + oy + treeH;
+              o.w = 2 * zoom;
+              o.h = 3 * zoom;
+              o.r = 0.25; o.g = 0.15; o.b = 0.08;
+              o.sortY = sy + oy + treeH;
+            }
 
             // Tree canopy (dark green rect)
-            objects.push({
-              x: sx + ox,
-              y: sy + oy,
-              w: treeW,
-              h: treeH,
-              r: 0.04 + ((h >> 16 & 0xFF) / 255) * 0.04,
-              g: 0.12 + ((h >> 16 & 0xFF) / 255) * 0.06,
-              b: 0.02,
-              sortY: sy + oy,
-            });
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox;
+              o.y = sy + oy;
+              o.w = treeW;
+              o.h = treeH;
+              o.r = 0.04 + ((h >> 16 & 0xFF) / 255) * 0.04;
+              o.g = 0.12 + ((h >> 16 & 0xFF) / 255) * 0.06;
+              o.b = 0.02;
+              o.sortY = sy + oy;
+            }
           }
         } else if (terrainType >= 11 && terrainType <= 15) {
           // Stronghold: draw stone keep icon
@@ -1355,38 +1394,39 @@ export class Game {
           const keepH = (6 + level * 2) * zoom;
 
           // Stone base
-          objects.push({
-            x: sx + (TILE_WIDTH * zoom - keepW) / 2,
-            y: sy + (TILE_HEIGHT * zoom - keepH) / 2,
-            w: keepW,
-            h: keepH,
-            r: 0.45, g: 0.42, b: 0.38,
-            sortY: sy + (TILE_HEIGHT * zoom + keepH) / 2,
-          });
+          {
+            const o = this._pooledPush(objects);
+            o.x = sx + (TILE_WIDTH * zoom - keepW) / 2;
+            o.y = sy + (TILE_HEIGHT * zoom - keepH) / 2;
+            o.w = keepW;
+            o.h = keepH;
+            o.r = 0.45; o.g = 0.42; o.b = 0.38;
+            o.sortY = sy + (TILE_HEIGHT * zoom + keepH) / 2;
+          }
 
           // Roof triangle (small darker rect above)
           const roofW = keepW * 0.6;
           const roofH = 4 * zoom;
-          objects.push({
-            x: sx + (TILE_WIDTH * zoom - roofW) / 2,
-            y: sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH,
-            w: roofW,
-            h: roofH,
-            r: 0.35, g: 0.22, b: 0.12,
-            sortY: sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH,
-          });
+          {
+            const o = this._pooledPush(objects);
+            o.x = sx + (TILE_WIDTH * zoom - roofW) / 2;
+            o.y = sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH;
+            o.w = roofW;
+            o.h = roofH;
+            o.r = 0.35; o.g = 0.22; o.b = 0.12;
+            o.sortY = sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH;
+          }
         } else if (terrainType === 7) {
           // Bridge: draw horizontal plank lines
           for (let p = 0; p < 3; p++) {
             const py = sy + (4 + p * 10) * zoom / 10;
-            objects.push({
-              x: sx + 2 * zoom,
-              y: py,
-              w: (TILE_WIDTH - 4) * zoom,
-              h: 1.5 * zoom,
-              r: 0.40, g: 0.30, b: 0.15,
-              sortY: py,
-            });
+            const o = this._pooledPush(objects);
+            o.x = sx + 2 * zoom;
+            o.y = py;
+            o.w = (TILE_WIDTH - 4) * zoom;
+            o.h = 1.5 * zoom;
+            o.r = 0.40; o.g = 0.30; o.b = 0.15;
+            o.sortY = py;
           }
         }
       }
@@ -1441,7 +1481,8 @@ export class Game {
    */
   buildStructureDescriptors(visible) {
     if (!this.placedStructures) return [];
-    const objects = [];
+    const objects = this._structDescPool;
+    objects.length = 0;
     const zoom = this.camera.zoom;
     const { minTX, maxTX, minTY, maxTY } = visible;
 
@@ -1455,15 +1496,25 @@ export class Game {
 
       if (s.type === 1) {
         // Watchtower: tall structure with observation platform
-        objects.push({ x: sx + 4 * zoom, y: sy + 2 * zoom, w: 8 * zoom, h: 24 * zoom, r: 0.5, g: 0.4, b: 0.25, sortY: sy });
-        objects.push({ x: sx + 2 * zoom, y: sy + 2 * zoom, w: 12 * zoom, h: 4 * zoom, r: 0.6, g: 0.5, b: 0.3, sortY: sy });
+        let o = this._pooledPush(objects);
+        o.x = sx + 4 * zoom; o.y = sy + 2 * zoom; o.w = 8 * zoom; o.h = 24 * zoom;
+        o.r = 0.5; o.g = 0.4; o.b = 0.25; o.sortY = sy;
+        o = this._pooledPush(objects);
+        o.x = sx + 2 * zoom; o.y = sy + 2 * zoom; o.w = 12 * zoom; o.h = 4 * zoom;
+        o.r = 0.6; o.g = 0.5; o.b = 0.3; o.sortY = sy;
       } else if (s.type === 2) {
         // Barricade: low sandbag wall
-        objects.push({ x: sx + 1 * zoom, y: sy + 8 * zoom, w: 14 * zoom, h: 6 * zoom, r: 0.35, g: 0.35, b: 0.3, sortY: sy + 8 });
+        const o = this._pooledPush(objects);
+        o.x = sx + 1 * zoom; o.y = sy + 8 * zoom; o.w = 14 * zoom; o.h = 6 * zoom;
+        o.r = 0.35; o.g = 0.35; o.b = 0.3; o.sortY = sy + 8;
       } else if (s.type === 3) {
         // Turret: circular base + gun barrel
-        objects.push({ x: sx + 3 * zoom, y: sy + 3 * zoom, w: 10 * zoom, h: 10 * zoom, r: 0.3, g: 0.3, b: 0.3, sortY: sy + 3 });
-        objects.push({ x: sx + 7 * zoom, y: sy + 7 * zoom, w: 8 * zoom, h: 2 * zoom, r: 0.2, g: 0.2, b: 0.2, sortY: sy + 7 });
+        let o = this._pooledPush(objects);
+        o.x = sx + 3 * zoom; o.y = sy + 3 * zoom; o.w = 10 * zoom; o.h = 10 * zoom;
+        o.r = 0.3; o.g = 0.3; o.b = 0.3; o.sortY = sy + 3;
+        o = this._pooledPush(objects);
+        o.x = sx + 7 * zoom; o.y = sy + 7 * zoom; o.w = 8 * zoom; o.h = 2 * zoom;
+        o.r = 0.2; o.g = 0.2; o.b = 0.2; o.sortY = sy + 7;
       }
     }
     return objects;
@@ -1478,7 +1529,8 @@ export class Game {
     const fog = this.state.fogVisible;
     if (!fog) return [];
     const fogW = this.state.fogWidth;
-    const tiles = [];
+    const tiles = this._fogTilePool;
+    tiles.length = 0;
     const { minTX, maxTX, minTY, maxTY } = visible;
     const startX = Math.max(0, minTX);
     const endX = Math.min(this.mapWidth, maxTX);
@@ -1494,13 +1546,11 @@ export class Game {
         const sy = ty * TILE_HEIGHT * zoom;
         const tw = TILE_WIDTH * zoom;
         const th = TILE_HEIGHT * zoom;
-        if (state === 0) {
-          // Unexplored — fully black
-          tiles.push({ x: sx, y: sy, w: tw, h: th, r: 0.0, g: 0.0, b: 0.0, a: 0.92 });
-        } else {
-          // Explored but not currently visible — dimmed
-          tiles.push({ x: sx, y: sy, w: tw, h: th, r: 0.0, g: 0.0, b: 0.0, a: 0.45 });
-        }
+        // Unexplored (state 0) gets a=0.92; explored (state 1) gets a=0.45.
+        const a = state === 0 ? 0.92 : 0.45;
+        const t = this._pooledPush(tiles);
+        t.x = sx; t.y = sy; t.w = tw; t.h = th;
+        t.r = 0.0; t.g = 0.0; t.b = 0.0; t.a = a;
       }
     }
     return tiles;
@@ -1518,7 +1568,8 @@ export class Game {
    * derived from entityID so a squad doesn't animate in lockstep.
    */
   buildUnitDescriptors(units) {
-    const descs = [];
+    const descs = this._unitDescPool;
+    descs.length = 0;
     const zoom = this.camera.zoom;
     // All unit sprites render at a uniform on-screen size equal to one
     // atlas cell × zoom.  The instanced shader couples source-rect size
@@ -1640,24 +1691,23 @@ export class Game {
         b = b * (1 - dmg * 0.3);
       }
 
-      descs.push({
-        x: sx,
-        y: sy,
-        // w/h are kept for HP-bar / selection-highlight geometry (those
-        // use the sprite footprint for layout).
-        w: spriteW,
-        h: spriteH,
-        // Atlas source rect — what drawUnits forwards to pushInstance.
-        spriteOffsetX: cell.x,
-        spriteOffsetY: cell.y,
-        spriteW: cell.w,
-        spriteH: cell.h,
-        r: r,
-        g: g,
-        b: b,
-        sortY: sy, // for Y-sorting
-        hpRatio: hpRatio,
-      });
+      const d = this._pooledPush(descs);
+      d.x = sx;
+      d.y = sy;
+      // w/h are kept for HP-bar / selection-highlight geometry (those
+      // use the sprite footprint for layout).
+      d.w = spriteW;
+      d.h = spriteH;
+      // Atlas source rect — what drawUnits forwards to pushInstance.
+      d.spriteOffsetX = cell.x;
+      d.spriteOffsetY = cell.y;
+      d.spriteW = cell.w;
+      d.spriteH = cell.h;
+      d.r = r;
+      d.g = g;
+      d.b = b;
+      d.sortY = sy; // for Y-sorting
+      d.hpRatio = hpRatio;
     }
 
     // Y-sort: draw far units first (painter's algorithm)

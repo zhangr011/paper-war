@@ -489,9 +489,51 @@ body {
 #minimap-panel {
   grid-area: minimap;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 6px;
+  gap: 4px;
+}
+
+/* Minimap controls (issue #42: zoom in/out + center, per design/main.png) */
+.minimap-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.minimap-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background:
+    var(--tex-parchment) repeat center / 24px 24px,
+    var(--paper-light);
+  background-blend-mode: multiply;
+  color: var(--text-heading);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.1s, transform 0.05s;
+}
+
+.minimap-btn:hover {
+  border-color: var(--text-heading);
+}
+
+.minimap-btn:active {
+  transform: scale(0.92);
+}
+
+.minimap-btn-icon {
+  pointer-events: none;
 }
 
 #minimap-canvas {

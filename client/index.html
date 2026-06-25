@@ -224,6 +224,18 @@
     <!-- Minimap -->
     <section class="panel" id="minimap-panel">
       <canvas id="minimap-canvas" width="120" height="180"></canvas>
+      <!-- Minimap controls (issue #42: design specifies zoom in/out + center) -->
+      <div class="minimap-controls">
+        <button class="minimap-btn" id="zoom-in-btn" title="Zoom in" type="button">
+          <span class="minimap-btn-icon">+</span>
+        </button>
+        <button class="minimap-btn" id="zoom-out-btn" title="Zoom out" type="button">
+          <span class="minimap-btn-icon">&minus;</span>
+        </button>
+        <button class="minimap-btn" id="center-btn" title="Center on base" type="button">
+          <span class="minimap-btn-icon">&otimes;</span>
+        </button>
+      </div>
     </section>
 
     <!-- Action panel -->

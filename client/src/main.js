@@ -528,6 +528,26 @@ export class Game {
       agBtn.addEventListener('click', () => this.toggleAttackGround());
     }
 
+    // --- Minimap controls (issue #42: zoom + center buttons) ---
+    // Touch devices have no scroll wheel; provide on-screen controls.
+    const zoomInBtn = document.getElementById('zoom-in-btn');
+    const zoomOutBtn = document.getElementById('zoom-out-btn');
+    const centerBtn = document.getElementById('center-btn');
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener('click', () => {
+        // zoomAt treats positive delta as zoom-out (wheel-down); negate for in.
+        this.camera.zoomAt(-120, this.camera.viewW / 2, this.camera.viewH / 2);
+      });
+    }
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener('click', () => {
+        this.camera.zoomAt(120, this.camera.viewW / 2, this.camera.viewH / 2);
+      });
+    }
+    if (centerBtn) {
+      centerBtn.addEventListener('click', () => this.centerCameraOnPlayerStart());
+    }
+
     // --- Mute toggle ---
     const muteBtn = document.getElementById('mute-btn');
     if (muteBtn) {

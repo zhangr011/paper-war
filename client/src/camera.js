@@ -26,7 +26,7 @@ export class Camera {
 
     // Zoom limits
     this.minZoom = 0.25;
-    this.maxZoom = 0.5;
+    this.maxZoom = 2.0;
 
     // Map bounds (tile count)
     this.mapWidth = 48;

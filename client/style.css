@@ -152,6 +152,45 @@ body {
   gap: 8px;
 }
 
+/* Hotkey indicator (issue #44: shows the select-all hotkey in the top bar) */
+.hotkey-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 4px;
+  background:
+    var(--tex-parchment-warm) repeat center / 24px 24px,
+    var(--paper-light);
+  background-blend-mode: multiply;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.hotkey-indicator kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  background: var(--panel-header);
+  color: var(--paper-light);
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.hotkey-label {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .player-avatar {
   display: inline-flex;
   align-items: center;

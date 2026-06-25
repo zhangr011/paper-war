@@ -584,6 +584,15 @@ export class Game {
       } else if (key >= '1' && key <= '4') {
         // Formation hotkeys: 1=Line, 2=Wedge, 3=Circle, 4=Scatter
         this.handleFormation(parseInt(key, 10) - 1);
+      } else if (key === 'z' || key === 'Z') {
+        // Issue #44: select all squads belonging to the player.
+        // Mirrors standard RTS conventions (e.g. Starcraft's Ctrl+1).
+        const allUnits = this.state.getRenderUnits ? this.state.getRenderUnits() : [...this.state.units.values()];
+        const myUnits = allUnits.filter(u => u.team === this.playerID);
+        const squads = new Set(myUnits.map(u => u.squadID || u.boidSquadID).filter(Boolean));
+        this.input.selectedSquads.clear();
+        squads.forEach(s => this.input.selectedSquads.add(s));
+        if (this.audioStarted) this.sfx.uiClick();
       } else if (key === 'Escape') {
         // Settings panel takes precedence, then attack-ground, then build mode.
         // (Issue #35: this branch was dead code before the input.js fix.)

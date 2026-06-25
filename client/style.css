@@ -14,6 +14,7 @@
   --border-color: #A08060;
   --border-light: #C4AA82;
   --text-dark: #3A2A1A;
+  --text-heading: #1E293A;    /* deep navy for headings — design/component.png uses navy 7:1 over brown */
   --text-muted: #6B5E4E;
   --morale-red: #FF4D4D;
   --morale-green: #4CAF50;
@@ -62,6 +63,13 @@ html, body {
   background: #2A1F14;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings use the navy heading color (design/component.png is 7:1
+ * navy vs brown for dark pixels — navy is the design's primary heading
+ * color, brown is for body text on parchment). */
+h1, h2, h3 {
+  color: var(--text-heading);
 }
 
 /* --- Screen Management --- */
@@ -781,7 +789,7 @@ body.spectator-mode #gold {
   font-family: var(--font-display);
   font-size: 44px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-heading);
   margin-bottom: 4px;
   letter-spacing: 3px;
   line-height: 1;
@@ -893,7 +901,7 @@ body.spectator-mode #gold {
   font-family: var(--font-display);
   font-size: 36px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--text-heading);
   letter-spacing: 2px;
   line-height: 1;
   margin-bottom: 20px;

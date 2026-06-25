@@ -186,6 +186,18 @@ func NewGameSession() *GameSession {
 	gs.Lifecycle.Start() // start immediately for PvAI
 	gs.PlayerGold = make(map[uint32]int32)
 
+	// Wire shared state maps into the systems that need them.
+	// recruitSys and buildSys were constructed above with the (then-nil)
+	// gs.PlayerGold reference; point them at the freshly-allocated map
+	// now.  Without this, gold checks + deductions in Build() and
+	// Recruit() silently no-op.  (Issue found in QA pass.)
+	if gs.recruitSys != nil {
+		gs.recruitSys.PlayerGold = gs.PlayerGold
+	}
+	if gs.buildSys != nil {
+		gs.buildSys.PlayerGold = gs.PlayerGold
+	}
+
 	// Fog system (per-player visibility)
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
@@ -215,6 +227,14 @@ func (gs *GameSession) Tick() {
 	if gs.recruitSys != nil {
 		gs.recruitSys.PlayerGold = gs.PlayerGold
 	}
+	// Same for build system — Build() reads PlayerGold to check + deduct.
+	// Without this, s.PlayerGold is nil on the BuildSystem and the gold
+	// check at build.go:69-75 is silently skipped (no deduction either,
+	// since line 98 is inside the same `if s.PlayerGold != nil` block).
+	// Issue found in QA pass: structures were free.
+	if gs.buildSys != nil {
+		gs.buildSys.PlayerGold = gs.PlayerGold
+	}
 
 	gs.World.Tick(gs.tickCount)
 
@@ -232,6 +252,10 @@ func (gs *GameSession) Tick() {
 			}
 		}
 	}
+	// Note: BuildSystem deducts gold directly inside Build() (line 98 of
+	// build.go) — no post-tick reconciliation needed here.  The
+	// GoldDeductions map on BuildSystem is only used to prevent
+	// same-tick over-spend across multiple Build() calls.
 
 	// Award Gold bounties from DeathSystem
 	if gs.deathSys != nil {

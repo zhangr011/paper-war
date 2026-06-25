@@ -31,6 +31,11 @@ func (s *BuildSystem) Name() string  { return "BuildSystem" }
 func (s *BuildSystem) Priority() int { return 65 } // before Recruitment(70)
 
 func (s *BuildSystem) Init(w *ecs.World) {
+	// Issue #40 (found in QA): s.em was never assigned in Init, causing
+	// a nil-pointer panic in Build() the first time the player tried to
+	// place a structure. Other systems (RecruitmentSystem, etc.) set
+	// this via `s.em = w.Entities()` — BuildSystem was missing it.
+	s.em = w.Entities()
 	s.posPool = w.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	s.healthPool = w.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 	s.attackPool = w.Pool(component.AttackComponent{}).(*ecs.ComponentPool[component.AttackComponent])

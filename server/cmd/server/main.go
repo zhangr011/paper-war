@@ -108,7 +108,20 @@ func main() {
 	// 4. Create WebSocket Hub with command dispatch and text message handler
 	hub = network.NewHub(
 		func(clientID uint32, cmd *network.Command) {
-			gs.HandleCommand(clientID, cmd)
+			// Translate clientID → playerID using the Hub's mapping
+			// (SetClientPlayerID is called on join/match-start).  Without
+			// this, HandleCommand received the raw clientID (a connection
+			// counter) and treated it as a playerID — which mismatched
+			// the OwnerComponent.PlayerID on units (set via SpawnTeam
+			// using the playerID) and the PlayerSpawns map.  Result:
+			// recruit/build commands looked up the wrong player's data
+			// (often the AI's).  Issue found in QA pass.
+			playerID := hub.GetClientPlayerID(clientID)
+			if playerID == 0 {
+				// Client hasn't joined a match yet — drop the command.
+				return
+			}
+			gs.HandleCommand(playerID, cmd)
 		},
 		func(clientID uint32, msg map[string]interface{}) {
 			msgType, _ := msg["type"].(string)

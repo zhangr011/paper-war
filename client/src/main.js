@@ -783,8 +783,26 @@ export class Game {
         break;
       }
       case 'rally': {
-        // Move selected squads to the commander's position
-        const commander = myUnits.find(u => u.unitType === 0 && u.hp > u.maxHP * 2);
+        // Move selected squads to the commander's position.
+        //
+        // The commander isn't flagged on the client (the server snapshot
+        // doesn't carry BoidRole or maxHP — only current HP).  Commanders
+        // have ~3× the HP of combat units (300 vs 100), so the unit with
+        // the highest currHP is reliably the commander.  This is a
+        // client-side heuristic; the authoritative role lives on the
+        // server's BoidComponent.Role.
+        //
+        // Previous filter (u.hp > u.maxHP * 2) was always false — no unit
+        // exceeds its own maxHP — so rally never fired (issue found in QA).
+        let commander = null;
+        let bestHP = -1;
+        for (const u of myUnits) {
+          const hp = u.currHP || 0;
+          if (hp > bestHP) {
+            bestHP = hp;
+            commander = u;
+          }
+        }
         if (!commander) return;
         const fx = Math.round(commander.renderX * FIXED_ONE);
         const fy = Math.round(commander.renderY * FIXED_ONE);

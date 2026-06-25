@@ -307,14 +307,21 @@ export class Game {
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
 
-    // Compute spawn positions (must match server MapData spawns)
-    // Player 1 spawns near top (y=10), Player 2 near bottom (y=mapHeight-10)
+    // Compute spawn positions.  Prefer the server-provided spawns from
+    // the match_found message (authoritative — they match the map
+    // generator and the build-range registry).  Fall back to the legacy
+    // hardcoded layout if the server didn't send them.  (QA finding:
+    // without this, the client fabricated spawns that disagreed with
+    // the server, breaking build placement near the player's base.)
     const spawnX = this.mapWidth / 2;
+    const defaultSpawns = [
+      [spawnX, 10],                              // Player 1
+      [spawnX, this.mapHeight - 10],             // Player 2
+    ];
     this.mapData = {
-      spawns: [
-        [spawnX, 10],                              // Player 1
-        [spawnX, this.mapHeight - 10],             // Player 2
-      ],
+      spawns: (Array.isArray(this.serverSpawns) && this.serverSpawns.length >= 2)
+        ? this.serverSpawns
+        : defaultSpawns,
     };
 
     this.buildMinimapTerrain();

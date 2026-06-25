@@ -430,6 +430,11 @@ export class App {
     this.game.mapWidth = matchInfo.map_w || 48;
     this.game.mapHeight = matchInfo.map_h || 96;
 
+    // Store server-provided spawn positions (used for build placement,
+    // minimap flags, and camera centering).  Falls back to hardcoded
+    // positions if the server didn't include them.
+    this.game.serverSpawns = matchInfo.spawns || null;
+
     // Store reconnect token so connection.js can auto-rejoin on disconnect
     this.connection.reconnectToken = matchInfo.reconnect_token || null;
 

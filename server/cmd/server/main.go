@@ -169,6 +169,16 @@ func main() {
 			spawnSquadsForPlayer(gs, 2, 1, 2)
 			token := registry.IssueToken(1)
 			mw, mh := gs.MapSize()
+			// Include spawn positions so the client doesn't have to guess.
+			// Without this, the client fabricates spawns at fixed y=10/mh-10
+			// which disagrees with both the map generator (used for build
+			// range checks) and the actual unit positions. (QA finding.)
+			spawnsPayload := [][]int32{}
+			if gs.Map != nil {
+				for _, sp := range gs.Map.Spawns {
+					spawnsPayload = append(spawnsPayload, []int32{sp[0], sp[1]})
+				}
+			}
 			hub.SendJSON(clientID, map[string]interface{}{
 				"type":            "match_found",
 				"player_id":       uint32(1),
@@ -176,6 +186,7 @@ func main() {
 				"map_w":           mw,
 				"map_h":           mh,
 				"reconnect_token": token,
+				"spawns":          spawnsPayload,
 			})
 			hub.SendToClient(clientID, append([]byte{0xFF, 0xFD}, gs.MapData()...))
 		case "start_clash":
@@ -492,16 +503,35 @@ func spawnFromStore(gs *game.GameSession, playerID uint32, playerIndex, playerCo
 }
 
 func spawnSquadsForPlayerWithCmdType(gs *game.GameSession, playerID uint32, playerIndex, playerCount int, cmdType uint8) {
-	mw, mh := gs.MapSize()
-	x1 := float64(mw) * 0.42
-	x2 := float64(mw) * 0.58
-	y := 10.0
-	if playerCount > 1 {
-		y = 10.0 + float64(mh-20)*float64(playerIndex)/float64(playerCount-1)
+	// Spawn units at the map generator's spawn point for this player.
+	// Issue found in QA: previously hardcoded y=10 (+offset for player
+	// index), which disagreed with both the map generator's Spawns
+	// array (used by BuildSystem for placement-range checks) and the
+	// client's mapData.spawns (used to project flags/minimap markers).
+	// Result: building near your own units was rejected as "out of
+	// range" because the server thought your spawn was somewhere else.
+	mw, _ := gs.MapSize()
+	var cx, cy float64
+	if gs.Map != nil && playerIndex < len(gs.Map.Spawns) {
+		// Use the authoritative spawn position from the map generator.
+		cx = float64(gs.Map.Spawns[playerIndex][0])
+		cy = float64(gs.Map.Spawns[playerIndex][1])
+	} else {
+		// Fallback: mirror the previous hardcoded layout.
+		cx = float64(mw) * 0.5
+		cy = 10.0
+		if playerCount > 1 {
+			cy = 10.0 + float64(86) * float64(playerIndex) / float64(playerCount-1)
+		}
 	}
+	// Two squads side-by-side, slightly offset from the spawn center so
+	// they don't overlap.
+	const squadOffsetX = 2.0
+	x1 := cx - squadOffsetX
+	x2 := cx + squadOffsetX
 
 	baseSquadID := uint32(playerIndex*2 + 1)
 	ct := component.CombatUnitType(cmdType)
-	gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(y), 1, ct)
-	gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(y), 1, ct)
+	gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(cy), 1, ct)
+	gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(cy), 1, ct)
 }

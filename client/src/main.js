@@ -116,10 +116,10 @@ const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 //
 // Server terrain type ids (component.TerrainType) line up with these indices.
 const TERRAIN_COLORS = [
-  { r: 0.22, g: 0.35, b: 0.09 }, // 0 Plain   — base tuned so mean brightness → design's (48,80,16); bright patches hit (64,96,32) via blue-boost
+  { r: 0.28, g: 0.41, b: 0.15 }, // 0 Plain   — design (71,105,37) brighter grass; was (56,89,22)
   { r: 0.66, g: 0.52, b: 0.32 }, // 1 Road    — warm earthy #a8852 sand
   { r: 0.22, g: 0.40, b: 0.55 }, // 2 Shallow — transition teal
-  { r: 0.15, g: 0.33, b: 0.52 }, // 3 Deep    — design dark teal RGB(37,80,124)
+  { r: 0.22, g: 0.48, b: 0.61 }, // 3 Deep    — design (56,123,156) brighter blue; was darker
   { r: 0.11, g: 0.22, b: 0.055 }, // 4 Forest  — design dark green RGB(29,57,14) for scattered tree clusters
   { r: 0.62, g: 0.50, b: 0.30 }, // 5 Hill    — warm earth #9e804c (peaks lighten toward stone gray)
   { r: 0.20, g: 0.28, b: 0.11 }, // 6 Swamp   — muted olive

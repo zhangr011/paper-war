@@ -9,9 +9,21 @@
 // the fragment shader multiplies the sampled texel by the per-instance
 // tint.
 //
-// Layout: 32×32 cells in a 16-column grid.  Row indexing is
-//   row = unitType * (STATES * DIRECTIONS) + state * DIRECTIONS + dir
-// column = frame index within that (state, dir).
+// Layout: 32×32 cells packed into a 32-column grid.  Each (unitType,
+// state, dir) sprite reserves MAX_FRAMES_PER_SPRITE=4 contiguous cells
+// (one per possible frame, even if a state uses fewer — keeps the math
+// simple and frames stay together visually).  140 sprites × 4 cells =
+// 560 cells, packed 32 per row → 18 rows.
+//
+// Issue #38: previously 16 cols × 140 rows = 4480 px tall, which exceeds
+// the WebGL2 MAX_TEXTURE_SIZE floor of 4096 on older mobile GPUs.  The
+// 32-col layout is 1024×576 — fits comfortably on every WebGL2 device.
+//
+// Cell math:
+//   spriteSlot   = unitType * (STATES * DIRECTIONS) + state * DIRECTIONS + dir
+//   linearCell   = spriteSlot * MAX_FRAMES_PER_SPRITE + frame
+//   x            = (linearCell % ATLAS_COLS) * ATLAS_CELL
+//   y            = floor(linearCell / ATLAS_COLS) * ATLAS_CELL
 //
 // Frame counts per state (the lookup clamps frame to frameCount-1):
 //   idle   (0):  2 frames  — subtle breathing bob
@@ -31,7 +43,8 @@
 // even before team tint is applied.
 
 export const ATLAS_CELL = 32;            // px per sprite cell
-export const ATLAS_COLS = 16;            // sprites per row
+export const ATLAS_COLS = 32;            // sprites' cells per row (8 sprites × 4 frames)
+export const MAX_FRAMES_PER_SPRITE = 4;  // max(FRAMES_PER_STATE); reserved per sprite slot
 
 // Direction enum — exported as both numeric constants and an array count.
 export const DIR_S = 0;
@@ -60,9 +73,13 @@ export const STATE_MAP_LEGACY = [
   STATE_MOVE,    // 3 (retreat)→ move (facing handled separately)
 ];
 
-export const ATLAS_ROWS = 7 * STATES * DIRECTIONS;  // 7 types × 5 states × 4 dirs = 140
-export const ATLAS_W = ATLAS_COLS * ATLAS_CELL;     // 512
-export const ATLAS_H = ATLAS_ROWS * ATLAS_CELL;     // 4480
+// Total sprite slots: 7 types × 5 states × 4 dirs = 140.
+// Each slot reserves MAX_FRAMES_PER_SPRITE cells (4) so frames for one
+// sprite stay contiguous.  Total cells = 140 × 4 = 560, packed 32 per
+// row → 18 rows.
+export const ATLAS_ROWS = Math.ceil(7 * STATES * DIRECTIONS * MAX_FRAMES_PER_SPRITE / ATLAS_COLS);
+export const ATLAS_W = ATLAS_COLS * ATLAS_CELL;     // 1024
+export const ATLAS_H = ATLAS_ROWS * ATLAS_CELL;     // 576
 
 // Frames per state — indexed by state 0..4
 //   idle: 2, idle2: 2, move: 4, attack: 3, die: 4
@@ -74,7 +91,10 @@ export const FRAMES_PER_STATE = [2, 2, 4, 3, 4];
 export const ANIM_FPS = [6, 4, 10, 14, 8];
 
 /**
- * Atlas cell origin (top-left) in atlas pixels for a given sprite.
+ * Atlas cell origin (top-left) in atlas pixels for a given sprite frame.
+ *
+ * Each (unitType, state, dir) sprite reserves MAX_FRAMES_PER_SPRITE=4
+ * contiguous cells (column-wrapped).  Sprites are packed 8 per row.
  *
  * @param {number} unitType  0..6
  * @param {number} state     0..4   (0=idle, 1=idle2, 2=move, 3=attack, 4=die)
@@ -87,9 +107,11 @@ export function atlasCell(unitType, state, dir, frame) {
   const s = Math.max(0, Math.min(STATES - 1, state | 0));
   const d = Math.max(0, Math.min(DIRECTIONS - 1, dir | 0));
   const f = Math.max(0, Math.min(FRAMES_PER_STATE[s] - 1, frame | 0));
+  const spriteSlot = t * (STATES * DIRECTIONS) + s * DIRECTIONS + d;
+  const linearCell = spriteSlot * MAX_FRAMES_PER_SPRITE + f;
   return {
-    x: f * ATLAS_CELL,
-    y: (t * STATES * DIRECTIONS + s * DIRECTIONS + d) * ATLAS_CELL,
+    x: (linearCell % ATLAS_COLS) * ATLAS_CELL,
+    y: Math.floor(linearCell / ATLAS_COLS) * ATLAS_CELL,
     w: ATLAS_CELL,
     h: ATLAS_CELL,
   };

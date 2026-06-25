@@ -72,16 +72,20 @@ test('ANIM_FPS has 5 entries (rates for each state)', () => {
   assert.ok(ANIM_FPS[STATE_DIE] > 0, 'die state must have an FPS');
 });
 
-test('ATLAS_ROWS = 7 types × 5 states × 4 dirs = 140', () => {
-  assert.equal(ATLAS_ROWS, 140);
+test('ATLAS_ROWS = ceil(140 sprites × 4 cells / 32 cols) = 18', () => {
+  // 7 types × 5 states × 4 dirs = 140 sprites; each reserves 4 cells;
+  // 32 cols per row → 560 cells / 32 = 17.5 → 18 rows.
+  assert.equal(ATLAS_ROWS, 18);
 });
 
-test('ATLAS_W unchanged at 512 (16 cols × 32 px)', () => {
-  assert.equal(ATLAS_W, 512);
+test('ATLAS_W = 1024 (32 cols × 32 px) — issue #38 layout', () => {
+  assert.equal(ATLAS_W, 1024);
 });
 
-test('ATLAS_H = 140 rows × 32 px = 4480', () => {
-  assert.equal(ATLAS_H, 4480);
+test('ATLAS_H = 18 rows × 32 px = 576 — fits under WebGL2 MAX_TEXTURE_SIZE 4096 floor', () => {
+  assert.equal(ATLAS_H, 576);
+  assert.ok(ATLAS_H <= 4096, 'atlas height must fit under 4096');
+  assert.ok(ATLAS_W <= 4096, 'atlas width must fit under 4096');
 });
 
 // ---------------------------------------------------------------------------
@@ -96,38 +100,70 @@ test('atlasCell returns 32×32 cell at origin for (type=0, state=0, dir=S, frame
   assert.equal(cell.h, 32);
 });
 
-test('atlasCell y increments by 32 per direction within a state', () => {
-  const s = atlasCell(0, STATE_IDLE, DIR_S, 0);
-  const e = atlasCell(0, STATE_IDLE, DIR_E, 0);
-  const n = atlasCell(0, STATE_IDLE, DIR_N, 0);
-  const w = atlasCell(0, STATE_IDLE, DIR_W, 0);
-  assert.equal(e.y, s.y + 32);
-  assert.equal(n.y, s.y + 64);
-  assert.equal(w.y, s.y + 96);
+test('atlasCell returns a unique, in-bounds cell for every valid (type, state, dir, frame)', () => {
+  // Tightly pack all valid cells into a Set; assert no overlaps and all in-bounds.
+  const seen = new Set();
+  let count = 0;
+  for (let t = 0; t < 7; t++) {
+    for (let s = 0; s < STATES; s++) {
+      for (let d = 0; d < DIRECTIONS; d++) {
+        const frameCount = FRAMES_PER_STATE[s];
+        for (let f = 0; f < frameCount; f++) {
+          const cell = atlasCell(t, s, d, f);
+          const key = `${cell.x},${cell.y}`;
+          if (seen.has(key)) {
+            assert.fail(`overlap at t=${t} s=${s} d=${d} f=${f} → (${key})`);
+          }
+          seen.add(key);
+          // In-bounds check
+          assert.ok(cell.x >= 0 && cell.x < ATLAS_W, `x=${cell.x} out of bounds`);
+          assert.ok(cell.y >= 0 && cell.y < ATLAS_H, `y=${cell.y} out of bounds`);
+          count++;
+        }
+      }
+    }
+  }
+  // 5 states × their frame counts × 4 dirs × 7 types
+  const expected = (2 + 2 + 4 + 3 + 4) * 4 * 7; // = 15 * 4 * 7 = 420
+  assert.equal(count, expected, `expected ${expected} unique sprite-frames`);
 });
 
-test('atlasCell y increments by STATES*DIRS*32 = 640 per unit type', () => {
-  const t0 = atlasCell(0, STATE_IDLE, DIR_S, 0);
-  const t1 = atlasCell(1, STATE_IDLE, DIR_S, 0);
-  assert.equal(t1.y, t0.y + 5 * 4 * 32);
-});
-
-test('atlasCell y increments by DIRECTIONS*32 = 128 per state', () => {
-  const idle = atlasCell(0, STATE_IDLE, DIR_S, 0);
-  const idle2 = atlasCell(0, STATE_IDLE2, DIR_S, 0);
-  const move = atlasCell(0, STATE_MOVE, DIR_S, 0);
-  const attack = atlasCell(0, STATE_ATTACK, DIR_S, 0);
-  const die = atlasCell(0, STATE_DIE, DIR_S, 0);
-  assert.equal(idle2.y, idle.y + 128);
-  assert.equal(move.y, idle.y + 256);
-  assert.equal(attack.y, idle.y + 384);
-  assert.equal(die.y, idle.y + 512);
-});
-
-test('atlasCell x increments by ATLAS_CELL per frame', () => {
-  const f0 = atlasCell(0, STATE_MOVE, DIR_E, 0);
-  const f1 = atlasCell(0, STATE_MOVE, DIR_E, 1);
+test('atlasCell frames for one (sprite) are contiguous in x', () => {
+  // For a sprite whose frames all fit in one row (most cases), frame N+1
+  // is exactly ATLAS_CELL to the right of frame N.  For sprites that
+  // straddle a row boundary this can wrap, so we only test sprites in
+  // the middle of a row where wrapping doesn't happen.
+  // spriteSlot = 0 → first sprite on the first row → safe.
+  const f0 = atlasCell(0, STATE_MOVE, DIR_S, 0);
+  const f1 = atlasCell(0, STATE_MOVE, DIR_S, 1);
+  const f2 = atlasCell(0, STATE_MOVE, DIR_S, 2);
+  const f3 = atlasCell(0, STATE_MOVE, DIR_S, 3);
   assert.equal(f1.x, f0.x + ATLAS_CELL);
+  assert.equal(f2.x, f0.x + 2 * ATLAS_CELL);
+  assert.equal(f3.x, f0.x + 3 * ATLAS_CELL);
+  assert.equal(f0.y, f1.y);
+  assert.equal(f0.y, f2.y);
+  assert.equal(f0.y, f3.y);
+});
+
+test('atlasCell spriteSlot stride = 4 cells (= MAX_FRAMES_PER_SPRITE)', () => {
+  // Two adjacent sprites in the same row (slot 0 and slot 1) — sprite 1
+  // should be 4 cells to the right of sprite 0 (same y).
+  const s0 = atlasCell(0, STATE_IDLE, DIR_S, 0);
+  const s1 = atlasCell(0, STATE_IDLE, DIR_E, 0); // DIR_E is slot 1 within type 0, state 0
+  assert.equal(s1.y, s0.y, 'adjacent sprites on the same row');
+  assert.equal(s1.x, s0.x + 4 * ATLAS_CELL);
+});
+
+test('atlasCell advances to next row when spriteSlot × 4 crosses column boundary', () => {
+  // Slot 8 starts at linearCell 32, which is the first cell of row 1.
+  // Slot 7 is at linearCell 28-31 (last 4 cells of row 0).
+  // Type 0, state 1 (idle2), dir 0 = spriteSlot 0*20 + 1*4 + 0 = 4 → linearCell 16..19 → row 0
+  // Type 1, state 0, dir 0 = spriteSlot 1*20 + 0 = 20 → linearCell 80..83 → row 2
+  const slot7 = atlasCell(0, STATE_IDLE, DIR_W, 0); // slot 3 → linearCell 12..15, row 0
+  const slot8 = atlasCell(0, STATE_IDLE2, DIR_S, 0); // slot 4 → linearCell 16..19, row 0
+  assert.equal(slot8.y, slot7.y); // both still in row 0
+  assert.equal(slot8.x, slot7.x + 4 * ATLAS_CELL);
 });
 
 test('atlasCell clamps out-of-range inputs', () => {

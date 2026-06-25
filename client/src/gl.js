@@ -857,6 +857,37 @@ export class Renderer {
   }
 
   /**
+   * Render active particles from a ParticleSystem pool (issue #37).
+   * Particles carry world-tile coords; we convert to screen pixels with
+   * TILE_WIDTH×zoom and center the size-scaled quad. Alpha is derived
+   * from age/life so particles fade out. This iterates the pool
+   * directly (no descriptor allocation) and pushes into the effects
+   * batch, which is flushed in endFrame().
+   *
+   * @param {object} particles  ParticleSystem instance
+   * @param {number} zoom       current camera zoom factor
+   * @param {{x:number, y:number}} camera  camera offset in screen px
+   */
+  drawParticles(particles, zoom, camera) {
+    const batch = this.effectsBatch;
+    const tilePx = 32 * zoom; // TILE_WIDTH=32
+    particles.forEachActive((p) => {
+      const t = p.age / p.life;
+      const alpha = p.baseAlpha * (1 - t);
+      const screenX = p.x * tilePx - camera.x;
+      const screenY = p.y * tilePx - camera.y;
+      const size = p.size * zoom;
+      batch.pushColorQuad(
+        screenX - size / 2,
+        screenY - size / 2,
+        size, size,
+        p.r, p.g, p.b,
+        alpha,
+      );
+    });
+  }
+
+  /**
    * Batch fog overlay quads.
    * @param {Array<{x:number, y:number, w:number, h:number, r:number, g:number, b:number, a:number}>} fogTiles
    * @param {{ x:number, y:number }} camera

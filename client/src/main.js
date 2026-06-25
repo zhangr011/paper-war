@@ -12,6 +12,7 @@ import { AudioEngine } from './audio/audioengine.js?v=v8';
 import { SFX } from './audio/sfx.js?v=v8';
 import { Ambient } from './audio/ambient.js?v=v8';
 import { Music } from './audio/music.js?v=v8';
+import { ParticleSystem } from './particles.js?v=v8';
 import { formatMatchResultHeading } from './match_result.js?v=v8';
 import {
   generateUnitAtlas,
@@ -233,6 +234,12 @@ export class Game {
     this.ambient = new Ambient(this.audioEngine);
     this.music = new Music(this.audioEngine);
     this.audioStarted = false;
+
+    // --- Particle system (issue #37) ---
+    // Pool-allocated combat-juice particles (muzzle flash, impact sparks,
+    // dust puffs, death smoke). Driven by snap.events in onMessage; updated
+    // and rendered each frame via drawParticles in the effects pass.
+    this.particles = new ParticleSystem();
     // Unit costs (must match server CombatUnitTypeTable)
     this.unitCosts = [15, 25, 50, 30, 25, 50, 60];
 
@@ -374,6 +381,15 @@ export class Game {
         const camWX = (this.camera.x + this.camera.viewW / 2) / TILE_WIDTH - this.camera.offsetX / TILE_WIDTH;
         const camWY = (this.camera.y + this.camera.viewH / 2) / TILE_HEIGHT - this.camera.offsetY / TILE_HEIGHT;
         this.sfx.processEvents(snap.events, camWX, camWY);
+      }
+
+      // Spawn combat particles from the same events (issue #37).
+      // Particles are visual-only and run independent of audio (which
+      // can be muted by autoplay policy on first snapshot).
+      if (snap.events && snap.events.length > 0) {
+        const camWX = (this.camera.x + this.camera.viewW / 2) / TILE_WIDTH - this.camera.offsetX / TILE_WIDTH;
+        const camWY = (this.camera.y + this.camera.viewH / 2) / TILE_HEIGHT - this.camera.offsetY / TILE_HEIGHT;
+        this.particles.processEvents(snap.events, camWX, camWY);
       }
     };
 
@@ -1060,6 +1076,8 @@ export class Game {
     this.running = false;
     this.connection.disconnect();
     this.ambient.stop();
+    // Clear particle pool so leftover effects don't render in the next match.
+    this.particles.reset();
   }
 
   // -----------------------------------------------------------------------
@@ -1113,6 +1131,8 @@ export class Game {
     this.state.update(now);
     this.input.update(dt);
     this.camera.update(dt);
+    // Issue #37: advance particle lifetimes. dt is in seconds.
+    this.particles.update(dt);
 
     // Periodic cleanup
     this.framesSinceCleanup++;
@@ -1192,6 +1212,12 @@ export class Game {
     // Pass 4: Selection highlights (drawn as effects)
     if (selectionHighlights.length > 0) {
       this.renderer.drawEffects(selectionHighlights, cameraOffset);
+    }
+
+    // Pass 4.5: Particles (issue #37) — muzzle flash, impact sparks,
+    // death smoke, etc. Iterate pool directly; no descriptor allocation.
+    if (this.particles.activeCount > 0) {
+      this.renderer.drawParticles(this.particles, this.camera.zoom, cameraOffset);
     }
 
     this.renderer.endFrame();

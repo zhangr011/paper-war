@@ -296,6 +296,37 @@
         </div>
       </div>
 
+      <!-- Customizable TACTICS slots (issue #43: per design/main.png).
+           Empty slots show "+"; assigned slots execute the bound tactic
+           on click, clear on right-click. Loadout persists via localStorage. -->
+      <div class="action-group tactic-loadout-group">
+        <span class="action-group-label">Tactics</span>
+        <div class="action-buttons tactic-slots">
+          <button class="tactic-slot empty" data-slot="0" title="Click to assign tactic, right-click to clear" type="button">
+            <span class="tactic-slot-icon">+</span>
+          </button>
+          <button class="tactic-slot empty" data-slot="1" title="Click to assign tactic, right-click to clear" type="button">
+            <span class="tactic-slot-icon">+</span>
+          </button>
+          <button class="tactic-slot empty" data-slot="2" title="Click to assign tactic, right-click to clear" type="button">
+            <span class="tactic-slot-icon">+</span>
+          </button>
+          <button class="tactic-slot empty" data-slot="3" title="Click to assign tactic, right-click to clear" type="button">
+            <span class="tactic-slot-icon">+</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tactic picker (hidden by default, shown when an empty slot is clicked) -->
+      <div class="tactic-picker" id="tactic-picker" hidden>
+        <button class="tactic-picker-option" data-tactic="charge">Charge</button>
+        <button class="tactic-picker-option" data-tactic="retreat">Retreat</button>
+        <button class="tactic-picker-option" data-tactic="defend">Defend</button>
+        <button class="tactic-picker-option" data-tactic="rally">Rally</button>
+        <button class="tactic-picker-option" data-tactic="attack-ground">Atk Ground</button>
+        <button class="tactic-picker-cancel" type="button">Cancel</button>
+      </div>
+
       <div class="action-group recruit-group">
         <span class="action-group-label">Recruit</span>
         <div class="action-buttons">

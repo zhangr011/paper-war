@@ -13,6 +13,7 @@ import { SFX } from './audio/sfx.js?v=v8';
 import { Ambient } from './audio/ambient.js?v=v8';
 import { Music } from './audio/music.js?v=v8';
 import { ParticleSystem } from './particles.js?v=v8';
+import { TacticLoadout } from './tactic_loadout.js?v=v8';
 import { formatMatchResultHeading } from './match_result.js?v=v8';
 import {
   generateUnitAtlas,
@@ -547,6 +548,11 @@ export class Game {
     if (centerBtn) {
       centerBtn.addEventListener('click', () => this.centerCameraOnPlayerStart());
     }
+
+    // --- Customizable TACTICS preset slots (issue #43) ---
+    // 4 slots under the Formation row; click to assign, click assigned
+    // to execute, right-click to clear. Persisted via localStorage.
+    this.tacticLoadout = new TacticLoadout(this);
 
     // --- Mute toggle ---
     const muteBtn = document.getElementById('mute-btn');

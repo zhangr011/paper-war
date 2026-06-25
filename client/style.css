@@ -536,6 +536,109 @@ body {
   pointer-events: none;
 }
 
+/* --- Customizable TACTICS slots (issue #43) --- */
+.tactic-slot {
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  background:
+    var(--tex-parchment) repeat center / 24px 24px,
+    var(--paper-light);
+  background-blend-mode: multiply;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.1s, transform 0.05s;
+}
+
+.tactic-slot:hover {
+  border-color: var(--text-heading);
+  border-style: solid;
+}
+
+.tactic-slot:active {
+  transform: scale(0.94);
+}
+
+/* Empty slot shows "+" — assigned slot shows the tactic name */
+.tactic-slot.empty .tactic-slot-icon {
+  font-size: 16px;
+  font-weight: 400;
+  opacity: 0.55;
+}
+
+.tactic-slot:not(.empty) {
+  border-style: solid;
+  border-color: var(--border-color);
+  background:
+    var(--tex-parchment-warm) repeat center / 24px 24px,
+    var(--paper-light);
+  color: var(--text-heading);
+}
+
+.tactic-slot-icon {
+  pointer-events: none;
+}
+
+/* Picker overlay */
+.tactic-picker {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background:
+    var(--tex-parchment) repeat center / 32px 32px,
+    var(--paper-light);
+  background-blend-mode: multiply;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+
+.tactic-picker[hidden] {
+  display: none;
+}
+
+.tactic-picker-option,
+.tactic-picker-cancel {
+  padding: 4px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--paper-bg);
+  color: var(--text-heading);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  min-width: 90px;
+}
+
+.tactic-picker-option:hover {
+  background: var(--paper-light);
+  border-color: var(--text-heading);
+}
+
+.tactic-picker-cancel {
+  color: var(--text-muted);
+  font-style: italic;
+  border-color: transparent;
+}
+
+.tactic-picker-cancel:hover {
+  color: var(--text-dark);
+}
+
 #minimap-canvas {
   display: block;
   width: 56px;

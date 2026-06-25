@@ -270,6 +270,113 @@ function applyDieAlpha(ctx, state, frame) {
   if (state === STATE_DIE) ctx.globalAlpha = dieAlpha(frame);
 }
 
+// --- per-type death overlays (issue #36) ----------------------------------
+// Each drawX() painter calls its drawDeathOverlay_X() after drawing the
+// collapsing body.  The overlay adds type-distinctive debris/details so
+// players can tell at a glance what kind of unit died.  Overlays are
+// drawn at full alpha (the body underneath already faded).
+//
+// All overlays are kept inside the 32×32 cell budget — silhouettes only.
+
+// Light Infantry: helmet pops off and lands beside the body.
+//   frame 0: helmet lifts slightly
+//   frame 1: helmet in air, to the right
+//   frame 2+: helmet on ground beside body
+function drawDeathOverlay_LI(ctx, frame) {
+  const cx = 16;
+  // Only draw overlay when the helmet has actually separated (frame >= 1).
+  // Helmet is a 4×3 white pixel cluster.
+  if (frame === 1) {
+    // Mid-air, just above and to the right
+    px(ctx, cx + 4, 4, 4, 3, '#fff');
+    px(ctx, cx + 4, 4, 4, 1, '#aaa'); // brim
+  } else if (frame >= 2) {
+    // Landed on the ground to the right of the body
+    px(ctx, cx + 6, 26, 4, 2, '#ccc');
+    px(ctx, cx + 6, 26, 4, 1, '#888'); // shadow underside
+  }
+}
+
+// Heavy Infantry: helmet stays on, but a shield/arm-piece breaks off.
+//   frame 0: nothing yet
+//   frame 1+: broken armor piece lands to the left
+function drawDeathOverlay_HI(ctx, frame) {
+  const cx = 16;
+  if (frame >= 1) {
+    // Armor shard (3×2 dark gray)
+    px(ctx, cx - 8, 26 + (frame >= 2 ? 0 : -2), 3, 2, '#888');
+    px(ctx, cx - 8, 26 + (frame >= 2 ? 0 : -2), 3, 1, '#666');
+  }
+}
+
+// Sniper: rifle goes vertical as the shooter crumples.
+//   frame 0: rifle tilts
+//   frame 1+: rifle vertical, lying beside body
+function drawDeathOverlay_Sniper(ctx, frame) {
+  const cx = 16;
+  if (frame === 0) {
+    // Tilted rifle (diagonal-ish — approximate with 2 segments)
+    px(ctx, cx + 4, 18, 2, 4, '#666');
+    px(ctx, cx + 5, 16, 2, 3, '#666');
+  } else {
+    // Vertical rifle lying on ground (rotated 90°)
+    px(ctx, cx + 5, 26, 6, 2, '#666');
+    px(ctx, cx + 4, 26, 2, 2, '#444'); // stock
+  }
+}
+
+// Anti-Armor Infantry: missile rack detonates — small smoke puff drawn
+// above the body, growing with frame.
+function drawDeathOverlay_AAI(ctx, frame) {
+  const cx = 16;
+  if (frame >= 1) {
+    // Smoke puff — gray, growing, alpha falls (use solid color; the body
+    // fade handles overall dimming).
+    const size = 2 + frame;
+    px(ctx, cx - frame, 4 - frame, size + 2, size, '#999');
+    px(ctx, cx - frame + 1, 5 - frame, size, size - 1, '#bbb');
+  }
+}
+
+// Motor Gun (MG): tripod folds — one leg juts out at an angle as the
+// gunner slumps.  Drawn as a diagonal pixel row beneath the body.
+function drawDeathOverlay_MG(ctx, frame) {
+  const cx = 16;
+  if (frame >= 1) {
+    // Splayed leg: 3 pixels going down-left from the body center
+    for (let i = 0; i < 3; i++) {
+      px(ctx, cx - 4 - i, 24 + i, 2, 1, '#555');
+    }
+  }
+}
+
+// Motor Artillery (MA): turret separates from hull and lands beside.
+//   frame 0: turret lifts slightly
+//   frame 1+: turret beside hull on ground
+function drawDeathOverlay_MA(ctx, frame) {
+  const cx = 16;
+  if (frame === 1) {
+    // Turret mid-flight
+    px(ctx, cx + 6, 8, 6, 3, '#999');
+    px(ctx, cx + 6, 8, 6, 1, '#666');
+  } else if (frame >= 2) {
+    // Turret landed on ground, tilted
+    px(ctx, cx + 7, 27, 6, 2, '#888');
+    px(ctx, cx + 6, 28, 2, 1, '#666'); // overhang
+  }
+}
+
+// Motor Missile (MM): chassis tips sideways — draw a "tipped" silhouette
+// element to the side of the main body.
+function drawDeathOverlay_MM(ctx, frame) {
+  const cx = 16;
+  if (frame >= 2) {
+    // Chassis edge visible to the right as the hull lays on its side
+    px(ctx, cx + 8, 22, 4, 4, '#aaa');
+    px(ctx, cx + 8, 22, 4, 1, '#777'); // top edge
+  }
+}
+
 // --- per-type painters -----------------------------------------------------
 // All sprites drawn on a 32×32 cell with a virtual ~10×10 body region
 // centred horizontally.  White = body, #888 = darker detail, #aaa =
@@ -323,6 +430,8 @@ function drawLightInfantry(ctx, state, frame, drawBack = false) {
     px(ctx, cx - 4, 25, 8, 1, '#444');
   }
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: type-specific death debris (helmet pops off).
+  if (state === STATE_DIE) drawDeathOverlay_LI(ctx, frame);
 }
 
 function drawHeavyInfantry(ctx, state, frame, drawBack = false) {
@@ -365,6 +474,8 @@ function drawHeavyInfantry(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 4, 25, 8, 1, '#444');
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: armor shard breaks off.
+  if (state === STATE_DIE) drawDeathOverlay_HI(ctx, frame);
 }
 
 function drawSniper(ctx, state, frame, drawBack = false) {
@@ -406,6 +517,8 @@ function drawSniper(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 3, 24, 7, 1, '#444');
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: rifle goes vertical.
+  if (state === STATE_DIE) drawDeathOverlay_Sniper(ctx, frame);
 }
 
 function drawAntiArmor(ctx, state, frame, drawBack = false) {
@@ -446,6 +559,8 @@ function drawAntiArmor(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 4, 24, 8, 1, '#444');
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: missile rack detonates with smoke puff.
+  if (state === STATE_DIE) drawDeathOverlay_AAI(ctx, frame);
 }
 
 function drawMotorGun(ctx, state, frame, drawBack = false) {
@@ -491,6 +606,8 @@ function drawMotorGun(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 4, 27, 28, 1, '#333'); // ground shadow
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: tripod leg splays out as gunner slumps.
+  if (state === STATE_DIE) drawDeathOverlay_MG(ctx, frame);
 }
 
 function drawMotorArtillery(ctx, state, frame, drawBack = false) {
@@ -543,6 +660,8 @@ function drawMotorArtillery(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 5, 27, 30, 1, '#333');
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: turret separates from hull and lands beside.
+  if (state === STATE_DIE) drawDeathOverlay_MA(ctx, frame);
 }
 
 function drawMotorMissile(ctx, state, frame, drawBack = false) {
@@ -595,6 +714,8 @@ function drawMotorMissile(ctx, state, frame, drawBack = false) {
   }
   px(ctx, cx - 5, 27, 30, 1, '#333');
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
+  // Issue #36: chassis tips sideways as hull collapses.
+  if (state === STATE_DIE) drawDeathOverlay_MM(ctx, frame);
 }
 
 // ---------------------------------------------------------------------------

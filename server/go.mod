@@ -1,6 +1,6 @@
 module github.com/user/paper-war/server
 
-go 1.25.0
+go 1.24.0
 
 require (
 	github.com/aquilax/go-perlin v1.1.0

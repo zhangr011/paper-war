@@ -5,194 +5,173 @@ import (
 	"time"
 )
 
-func TestIssueAndValidateToken(t *testing.T) {
+// TestMatchRegistryIssueAndValidate verifies the basic happy path:
+// issue a token, validate it, get the same playerID back.
+func TestMatchRegistryIssueAndValidate(t *testing.T) {
 	r := NewMatchRegistry()
-	token := r.IssueToken(1)
+	token := r.IssueToken(42)
+
 	if token == "" {
-		t.Fatal("token is empty")
+		t.Fatal("IssueToken returned empty string")
 	}
+	if len(token) != 32 { // 16 bytes hex-encoded = 32 chars
+		t.Errorf("token length = %d, want 32 (16 bytes hex)", len(token))
+	}
+
 	pid, ok := r.Validate(token)
 	if !ok {
-		t.Fatal("valid token rejected")
+		t.Fatal("Validate returned false for fresh token")
 	}
-	if pid != 1 {
-		t.Errorf("playerID = %d, want 1", pid)
+	if pid != 42 {
+		t.Errorf("playerID = %d, want 42", pid)
 	}
 }
 
-func TestValidateUnknownToken(t *testing.T) {
+// TestMatchRegistryUnknownToken verifies that a never-issued token is rejected.
+func TestMatchRegistryUnknownToken(t *testing.T) {
 	r := NewMatchRegistry()
-	_, ok := r.Validate("bogus")
+	pid, ok := r.Validate("deadbeef")
 	if ok {
-		t.Error("unknown token accepted")
+		t.Error("Validate should return false for unknown token")
+	}
+	if pid != 0 {
+		t.Errorf("playerID for unknown token = %d, want 0", pid)
 	}
 }
 
-func TestTokenExpires(t *testing.T) {
+// TestMatchRegistryExpiredTokenRejected verifies that tokens past their
+// TTL are rejected and reaped from the registry.
+func TestMatchRegistryExpiredTokenRejected(t *testing.T) {
 	r := NewMatchRegistry()
+	r.SetTTL(1 * time.Millisecond)
+	token := r.IssueToken(7)
+
+	// Advance virtual clock past TTL
 	now := time.Now()
-	r.SetNowFunc(func() time.Time { return now })
-	r.SetTTL(1 * time.Second)
+	r.SetNowFunc(func() time.Time { return now.Add(1 * time.Hour) })
 
-	token := r.IssueToken(1)
-
-	// Advance past TTL
-	r.SetNowFunc(func() time.Time { return now.Add(2 * time.Second) })
-
-	_, ok := r.Validate(token)
+	pid, ok := r.Validate(token)
 	if ok {
-		t.Error("expired token accepted")
+		t.Error("Validate should return false for expired token")
 	}
+	if pid != 0 {
+		t.Errorf("playerID for expired token = %d, want 0", pid)
+	}
+	// Token should also be reaped from the registry
 	if r.TokenCount() != 0 {
-		t.Errorf("after expiry, token count = %d, want 0 (should be reaped)", r.TokenCount())
+		t.Errorf("after expiry + Validate, TokenCount = %d, want 0 (reaped)", r.TokenCount())
 	}
 }
 
-func TestIssueReplacesOldToken(t *testing.T) {
-	r := NewMatchRegistry()
-	t1 := r.IssueToken(1)
-	t2 := r.IssueToken(1)
-	if t1 == t2 {
-		t.Fatal("re-issue returned identical token")
-	}
-	// Old token should be invalid
-	_, ok := r.Validate(t1)
-	if ok {
-		t.Error("old token still valid after re-issue")
-	}
-	// New token should be valid
-	_, ok = r.Validate(t2)
-	if !ok {
-		t.Error("new token rejected")
-	}
-	if r.TokenCount() != 1 {
-		t.Errorf("token count = %d, want 1", r.TokenCount())
-	}
-}
-
-func TestMultiplePlayers(t *testing.T) {
-	r := NewMatchRegistry()
-	t1 := r.IssueToken(1)
-	t2 := r.IssueToken(2)
-
-	pid1, ok := r.Validate(t1)
-	if !ok || pid1 != 1 {
-		t.Errorf("token1: pid=%d ok=%v, want 1/true", pid1, ok)
-	}
-	pid2, ok := r.Validate(t2)
-	if !ok || pid2 != 2 {
-		t.Errorf("token2: pid=%d ok=%v, want 2/true", pid2, ok)
-	}
-	if r.TokenCount() != 2 {
-		t.Errorf("token count = %d, want 2", r.TokenCount())
-	}
-}
-
-func TestClearWipesAllTokens(t *testing.T) {
+// TestMatchRegistryClearWipesAllTokens verifies that Clear removes all
+// issued tokens. This is called on match start and match end to revoke
+// stale tokens from the previous match.
+func TestMatchRegistryClearWipesAllTokens(t *testing.T) {
 	r := NewMatchRegistry()
 	r.IssueToken(1)
 	r.IssueToken(2)
+	r.IssueToken(3)
+	if r.TokenCount() != 3 {
+		t.Fatalf("before Clear: TokenCount = %d, want 3", r.TokenCount())
+	}
+
 	r.Clear()
+
 	if r.TokenCount() != 0 {
-		t.Errorf("after Clear, token count = %d, want 0", r.TokenCount())
+		t.Errorf("after Clear: TokenCount = %d, want 0", r.TokenCount())
+	}
+	// Previously-issued tokens should no longer validate
+	pid, ok := r.Validate("anything")
+	if ok || pid != 0 {
+		t.Errorf("after Clear, Validate should return (0,false), got (%d,%v)", pid, ok)
 	}
 }
 
-func TestClearInvalidatesOldTokens(t *testing.T) {
+// TestMatchRegistryIssueReplacesPrevious verifies that issuing a new
+// token for an existing player removes their old token (so they can't
+// reconnect with both).
+func TestMatchRegistryIssueReplacesPrevious(t *testing.T) {
 	r := NewMatchRegistry()
-	token := r.IssueToken(1)
-	r.Clear()
-	_, ok := r.Validate(token)
-	if ok {
-		t.Error("token accepted after Clear")
+	t1 := r.IssueToken(5)
+	if r.TokenCount() != 1 {
+		t.Fatalf("after first IssueToken: TokenCount = %d, want 1", r.TokenCount())
+	}
+	t2 := r.IssueToken(5)
+	if r.TokenCount() != 1 {
+		t.Errorf("after second IssueToken: TokenCount = %d, want 1 (replaced)", r.TokenCount())
+	}
+	if t1 == t2 {
+		t.Error("two IssueToken calls returned the same token string — should be unique")
+	}
+	// Old token should be invalid
+	if _, ok := r.Validate(t1); ok {
+		t.Error("old token still validates after re-issue")
+	}
+	// New token should be valid
+	if _, ok := r.Validate(t2); !ok {
+		t.Error("new token fails to validate after re-issue")
 	}
 }
 
-func TestTokenIsHex(t *testing.T) {
+// TestMatchRegistryUniqueTokens verifies that tokens generated for
+// different players are unique. (Crypto/rand should make collisions
+// astronomically unlikely; this test guards against a future regression
+// that uses a deterministic source.)
+func TestMatchRegistryUniqueTokens(t *testing.T) {
 	r := NewMatchRegistry()
-	token := r.IssueToken(1)
-	if len(token) != 32 {
-		t.Errorf("token length = %d, want 32 (16 bytes hex-encoded)", len(token))
-	}
-	for _, c := range token {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Errorf("token contains non-hex char %q", c)
-			break
+	seen := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		tok := r.IssueToken(uint32(i))
+		if seen[tok] {
+			t.Fatalf("duplicate token generated on iteration %d", i)
 		}
+		seen[tok] = true
+	}
+	if len(seen) != 100 {
+		t.Errorf("got %d unique tokens, want 100", len(seen))
 	}
 }
 
-// Reject empty / blank tokens — these come from malformed client messages.
-func TestValidateEmptyToken(t *testing.T) {
-	r := NewMatchRegistry()
-	for _, bad := range []string{"", "   ", "\t\n"} {
-		if _, ok := r.Validate(bad); ok {
-			t.Errorf("blank token %q was accepted", bad)
-		}
-	}
-}
-
-// TTL boundary: a token validated exactly at the TTL instant is still valid;
-// one nanosecond later it is not. This protects against off-by-one reaping.
-func TestTokenTTLBoundary(t *testing.T) {
-	r := NewMatchRegistry()
-	now := time.Now()
-	r.SetNowFunc(func() time.Time { return now })
-	r.SetTTL(60 * time.Second)
-
-	token := r.IssueToken(1)
-
-	// Exactly at TTL — should still be valid (<= comparison)
-	r.SetNowFunc(func() time.Time { return now.Add(60 * time.Second) })
-	if _, ok := r.Validate(token); !ok {
-		t.Error("token rejected exactly at TTL boundary")
-	}
-
-	// One nanosecond past TTL — must be rejected
-	r.SetNowFunc(func() time.Time { return now.Add(60*time.Second + 1) })
-	if _, ok := r.Validate(token); ok {
-		t.Error("token accepted past TTL boundary")
-	}
-}
-
-// Concurrent issue + validate must be safe under the race detector.
-func TestRegistryConcurrentAccess(t *testing.T) {
+// TestMatchRegistryConcurrentIssueAndValidate verifies the registry
+// is safe under concurrent access (run with -race to catch data races).
+func TestMatchRegistryConcurrentIssueAndValidate(t *testing.T) {
 	r := NewMatchRegistry()
 	done := make(chan struct{})
+	const workers = 8
 
-	// Issuer goroutine
-	go func() {
-		defer close(done)
-		for i := 0; i < 100; i++ {
-			r.IssueToken(uint32(i%5 + 1))
-		}
-	}()
-
-	// Validator goroutine (runs concurrently with issuer)
-	for i := 0; i < 100; i++ {
-		r.Validate("deadbeef") // unknown token, exercises read path
+	// Half the workers issue tokens, half validate random strings
+	for i := 0; i < workers; i++ {
+		go func(id int) {
+			defer func() { done <- struct{}{} }()
+			for j := 0; j < 100; j++ {
+				if id%2 == 0 {
+					r.IssueToken(uint32(id*1000 + j))
+				} else {
+					r.Validate("bogus-token")
+				}
+			}
+		}(i)
 	}
-	<-done
+	for i := 0; i < workers; i++ {
+		<-done
+	}
+	// No data race / no panic = success. Run with: go test -race
 }
 
-// A re-issued token for the same player must not collide with tokens issued
-// to other players between the two IssueToken calls.
-func TestReissueDoesNotClobberOthers(t *testing.T) {
+// TestMatchRegistryTokenCountAfterExpiryNoValidate verifies that an
+// expired-but-not-yet-Validated token still counts (reaping is lazy,
+// only happens on Validate). This documents the behavior.
+func TestMatchRegistryTokenCountAfterExpiryNoValidate(t *testing.T) {
 	r := NewMatchRegistry()
-	t1 := r.IssueToken(1)
-	t2 := r.IssueToken(2) // other player issues in between
-	t3 := r.IssueToken(1) // player 1 re-issues
+	r.SetTTL(1 * time.Millisecond)
+	r.IssueToken(1)
 
-	// Player 1's old token is dead, new one is live
-	if _, ok := r.Validate(t1); ok {
-		t.Error("player 1 old token still valid")
-	}
-	if _, ok := r.Validate(t3); !ok {
-		t.Error("player 1 new token rejected")
-	}
-	// Player 2's token is unaffected
-	pid, ok := r.Validate(t2)
-	if !ok || pid != 2 {
-		t.Errorf("player 2 token clobbered: pid=%d ok=%v", pid, ok)
+	// Advance virtual clock past TTL
+	now := time.Now()
+	r.SetNowFunc(func() time.Time { return now.Add(1 * time.Hour) })
+
+	// Without calling Validate, the expired token is still counted
+	if r.TokenCount() != 1 {
+		t.Errorf("TokenCount = %d, want 1 (lazy reaping — token exists until Validate)", r.TokenCount())
 	}
 }

@@ -12,3 +12,12 @@ server/pkg/game/live_combat_test.go
 server/pkg/game/phase_debug_test.go
 auth-gh.sh
 do-push.sh
+
+# v1.0.0 polish pass — throwaway investigation artifacts, kept locally
+# under .scratch/ for reference but not committed.
+.scratch/_inspect.spec.js
+.scratch/_playtest-mp.spec.js
+.scratch/_playtest-solo.spec.js
+.scratch/far_spawn_test.go
+.scratch/far_spawn_test.go.disabled
+.scratch/v1-polish-pass-2026-06-28.md

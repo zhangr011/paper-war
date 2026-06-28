@@ -43,6 +43,7 @@ export class App {
     this.gameScreen = document.getElementById('game-screen');
     this.clashScreen = document.getElementById('clash-screen');
     this.careerScreen = document.getElementById('career-screen');
+    this.leaderboardScreen = document.getElementById('leaderboard-screen');
 
     // Login elements
     this.loginForm = document.getElementById('login-form');
@@ -94,9 +95,29 @@ export class App {
     // Clash Test — config screen + AI vs AI spectator mode
     this.clashBtn = document.getElementById('clash-btn');
     this.careerBtn = document.getElementById('career-btn');
+    this.leaderboardBtn = document.getElementById('leaderboard-btn');
     if (this.careerBtn) {
       this.careerBtn.addEventListener('click', () => {
         this.showCareerScreen();
+      });
+    }
+    if (this.leaderboardBtn) {
+      this.leaderboardBtn.addEventListener('click', () => {
+        this.showLeaderboardScreen();
+      });
+    }
+    // Leaderboard refresh button.
+    const lbRefresh = document.getElementById('leaderboard-refresh-btn');
+    if (lbRefresh) {
+      lbRefresh.addEventListener('click', () => {
+        this.refreshLeaderboard();
+      });
+    }
+    // Back button on leaderboard screen → lobby.
+    const lbBack = document.getElementById('leaderboard-back-btn');
+    if (lbBack) {
+      lbBack.addEventListener('click', () => {
+        this.showScreen('lobby');
       });
     }
     // Back button on career screen → lobby.
@@ -353,6 +374,16 @@ export class App {
         };
         this.updateCareerDisplay();
         break;
+
+      case 'leaderboard':
+        // v1.2: leaderboard response. entries is an array of
+        // { rank, player_id, name, matches_played, matches_won, matches_lost,
+        //   total_kills, total_deaths } sorted by total_kills desc.
+        // May include an "error" field if the store is unavailable.
+        this.leaderboard = msg.entries || [];
+        this.leaderboardError = msg.error || null;
+        this.updateLeaderboardDisplay();
+        break;
     }
   }
 
@@ -399,6 +430,80 @@ export class App {
   showCareerScreen() {
     this.showScreen('career');
     this.updateCareerDisplay();
+  }
+
+  // -----------------------------------------------------------------------
+  // Leaderboard display (v1.2)
+  // -----------------------------------------------------------------------
+
+  refreshLeaderboard() {
+    // Ask the server for the current top-N. Response arrives as
+    // 'leaderboard' message → updateLeaderboardDisplay().
+    this.connection.sendJSON({ type: 'get_leaderboard' });
+  }
+
+  updateLeaderboardDisplay() {
+    const tbody = document.getElementById('leaderboard-body');
+    if (!tbody) return;
+    // Clear any existing rows.
+    tbody.innerHTML = '';
+
+    if (this.leaderboardError) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.textContent = 'Leaderboard unavailable: ' + this.leaderboardError;
+      cell.style.color = '#EF5350';
+      row.appendChild(cell);
+      tbody.appendChild(row);
+      return;
+    }
+
+    if (!this.leaderboard || this.leaderboard.length === 0) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.textContent = 'No ranked players yet. Play a match to claim rank #1.';
+      cell.style.color = 'var(--text-muted)';
+      cell.style.textAlign = 'center';
+      cell.style.padding = '20px';
+      row.appendChild(cell);
+      tbody.appendChild(row);
+      return;
+    }
+
+    // Render one row per entry. Highlight the current player's row.
+    const myPid = window.__paperWarGame?.playerID || 0;
+    // Server uses match-local playerID for snapshots; the leaderboard uses
+    // DB playerID. To highlight self we'd need the DB playerID. For v1.2
+    // we use name match as a heuristic (login names are unique per session).
+    const myName = this.username || '';
+    for (const e of this.leaderboard) {
+      const tr = document.createElement('tr');
+      if (e.name && e.name === myName) {
+        tr.classList.add('leaderboard-self');
+      }
+      const cells = [
+        e.rank,
+        e.name || '(unnamed)',
+        `${e.matches_won}-${e.matches_lost}`,
+        e.matches_played,
+        e.total_kills,
+        e.total_deaths,
+      ];
+      for (const val of cells) {
+        const td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  showLeaderboardScreen() {
+    this.showScreen('leaderboard');
+    // Always refresh on entry so the view is fresh.
+    this.refreshLeaderboard();
   }
 
   // -----------------------------------------------------------------------
@@ -481,6 +586,7 @@ export class App {
     this.gameScreen.classList.remove('active');
     if (this.clashScreen) this.clashScreen.classList.remove('active');
     if (this.careerScreen) this.careerScreen.classList.remove('active');
+    if (this.leaderboardScreen) this.leaderboardScreen.classList.remove('active');
 
     switch (name) {
       case 'login':
@@ -494,6 +600,9 @@ export class App {
         break;
       case 'career':
         if (this.careerScreen) this.careerScreen.classList.add('active');
+        break;
+      case 'leaderboard':
+        if (this.leaderboardScreen) this.leaderboardScreen.classList.add('active');
         break;
       case 'game':
         this.gameScreen.classList.add('active');

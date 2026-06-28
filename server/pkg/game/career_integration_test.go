@@ -29,11 +29,11 @@ func TestCareerStatsWrittenOnMatchEnd(t *testing.T) {
 
 	// Pre-create two players in the store so we have stable IDs to assert on.
 	ctx := context.Background()
-	p1, err := store.FindOrCreatePlayer(ctx, "token-alpha")
+	p1, err := store.FindOrCreatePlayer(ctx, "token-alpha", "alice")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer[alpha]: %v", err)
 	}
-	p2, err := store.FindOrCreatePlayer(ctx, "token-beta")
+	p2, err := store.FindOrCreatePlayer(ctx, "token-beta", "bob")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer[beta]: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestCareerStatsWrittenOnMatchEnd(t *testing.T) {
 	tokens := []string{"token-alpha", "token-beta"}
 	factions := []uint8{component.FactionPlayer, component.FactionEnemy}
 	for i, tok := range tokens {
-		player, err := store.FindOrCreatePlayer(ctx, tok)
+		player, err := store.FindOrCreatePlayer(ctx, tok, "")
 		if err != nil {
 			t.Fatalf("token %s lookup: %v", tok, err)
 		}

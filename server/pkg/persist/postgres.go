@@ -55,6 +55,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		CREATE TABLE IF NOT EXISTS players (
 			id         SERIAL PRIMARY KEY,
 			token      TEXT NOT NULL UNIQUE,
+			name       TEXT NOT NULL DEFAULT '',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
 		CREATE TABLE IF NOT EXISTS commanders (
@@ -71,6 +72,16 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_commanders_player_id ON commanders(player_id);
 		CREATE INDEX IF NOT EXISTS idx_players_token ON players(token);
+
+		-- v1.2: backfill the name column on existing databases. Idempotent:
+		-- ADD COLUMN IF NOT EXISTS skips if the column exists, and the UPDATE
+		-- is a no-op once the column is populated.
+		ALTER TABLE players ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+
+		-- v1.2: leaderboard query needs an index on player_career.total_kills
+		-- to avoid a full table scan when the player count grows.
+		CREATE INDEX IF NOT EXISTS idx_player_career_total_kills
+			ON player_career(total_kills DESC);
 
 		CREATE TABLE IF NOT EXISTS player_career (
 			player_id          INT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
@@ -90,37 +101,40 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 	return err
 }
 
-func (s *PostgresStore) FindOrCreatePlayer(ctx context.Context, token string) (*Player, error) {
-	// Try to find existing player
-	var id uint32
-	err := s.pool.QueryRow(ctx, `SELECT id FROM players WHERE token = $1`, token).Scan(&id)
-	if err == nil {
-		roster, err := s.LoadRoster(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("load roster for existing player: %w", err)
-		}
-		return &Player{ID: id, Token: token, Commanders: roster}, nil
-	}
-
-	// Insert new player
-	err = s.pool.QueryRow(ctx,
-		`INSERT INTO players (token, created_at) VALUES ($1, $2) RETURNING id`,
-		token, time.Now(),
-	).Scan(&id)
+func (s *PostgresStore) FindOrCreatePlayer(ctx context.Context, token, name string) (*Player, error) {
+	// Try to find existing player. SELECT ... ON CONFLICT DO NOTHING gives us
+	// an atomic "is this token known?" check without a separate race window.
+	var (
+		id   uint32
+		dbName string
+	)
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO players (token, name, created_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (token) DO UPDATE SET name = EXCLUDED.name
+		 RETURNING id, name`,
+		token, name, time.Now(),
+	).Scan(&id, &dbName)
 	if err != nil {
-		return nil, fmt.Errorf("insert player: %w", err)
+		return nil, fmt.Errorf("upsert player: %w", err)
 	}
 
-	// Create starter roster
-	if err := s.CreateStarterRoster(ctx, id); err != nil {
-		return nil, fmt.Errorf("create starter roster: %w", err)
-	}
-
+	// Was this a new row or an existing one? Check if the starter roster
+	// exists; if not, create it. (Cheaper than always doing a SELECT first.)
 	roster, err := s.LoadRoster(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load starter roster: %w", err)
+		return nil, fmt.Errorf("load roster for player %d: %w", id, err)
 	}
-	return &Player{ID: id, Token: token, Commanders: roster}, nil
+	if len(roster) == 0 {
+		if err := s.CreateStarterRoster(ctx, id); err != nil {
+			return nil, fmt.Errorf("create starter roster: %w", err)
+		}
+		roster, err = s.LoadRoster(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("reload starter roster: %w", err)
+		}
+	}
+	return &Player{ID: id, Token: token, Name: dbName, Commanders: roster}, nil
 }
 
 func (s *PostgresStore) LoadRoster(ctx context.Context, playerID uint32) ([]Commander, error) {
@@ -306,4 +320,45 @@ func (s *PostgresStore) AddCareerStats(ctx context.Context, playerID uint32, del
 		delta.TotalGoldEarned, delta.TotalGoldSpent, delta.TotalRecruits,
 	)
 	return err
+}
+
+// GetLeaderboard returns the top-N players by total kills, joining the
+// players table for display names. Players with zero matches_played are
+// excluded. Ranking metric is total_kills DESC; ties broken by matches_won
+// DESC, then player_id ASC for determinism.
+func (s *PostgresStore) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
+	limit = clampLeaderboardLimit(limit)
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			pc.player_id,
+			p.name,
+			pc.matches_played,
+			pc.matches_won,
+			pc.matches_lost,
+			pc.total_kills,
+			pc.total_deaths
+		FROM player_career pc
+		JOIN players p ON p.id = pc.player_id
+		WHERE pc.matches_played > 0
+		ORDER BY pc.total_kills DESC, pc.matches_won DESC, pc.player_id ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("leaderboard query: %w", err)
+	}
+	defer rows.Close()
+
+	var out []LeaderboardEntry
+	rank := uint32(1)
+	for rows.Next() {
+		var e LeaderboardEntry
+		if err := rows.Scan(&e.PlayerID, &e.Name, &e.MatchesPlayed,
+			&e.MatchesWon, &e.MatchesLost, &e.TotalKills, &e.TotalDeaths); err != nil {
+			return nil, fmt.Errorf("leaderboard scan: %w", err)
+		}
+		e.Rank = rank
+		rank++
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

@@ -107,11 +107,11 @@ func TestFindOrCreatePlayerIssuesUniquePlayerIDs(t *testing.T) {
 	s := NewMockStore()
 	ctx := context.Background()
 
-	p1, err := s.FindOrCreatePlayer(ctx, "token-alpha")
+	p1, err := s.FindOrCreatePlayer(ctx, "token-alpha", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer[1] failed: %v", err)
 	}
-	p2, err := s.FindOrCreatePlayer(ctx, "token-beta")
+	p2, err := s.FindOrCreatePlayer(ctx, "token-beta", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer[2] failed: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestFindOrCreatePlayerIssuesUniquePlayerIDs(t *testing.T) {
 	}
 
 	// Same token resolves to same player (idempotent).
-	p1Again, err := s.FindOrCreatePlayer(ctx, "token-alpha")
+	p1Again, err := s.FindOrCreatePlayer(ctx, "token-alpha", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer[idempotent] failed: %v", err)
 	}

@@ -137,7 +137,7 @@ func main() {
 				// token in localStorage on first login (opaque hex string).
 				if token != "" && gs.Store != nil {
 					loginCtx := context.Background()
-					player, err := gs.Store.FindOrCreatePlayer(loginCtx, token)
+					player, err := gs.Store.FindOrCreatePlayer(loginCtx, token, name)
 					if err != nil {
 						log.Printf("client %d: FindOrCreatePlayer error: %v", clientID, err)
 					} else if player != nil {
@@ -197,6 +197,51 @@ func main() {
 				mm.Leave(clientID)
 				hub.SendJSON(clientID, map[string]string{"type": "queue_left"})
 				log.Printf("client %d left queue", clientID)
+			case "get_leaderboard":
+				// v1.2: client-requested leaderboard. Triggered on Career screen
+				// open or manual refresh. Returns top N players by total kills.
+				if gs.Store == nil {
+					hub.SendJSON(clientID, map[string]interface{}{
+						"type":   "leaderboard",
+						"error":  "leaderboard unavailable (no persistence)",
+						"entries": []interface{}{},
+					})
+					break
+				}
+				limit := persist.LeaderboardLimit
+				if l, ok := msg["limit"].(float64); ok && l > 0 {
+					limit = int(l)
+				}
+				lbCtx := context.Background()
+				entries, err := gs.Store.GetLeaderboard(lbCtx, limit)
+				if err != nil {
+					log.Printf("client %d: GetLeaderboard error: %v", clientID, err)
+					hub.SendJSON(clientID, map[string]interface{}{
+						"type":    "leaderboard",
+						"error":   "leaderboard query failed",
+						"entries": []interface{}{},
+					})
+					break
+				}
+				// Marshal entries as array of objects — Go's encoding/json
+				// handles this automatically via the struct tags.
+				out := make([]map[string]interface{}, 0, len(entries))
+				for _, e := range entries {
+					out = append(out, map[string]interface{}{
+						"rank":           e.Rank,
+						"player_id":      e.PlayerID,
+						"name":           e.Name,
+						"matches_played": e.MatchesPlayed,
+						"matches_won":    e.MatchesWon,
+						"matches_lost":   e.MatchesLost,
+						"total_kills":    e.TotalKills,
+						"total_deaths":   e.TotalDeaths,
+					})
+				}
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":    "leaderboard",
+					"entries": out,
+				})
 		case "start_solo":
 			name := hub.GetClientName(clientID)
 			// Read commander type selection (0=LI, 1=HI, 2=Sniper, 3=AAI)
@@ -511,7 +556,7 @@ func main() {
 					}
 
 					// Resolve DB playerID from token.
-					player, err := gs.Store.FindOrCreatePlayer(careerCtx, token)
+					player, err := gs.Store.FindOrCreatePlayer(careerCtx, token, hub.GetClientName(cid))
 					if err != nil || player == nil {
 						log.Printf("career-stats: client %d token lookup failed: %v", cid, err)
 						continue

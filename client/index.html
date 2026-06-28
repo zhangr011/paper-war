@@ -67,6 +67,7 @@
         <button class="lobby-btn lobby-btn-clash" id="clash-btn">Clash Test</button>
         <button class="lobby-btn" id="find-match-btn">Find Match</button>
         <button class="lobby-btn" id="career-btn">Career</button>
+        <button class="lobby-btn" id="leaderboard-btn">Leaderboard</button>
         <button class="lobby-btn lobby-btn-cancel" id="cancel-queue-btn" style="display:none">Cancel</button>
       </div>
       <!-- v1.1: career summary line. Populated by updateCareerDisplay(). -->
@@ -94,6 +95,33 @@
         <div class="career-row"><span class="career-label">Recruits</span><span class="career-value" id="career-recruits">0</span></div>
       </div>
       <button class="lobby-btn lobby-btn-cancel" id="career-back-btn">Back</button>
+    </div>
+  </div>
+
+  <!-- v1.2: Leaderboard Screen — top players by total kills -->
+  <div id="leaderboard-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">Leaderboard</h2>
+      <p class="lobby-status">Top players by total kills.</p>
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>W-L</th>
+            <th>Matches</th>
+            <th>Kills</th>
+            <th>Deaths</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div class="leaderboard-actions">
+        <button class="lobby-btn" id="leaderboard-refresh-btn">Refresh</button>
+        <button class="lobby-btn lobby-btn-cancel" id="leaderboard-back-btn">Back</button>
+      </div>
     </div>
   </div>
 

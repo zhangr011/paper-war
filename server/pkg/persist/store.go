@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 // CombatUnit represents a single combat unit in a Commander's roster.
@@ -36,6 +37,7 @@ type Commander struct {
 type Player struct {
 	ID         uint32
 	Token      string
+	Name       string // v1.2: display name, last-login-wins (allows renames)
 	Commanders []Commander
 }
 
@@ -44,7 +46,10 @@ type Player struct {
 type Store interface {
 	// FindOrCreatePlayer looks up a player by token, creating a new one if not found.
 	// New players get a starter roster: 1 Gun Commander + 5 LI, 50 Gold.
-	FindOrCreatePlayer(ctx context.Context, token string) (*Player, error)
+	// v1.2: the name parameter is the player's chosen display name, stored
+	// alongside the token so leaderboards can show it. Last-login-wins:
+	// if the player renames themselves, the new name overwrites the old.
+	FindOrCreatePlayer(ctx context.Context, token, name string) (*Player, error)
 
 	// LoadRoster loads all commanders and units for a player.
 	LoadRoster(ctx context.Context, playerID uint32) ([]Commander, error)
@@ -69,6 +74,12 @@ type Store interface {
 	// totals. Called once per match end with that match's stats. For new
 	// players, creates the career row.
 	AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error
+
+	// GetLeaderboard returns the top-N players sorted by total kills
+	// descending. Players with zero matches played are excluded. limit is
+	// clamped to [1, 100] internally; pass 0 (or LeaderboardLimit) for the
+	// default of 10.
+	GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error)
 }
 
 // --- MockStore for testing ---
@@ -89,14 +100,21 @@ func NewMockStore() *MockStore {
 	}
 }
 
-func (s *MockStore) FindOrCreatePlayer(ctx context.Context, token string) (*Player, error) {
+func (s *MockStore) FindOrCreatePlayer(ctx context.Context, token, name string) (*Player, error) {
 	if p, ok := s.ByToken[token]; ok {
+		// Last-login-wins: update the stored name so renames propagate.
+		// The Hub still has the name in ClientSession.Name for the current
+		// session; this keeps the persisted view in sync for leaderboard queries.
+		if name != "" {
+			p.Name = name
+		}
 		return p, nil
 	}
 
 	p := &Player{
 		ID:    s.nextID,
 		Token: token,
+		Name:  name,
 	}
 	s.nextID++
 	s.Players[p.ID] = p
@@ -199,6 +217,62 @@ func (s *MockStore) AddCareerStats(ctx context.Context, playerID uint32, delta C
 	}
 	c.Add(delta)
 	return nil
+}
+
+// GetLeaderboard returns the top-N players sorted by TotalKills descending.
+// Players with zero matches played are excluded. The MockStore
+// implementation does an in-memory sort — fine for tests with small player
+// counts. PostgresStore uses ORDER BY + LIMIT.
+func (s *MockStore) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
+	limit = clampLeaderboardLimit(limit)
+
+	// Build entries from the careers map, joining player names from Players.
+	type entry struct {
+		stats *CareerStats
+		name  string
+	}
+	var entries []entry
+	for pid, c := range s.Careers {
+		if c.MatchesPlayed == 0 {
+			continue
+		}
+		name := ""
+		if p, ok := s.Players[pid]; ok {
+			name = p.Name
+		}
+		// Copy stats so sorting doesn't mutate stored state.
+		statsCopy := *c
+		entries = append(entries, entry{stats: &statsCopy, name: name})
+	}
+
+	// Sort by TotalKills desc; ties broken by MatchesWon desc, then PlayerID asc.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].stats.TotalKills != entries[j].stats.TotalKills {
+			return entries[i].stats.TotalKills > entries[j].stats.TotalKills
+		}
+		if entries[i].stats.MatchesWon != entries[j].stats.MatchesWon {
+			return entries[i].stats.MatchesWon > entries[j].stats.MatchesWon
+		}
+		return entries[i].stats.PlayerID < entries[j].stats.PlayerID
+	})
+
+	out := make([]LeaderboardEntry, 0, limit)
+	for i, e := range entries {
+		if i >= limit {
+			break
+		}
+		out = append(out, LeaderboardEntry{
+			Rank:          uint32(i + 1),
+			PlayerID:      e.stats.PlayerID,
+			Name:          e.name,
+			MatchesPlayed: e.stats.MatchesPlayed,
+			MatchesWon:    e.stats.MatchesWon,
+			MatchesLost:   e.stats.MatchesLost,
+			TotalKills:    e.stats.TotalKills,
+			TotalDeaths:   e.stats.TotalDeaths,
+		})
+	}
+	return out, nil
 }
 
 // Helper: marshal commander to JSON (for PostgresStore JSONB column)

@@ -22,7 +22,7 @@ import (
 func TestHandleCommandRecruit(t *testing.T) {
 	gs := NewGameSession()
 	store := persist.NewMockStore()
-	player, err := store.FindOrCreatePlayer(context.Background(), "test-token-recruit")
+	player, err := store.FindOrCreatePlayer(context.Background(), "test-token-recruit", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer: %v", err)
 	}

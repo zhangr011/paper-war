@@ -445,7 +445,7 @@ func TestFlushRostersSurvivors(t *testing.T) {
 
 	// Create a player in the mock store
 	ctx := context.Background()
-	p, err := store.FindOrCreatePlayer(ctx, "test-token")
+	p, err := store.FindOrCreatePlayer(ctx, "test-token", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestFlushRostersAllDeadGrantsStarter(t *testing.T) {
 	gs.Store = store
 
 	ctx := context.Background()
-	p, err := store.FindOrCreatePlayer(ctx, "test-token-2")
+	p, err := store.FindOrCreatePlayer(ctx, "test-token-2", "")
 	if err != nil {
 		t.Fatal(err)
 	}

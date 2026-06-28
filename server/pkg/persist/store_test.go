@@ -9,7 +9,7 @@ func TestMockStoreFindOrCreateNewPlayer(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, err := store.FindOrCreatePlayer(ctx, "token-abc")
+	p, err := store.FindOrCreatePlayer(ctx, "token-abc", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,8 +41,8 @@ func TestMockStoreFindOrCreateReturnsExisting(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p1, _ := store.FindOrCreatePlayer(ctx, "token-xyz")
-	p2, _ := store.FindOrCreatePlayer(ctx, "token-xyz")
+	p1, _ := store.FindOrCreatePlayer(ctx, "token-xyz", "")
+	p2, _ := store.FindOrCreatePlayer(ctx, "token-xyz", "")
 
 	if p1.ID != p2.ID {
 		t.Errorf("same token should return same player, got %d and %d", p1.ID, p2.ID)
@@ -53,7 +53,7 @@ func TestMockStoreSaveCommander(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, _ := store.FindOrCreatePlayer(ctx, "token-save")
+	p, _ := store.FindOrCreatePlayer(ctx, "token-save", "")
 
 	// Update commander gold
 	cmd := p.Commanders[0]
@@ -81,7 +81,7 @@ func TestMockStoreDeleteCommander(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, _ := store.FindOrCreatePlayer(ctx, "token-del")
+	p, _ := store.FindOrCreatePlayer(ctx, "token-del", "")
 
 	err := store.DeleteCommander(ctx, p.ID, p.Commanders[0].ID)
 	if err != nil {
@@ -98,7 +98,7 @@ func TestMockStoreAddSecondCommander(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, _ := store.FindOrCreatePlayer(ctx, "token-add")
+	p, _ := store.FindOrCreatePlayer(ctx, "token-add", "")
 
 	cmd2 := Commander{
 		ID:    2,
@@ -174,7 +174,7 @@ func TestStarterRosterFormationTemplate(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, _ := store.FindOrCreatePlayer(ctx, "token-formation")
+	p, _ := store.FindOrCreatePlayer(ctx, "token-formation", "")
 	cmd := p.Commanders[0]
 
 	if cmd.Formation.WeaponSlot != "Light" {
@@ -192,7 +192,7 @@ func TestSaveCommanderPersistsFormationAndCombatUnits(t *testing.T) {
 	store := NewMockStore()
 	ctx := context.Background()
 
-	p, _ := store.FindOrCreatePlayer(ctx, "token-jsonb")
+	p, _ := store.FindOrCreatePlayer(ctx, "token-jsonb", "")
 
 	// Save a commander with non-trivial formation + mixed combat units
 	cmd := Commander{

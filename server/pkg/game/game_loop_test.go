@@ -18,7 +18,7 @@ func TestGameLoopBasicHappyPath(t *testing.T) {
 	store := persist.NewMockStore()
 
 	// Seed a player in the store
-	player, err := store.FindOrCreatePlayer(context.Background(), "test-token")
+	player, err := store.FindOrCreatePlayer(context.Background(), "test-token", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestGameLoopAllDeadGrantsStarterRoster(t *testing.T) {
 	gs := NewGameSession()
 	store := persist.NewMockStore()
 
-	player, err := store.FindOrCreatePlayer(context.Background(), "dead-player")
+	player, err := store.FindOrCreatePlayer(context.Background(), "dead-player", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestGameLoopMatchEndTriggersFlush(t *testing.T) {
 	store := persist.NewMockStore()
 	gs.Store = store
 
-	player, _ := store.FindOrCreatePlayer(context.Background(), "lifecycle-player")
+	player, _ := store.FindOrCreatePlayer(context.Background(), "lifecycle-player", "")
 	playerID := player.ID
 
 	flushed := false

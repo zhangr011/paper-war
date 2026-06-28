@@ -40,7 +40,7 @@ func TestPostgresFindOrCreateNewPlayer(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, err := s.FindOrCreatePlayer(ctx, "token-abc")
+	p, err := s.FindOrCreatePlayer(ctx, "token-abc", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +73,8 @@ func TestPostgresFindOrCreateReturnsExisting(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p1, _ := s.FindOrCreatePlayer(ctx, "token-xyz")
-	p2, _ := s.FindOrCreatePlayer(ctx, "token-xyz")
+	p1, _ := s.FindOrCreatePlayer(ctx, "token-xyz", "")
+	p2, _ := s.FindOrCreatePlayer(ctx, "token-xyz", "")
 
 	if p1.ID != p2.ID {
 		t.Errorf("same token should return same player, got %d and %d", p1.ID, p2.ID)
@@ -85,7 +85,7 @@ func TestPostgresSaveCommander(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, _ := s.FindOrCreatePlayer(ctx, "token-save")
+	p, _ := s.FindOrCreatePlayer(ctx, "token-save", "")
 
 	cmd := p.Commanders[0]
 	cmd.Gold = 30
@@ -112,7 +112,7 @@ func TestPostgresDeleteCommander(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, _ := s.FindOrCreatePlayer(ctx, "token-del")
+	p, _ := s.FindOrCreatePlayer(ctx, "token-del", "")
 
 	err := s.DeleteCommander(ctx, p.ID, p.Commanders[0].ID)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestPostgresAddSecondCommander(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, _ := s.FindOrCreatePlayer(ctx, "token-add")
+	p, _ := s.FindOrCreatePlayer(ctx, "token-add", "")
 
 	cmd2 := Commander{
 		ID:    2,
@@ -163,7 +163,7 @@ func TestPostgresSaveCommanderUpdatesExisting(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, _ := s.FindOrCreatePlayer(ctx, "token-upsert")
+	p, _ := s.FindOrCreatePlayer(ctx, "token-upsert", "")
 
 	// Save same commander with updated fields
 	cmd := p.Commanders[0]
@@ -200,7 +200,7 @@ func TestPostgresFormationRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	p, _ := s.FindOrCreatePlayer(ctx, "token-formation")
+	p, _ := s.FindOrCreatePlayer(ctx, "token-formation", "")
 	cmd := p.Commanders[0]
 	cmd.Formation = FormationTemplate{
 		WeaponSlot:   "Heavy",

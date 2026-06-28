@@ -23,7 +23,7 @@ import (
 func TestBuildGoldDeduction(t *testing.T) {
 	gs := NewGameSession()
 	store := persist.NewMockStore()
-	player, err := store.FindOrCreatePlayer(context.Background(), "test-token-build")
+	player, err := store.FindOrCreatePlayer(context.Background(), "test-token-build", "")
 	if err != nil {
 		t.Fatalf("FindOrCreatePlayer: %v", err)
 	}

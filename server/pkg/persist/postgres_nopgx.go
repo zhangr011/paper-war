@@ -17,8 +17,8 @@ func NewPostgresStore(ctx context.Context, connString string) (*PostgresStore, e
 
 func (s *PostgresStore) Close() {}
 
-func (s *PostgresStore) FindOrCreatePlayer(ctx context.Context, token string) (*Player, error) {
-	return nil, fmt.Errorf("pgx not available: rebuild without -tags nopgx")
+func (s *PostgresStore) FindOrCreatePlayer(ctx context.Context, token, name string) (*Player, error) {
+	return nil, fmt.Errorf("pgx not available")
 }
 
 func (s *PostgresStore) LoadRoster(ctx context.Context, playerID uint32) ([]Commander, error) {
@@ -43,4 +43,8 @@ func (s *PostgresStore) GetCareerStats(ctx context.Context, playerID uint32) (*C
 
 func (s *PostgresStore) AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error {
 	return fmt.Errorf("pgx not available")
+}
+
+func (s *PostgresStore) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
+	return nil, fmt.Errorf("pgx not available")
 }

@@ -6,6 +6,30 @@ import { Connection } from './connection.js?v=v8';
 import { Game } from './main.js?v=v8';
 
 const LAST_USERNAME_KEY = 'paper-war:last-username';
+// v1.1: opaque player token persisted across sessions. Generated on first
+// login via crypto.getRandomValues, used by the server to resolve a real
+// DB playerID and accumulate career stats. Stored in localStorage so the
+// same browser = same player account. No real auth — anyone with the
+// token can act as that player. Acceptable for v1.x (private game).
+const PLAYER_TOKEN_KEY = 'paper-war:player-token';
+
+function loadOrCreatePlayerToken() {
+  try {
+    let tok = window.localStorage.getItem(PLAYER_TOKEN_KEY);
+    if (tok) return tok;
+    // Generate 16 bytes hex = 32 chars. Same shape as server-side
+    // MatchRegistry tokens.
+    const buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    tok = Array.from(buf, b => b.toString(16).padStart(2, '0')).join('');
+    window.localStorage.setItem(PLAYER_TOKEN_KEY, tok);
+    return tok;
+  } catch (_) {
+    // localStorage unavailable (private mode, sandbox). Return empty —
+    // server treats empty token as ephemeral (no career stats).
+    return '';
+  }
+}
 
 export class App {
   constructor() {
@@ -18,6 +42,7 @@ export class App {
     this.lobbyScreen = document.getElementById('lobby-screen');
     this.gameScreen = document.getElementById('game-screen');
     this.clashScreen = document.getElementById('clash-screen');
+    this.careerScreen = document.getElementById('career-screen');
 
     // Login elements
     this.loginForm = document.getElementById('login-form');
@@ -68,6 +93,19 @@ export class App {
 
     // Clash Test — config screen + AI vs AI spectator mode
     this.clashBtn = document.getElementById('clash-btn');
+    this.careerBtn = document.getElementById('career-btn');
+    if (this.careerBtn) {
+      this.careerBtn.addEventListener('click', () => {
+        this.showCareerScreen();
+      });
+    }
+    // Back button on career screen → lobby.
+    const careerBack = document.getElementById('career-back-btn');
+    if (careerBack) {
+      careerBack.addEventListener('click', () => {
+        this.showScreen('lobby');
+      });
+    }
     this.clashTeam1Size = 5;
     this.clashTeam2Size = 5;
     this.clashTeam1Cmd = 0;
@@ -187,7 +225,11 @@ export class App {
     // Game instance overrides them (Game sets its own onConnect/onDisconnect
     // on the shared connection object).
     this._loginOnConnect = () => {
-      this.connection.sendJSON({ type: 'login', name: this.username });
+      this.connection.sendJSON({
+        type: 'login',
+        name: this.username,
+        token: loadOrCreatePlayerToken(),
+      });
     };
     this._loginOnDisconnect = () => {
       // Mid-match disconnect with a valid token — stay on game screen and
@@ -279,7 +321,11 @@ export class App {
           // a reconnect attempt, not a login. Re-send login so the server
           // associates this connection with our name and accepts start_solo /
           // start_clash / join_queue messages.
-          this.connection.sendJSON({ type: 'login', name: this.username });
+          this.connection.sendJSON({
+            type: 'login',
+            name: this.username,
+            token: loadOrCreatePlayerToken(),
+          });
           this.lobbyStatus.textContent = 'Reconnect failed — match no longer available.';
         }, 3000);
         break;
@@ -288,7 +334,71 @@ export class App {
         this.roster = msg.roster;
         this.updateRosterDisplay();
         break;
+
+      case 'career_stats':
+        // v1.1: cumulative cross-match totals. May arrive at two times:
+        // (1) right after login_ok (initial state, possibly all zeros),
+        // (2) right after match end (updated totals post-AAR).
+        this.careerStats = {
+          matches_played:    msg.matches_played    || 0,
+          matches_won:       msg.matches_won       || 0,
+          matches_lost:      msg.matches_lost      || 0,
+          total_kills:       msg.total_kills       || 0,
+          total_deaths:      msg.total_deaths      || 0,
+          commander_kills:   msg.commander_kills   || 0,
+          commanders_lost:   msg.commanders_lost   || 0,
+          total_gold_earned: msg.total_gold_earned || 0,
+          total_gold_spent:  msg.total_gold_spent  || 0,
+          total_recruits:    msg.total_recruits    || 0,
+        };
+        this.updateCareerDisplay();
+        break;
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Career display
+  // -----------------------------------------------------------------------
+
+  updateCareerDisplay() {
+    if (!this.careerStats) return;
+    const cs = this.careerStats;
+    // Update lobby career summary if present.
+    const summary = document.getElementById('lobby-career-summary');
+    if (summary) {
+      const winRate = cs.matches_played > 0
+        ? ((cs.matches_won / cs.matches_played) * 100).toFixed(0)
+        : '—';
+      const kd = cs.total_deaths > 0
+        ? (cs.total_kills / cs.total_deaths).toFixed(2)
+        : cs.total_kills.toFixed(0);
+      summary.textContent =
+        `${cs.matches_won}W–${cs.matches_lost}L (${winRate}%) · ` +
+        `${cs.total_kills} kills / ${cs.total_deaths} deaths (K/D ${kd}) · ` +
+        `${cs.commander_kills} cmd kills · ${cs.commanders_lost} cmd lost`;
+    }
+    // Update dedicated career screen if present.
+    const screen = document.getElementById('career-screen');
+    if (!screen || !screen.classList.contains('active')) return;
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+    set('career-matches', cs.matches_played);
+    set('career-wins', cs.matches_won);
+    set('career-losses', cs.matches_lost);
+    set('career-kills', cs.total_kills);
+    set('career-deaths', cs.total_deaths);
+    set('career-cmd-kills', cs.commander_kills);
+    set('career-cmd-lost', cs.commanders_lost);
+    set('career-gold-earned', cs.total_gold_earned);
+    set('career-gold-spent', cs.total_gold_spent);
+    set('career-recruits', cs.total_recruits);
+  }
+
+  showCareerScreen() {
+    this.showScreen('career');
+    this.updateCareerDisplay();
   }
 
   // -----------------------------------------------------------------------
@@ -370,6 +480,7 @@ export class App {
     this.lobbyScreen.classList.remove('active');
     this.gameScreen.classList.remove('active');
     if (this.clashScreen) this.clashScreen.classList.remove('active');
+    if (this.careerScreen) this.careerScreen.classList.remove('active');
 
     switch (name) {
       case 'login':
@@ -380,6 +491,9 @@ export class App {
         break;
       case 'clash':
         if (this.clashScreen) this.clashScreen.classList.add('active');
+        break;
+      case 'career':
+        if (this.careerScreen) this.careerScreen.classList.add('active');
         break;
       case 'game':
         this.gameScreen.classList.add('active');

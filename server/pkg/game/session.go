@@ -247,7 +247,7 @@ func (gs *GameSession) Tick() {
 		}
 		// AAR: count recruits per faction
 		for playerID, count := range gs.recruitSys.SuccessfulRecruits {
-			if faction := gs.factionOfPlayer(playerID); faction != 0xFF {
+			if faction := gs.FactionOfPlayer(playerID); faction != 0xFF {
 				gs.stats.AddRecruits(faction, count, gs.recruitSys.GoldDeductions[playerID])
 			}
 		}
@@ -1898,10 +1898,10 @@ func unitTypeName(ut component.CombatUnitType) string {
 	}
 }
 
-// factionOfPlayer maps a playerID to its faction constant.
+// FactionOfPlayer maps a playerID to its faction constant.
 // playerID 1 = FactionPlayer (0), playerID 2 = FactionEnemy (1).
 // Returns 0xFF for unknown players.
-func (gs *GameSession) factionOfPlayer(playerID uint32) uint8 {
+func (gs *GameSession) FactionOfPlayer(playerID uint32) uint8 {
 	switch playerID {
 	case 1:
 		return component.FactionPlayer

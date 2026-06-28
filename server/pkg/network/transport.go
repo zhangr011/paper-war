@@ -39,6 +39,7 @@ func NewHub(onCmd func(clientID uint32, cmd *Command), onText func(clientID uint
 type ClientSession struct {
 	ID       uint32
 	PlayerID uint32
+	Token    string // v1.1: opaque player token; empty for unauthenticated
 	Name     string
 	InGame   bool // true once match started (distinguishes spectator from idle)
 	conn     *websocket.Conn
@@ -255,6 +256,33 @@ func (h *Hub) GetClientPlayerID(clientID uint32) uint32 {
 		return session.PlayerID
 	}
 	return 0
+}
+
+// SetClientToken records the opaque player token resolved at login.
+// Used by the match-end career-stats writer to look up the player's DB ID
+// even after the match has rebased playerID for squad-spawn purposes.
+func (h *Hub) SetClientToken(clientID uint32, token string) {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		session.mu.Lock()
+		session.Token = token
+		session.mu.Unlock()
+	}
+}
+
+// GetClientToken returns the opaque player token, or "" if unauthenticated.
+func (h *Hub) GetClientToken(clientID uint32) string {
+	h.mu.RLock()
+	session, ok := h.clients[clientID]
+	h.mu.RUnlock()
+	if ok {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		return session.Token
+	}
+	return ""
 }
 
 func (h *Hub) Broadcast(data []byte) {

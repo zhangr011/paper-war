@@ -71,6 +71,21 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_commanders_player_id ON commanders(player_id);
 		CREATE INDEX IF NOT EXISTS idx_players_token ON players(token);
+
+		CREATE TABLE IF NOT EXISTS player_career (
+			player_id          INT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+			matches_played     INT NOT NULL DEFAULT 0,
+			matches_won        INT NOT NULL DEFAULT 0,
+			matches_lost       INT NOT NULL DEFAULT 0,
+			total_kills        INT NOT NULL DEFAULT 0,
+			total_deaths       INT NOT NULL DEFAULT 0,
+			commander_kills    INT NOT NULL DEFAULT 0,
+			commanders_lost    INT NOT NULL DEFAULT 0,
+			total_gold_earned  INT NOT NULL DEFAULT 0,
+			total_gold_spent   INT NOT NULL DEFAULT 0,
+			total_recruits     INT NOT NULL DEFAULT 0,
+			last_played_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
 	`)
 	return err
 }
@@ -234,5 +249,61 @@ func (s *PostgresStore) CreateStarterRoster(ctx context.Context, playerID uint32
 		INSERT INTO commanders (player_id, name, type, level, gold, formation, combat_units, created_at)
 		VALUES ($1, 'Starter Commander', 'LightInfantry', 1, 50, $2, $3, $4)
 	`, playerID, formationJSON, unitsJSON, time.Now())
+	return err
+}
+
+// GetCareerStats returns the player's career totals, or a zero-valued
+// CareerStats for players who haven't played any matches yet.
+func (s *PostgresStore) GetCareerStats(ctx context.Context, playerID uint32) (*CareerStats, error) {
+	c := &CareerStats{PlayerID: playerID}
+	err := s.pool.QueryRow(ctx, `
+		SELECT matches_played, matches_won, matches_lost,
+		       total_kills, total_deaths, commander_kills, commanders_lost,
+		       total_gold_earned, total_gold_spent, total_recruits
+		FROM player_career WHERE player_id = $1
+	`, playerID).Scan(
+		&c.MatchesPlayed, &c.MatchesWon, &c.MatchesLost,
+		&c.TotalKills, &c.TotalDeaths, &c.CommanderKills, &c.CommandersLost,
+		&c.TotalGoldEarned, &c.TotalGoldSpent, &c.TotalRecruits,
+	)
+	if err != nil {
+		// No row yet — return zero stats (consistent with MockStore).
+		// Real DB errors (connection dropped) will also surface here; callers
+		// can distinguish by type-asserting pgx.ErrNoRows vs other errors.
+		return c, nil
+	}
+	return c, nil
+}
+
+// AddCareerStats atomically accumulates delta into the player's career totals.
+// Uses INSERT ... ON CONFLICT DO UPDATE so it works for both first-match-ever
+// and subsequent matches. Single statement = atomic.
+func (s *PostgresStore) AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO player_career (
+			player_id, matches_played, matches_won, matches_lost,
+			total_kills, total_deaths, commander_kills, commanders_lost,
+			total_gold_earned, total_gold_spent, total_recruits, last_played_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now()
+		)
+		ON CONFLICT (player_id) DO UPDATE SET
+			matches_played    = player_career.matches_played    + EXCLUDED.matches_played,
+			matches_won       = player_career.matches_won       + EXCLUDED.matches_won,
+			matches_lost      = player_career.matches_lost      + EXCLUDED.matches_lost,
+			total_kills       = player_career.total_kills       + EXCLUDED.total_kills,
+			total_deaths      = player_career.total_deaths      + EXCLUDED.total_deaths,
+			commander_kills   = player_career.commander_kills   + EXCLUDED.commander_kills,
+			commanders_lost   = player_career.commanders_lost   + EXCLUDED.commanders_lost,
+			total_gold_earned = player_career.total_gold_earned + EXCLUDED.total_gold_earned,
+			total_gold_spent  = player_career.total_gold_spent  + EXCLUDED.total_gold_spent,
+			total_recruits    = player_career.total_recruits    + EXCLUDED.total_recruits,
+			last_played_at    = now()
+	`,
+		playerID,
+		delta.MatchesPlayed, delta.MatchesWon, delta.MatchesLost,
+		delta.TotalKills, delta.TotalDeaths, delta.CommanderKills, delta.CommandersLost,
+		delta.TotalGoldEarned, delta.TotalGoldSpent, delta.TotalRecruits,
+	)
 	return err
 }

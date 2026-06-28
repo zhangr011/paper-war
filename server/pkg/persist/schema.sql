@@ -23,3 +23,21 @@ CREATE TABLE IF NOT EXISTS commanders (
 
 CREATE INDEX IF NOT EXISTS idx_commanders_player_id ON commanders(player_id);
 CREATE INDEX IF NOT EXISTS idx_players_token ON players(token);
+
+-- v1.1: Career stats accumulator. One row per player, updated atomically
+-- at each match end via ON CONFLICT DO UPDATE. Separate from commanders
+-- (mutable roster) to keep career totals append-mostly.
+CREATE TABLE IF NOT EXISTS player_career (
+    player_id          INT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+    matches_played     INT NOT NULL DEFAULT 0,
+    matches_won        INT NOT NULL DEFAULT 0,
+    matches_lost       INT NOT NULL DEFAULT 0,
+    total_kills        INT NOT NULL DEFAULT 0,
+    total_deaths       INT NOT NULL DEFAULT 0,
+    commander_kills    INT NOT NULL DEFAULT 0,
+    commanders_lost    INT NOT NULL DEFAULT 0,
+    total_gold_earned  INT NOT NULL DEFAULT 0,
+    total_gold_spent   INT NOT NULL DEFAULT 0,
+    total_recruits     INT NOT NULL DEFAULT 0,
+    last_played_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);

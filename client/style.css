@@ -1434,3 +1434,41 @@ body.spectator-mode #gold {
   background: rgba(255,215,0,0.15);
   color: #FFD700;
 }
+
+/* v1.1: Career UI ---------------------------------------------------------- */
+.lobby-career-summary {
+  margin-top: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+}
+.career-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 16px 0;
+}
+.career-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 10px;
+  background: rgba(0,0,0,0.18);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--border-color);
+}
+.career-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+.career-value {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--paper-light);
+}
+.career-value.career-win { color: #66BB6A; }
+.career-value.career-loss { color: #EF5350; }

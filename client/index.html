@@ -66,11 +66,34 @@
         <button class="lobby-btn lobby-btn-solo" id="solo-btn">Start Match</button>
         <button class="lobby-btn lobby-btn-clash" id="clash-btn">Clash Test</button>
         <button class="lobby-btn" id="find-match-btn">Find Match</button>
+        <button class="lobby-btn" id="career-btn">Career</button>
         <button class="lobby-btn lobby-btn-cancel" id="cancel-queue-btn" style="display:none">Cancel</button>
       </div>
+      <!-- v1.1: career summary line. Populated by updateCareerDisplay(). -->
+      <p class="lobby-career-summary" id="lobby-career-summary">No matches played yet.</p>
       <div class="lobby-spinner" id="lobby-spinner" style="display:none">
         <div class="spinner"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- v1.1: Career Screen — cumulative cross-match stats -->
+  <div id="career-screen" class="screen">
+    <div class="lobby-card">
+      <h2 class="lobby-title">Career</h2>
+      <div class="career-grid">
+        <div class="career-row"><span class="career-label">Matches Played</span><span class="career-value" id="career-matches">0</span></div>
+        <div class="career-row"><span class="career-label">Wins</span><span class="career-value career-win" id="career-wins">0</span></div>
+        <div class="career-row"><span class="career-label">Losses</span><span class="career-value career-loss" id="career-losses">0</span></div>
+        <div class="career-row"><span class="career-label">Total Kills</span><span class="career-value" id="career-kills">0</span></div>
+        <div class="career-row"><span class="career-label">Total Deaths</span><span class="career-value" id="career-deaths">0</span></div>
+        <div class="career-row"><span class="career-label">Commander Kills</span><span class="career-value" id="career-cmd-kills">0</span></div>
+        <div class="career-row"><span class="career-label">Commanders Lost</span><span class="career-value" id="career-cmd-lost">0</span></div>
+        <div class="career-row"><span class="career-label">Gold Earned</span><span class="career-value" id="career-gold-earned">0</span></div>
+        <div class="career-row"><span class="career-label">Gold Spent</span><span class="career-value" id="career-gold-spent">0</span></div>
+        <div class="career-row"><span class="career-label">Recruits</span><span class="career-value" id="career-recruits">0</span></div>
+      </div>
+      <button class="lobby-btn lobby-btn-cancel" id="career-back-btn">Back</button>
     </div>
   </div>
 

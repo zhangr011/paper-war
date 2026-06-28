@@ -36,3 +36,11 @@ func (s *PostgresStore) DeleteCommander(ctx context.Context, playerID uint32, cm
 func (s *PostgresStore) CreateStarterRoster(ctx context.Context, playerID uint32) error {
 	return fmt.Errorf("pgx not available")
 }
+
+func (s *PostgresStore) GetCareerStats(ctx context.Context, playerID uint32) (*CareerStats, error) {
+	return nil, fmt.Errorf("pgx not available")
+}
+
+func (s *PostgresStore) AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error {
+	return fmt.Errorf("pgx not available")
+}

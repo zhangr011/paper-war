@@ -58,6 +58,17 @@ type Store interface {
 	// CreateStarterRoster creates the initial roster for a new player:
 	// 1 Gun Commander + 5 Light Infantry, 50 Gold.
 	CreateStarterRoster(ctx context.Context, playerID uint32) error
+
+	// GetCareerStats returns the cumulative cross-match stats for a player.
+	// Returns a zero-valued CareerStats (PlayerID set) for players with no
+	// recorded matches yet — does NOT return an error for unknown IDs, so
+	// callers can render an empty career UI without special-casing.
+	GetCareerStats(ctx context.Context, playerID uint32) (*CareerStats, error)
+
+	// AddCareerStats atomically accumulates a delta into the player's career
+	// totals. Called once per match end with that match's stats. For new
+	// players, creates the career row.
+	AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error
 }
 
 // --- MockStore for testing ---
@@ -65,6 +76,7 @@ type Store interface {
 type MockStore struct {
 	Players map[uint32]*Player
 	ByToken map[string]*Player
+	Careers map[uint32]*CareerStats
 	nextID  uint32
 }
 
@@ -72,6 +84,7 @@ func NewMockStore() *MockStore {
 	return &MockStore{
 		Players: make(map[uint32]*Player),
 		ByToken: make(map[string]*Player),
+		Careers: make(map[uint32]*CareerStats),
 		nextID:  1,
 	}
 }
@@ -162,6 +175,29 @@ func (s *MockStore) CreateStarterRoster(ctx context.Context, playerID uint32) er
 	}
 
 	p.Commanders = append(p.Commanders, cmd)
+	return nil
+}
+
+// GetCareerStats returns the player's career totals, or a zero-valued
+// CareerStats for players who haven't played any matches yet.
+func (s *MockStore) GetCareerStats(ctx context.Context, playerID uint32) (*CareerStats, error) {
+	if c, ok := s.Careers[playerID]; ok {
+		// Return a copy so callers can't mutate our stored value.
+		out := *c
+		return &out, nil
+	}
+	return &CareerStats{PlayerID: playerID}, nil
+}
+
+// AddCareerStats accumulates delta into the player's career totals.
+// Creates the career entry on first call.
+func (s *MockStore) AddCareerStats(ctx context.Context, playerID uint32, delta CareerStats) error {
+	c, ok := s.Careers[playerID]
+	if !ok {
+		c = &CareerStats{PlayerID: playerID}
+		s.Careers[playerID] = c
+	}
+	c.Add(delta)
 	return nil
 }
 

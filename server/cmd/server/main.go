@@ -128,9 +128,62 @@ func main() {
 			switch msgType {
 			case "login":
 				name, _ := msg["name"].(string)
+				token, _ := msg["token"].(string)
 				hub.SetClientName(clientID, name)
-				hub.SendJSON(clientID, map[string]string{"type": "login_ok"})
-				log.Printf("client %d logged in as %q", clientID, name)
+
+				// v1.1: resolve real DB playerID from token. Without this
+				// every client shares playerID=1 in solo/clash and the
+				// roster is shared. The client generates and persists the
+				// token in localStorage on first login (opaque hex string).
+				if token != "" && gs.Store != nil {
+					loginCtx := context.Background()
+					player, err := gs.Store.FindOrCreatePlayer(loginCtx, token)
+					if err != nil {
+						log.Printf("client %d: FindOrCreatePlayer error: %v", clientID, err)
+					} else if player != nil {
+						hub.SetClientToken(clientID, token)
+						// Persist the DB-resolved playerID on the session
+						// so spawnFromStore can load the right roster. Note
+						// this is the *account* playerID; the *match*
+						// playerID is assigned separately at match start
+						// (1 or 2) by SetClientPlayerID.
+						hub.SetClientPlayerID(clientID, player.ID)
+						log.Printf("client %d logged in as %q (db player_id=%d)",
+							clientID, name, player.ID)
+					}
+				} else {
+					log.Printf("client %d logged in as %q (no token — using ephemeral ID)",
+						clientID, name)
+				}
+				hub.SendJSON(clientID, map[string]interface{}{
+					"type":       "login_ok",
+					"player_id":  hub.GetClientPlayerID(clientID),
+				})
+
+				// v1.1: Send career stats so the client can render the
+				// career screen / lobby totals immediately. For new players
+				// this is all zeros.
+				if gs.Store != nil {
+					pid := hub.GetClientPlayerID(clientID)
+					if pid > 0 {
+						careerCtx := context.Background()
+						if totals, err := gs.Store.GetCareerStats(careerCtx, pid); err == nil && totals != nil {
+							hub.SendJSON(clientID, map[string]interface{}{
+								"type":              "career_stats",
+								"matches_played":    totals.MatchesPlayed,
+								"matches_won":       totals.MatchesWon,
+								"matches_lost":      totals.MatchesLost,
+								"total_kills":       totals.TotalKills,
+								"total_deaths":      totals.TotalDeaths,
+								"commander_kills":   totals.CommanderKills,
+								"commanders_lost":   totals.CommandersLost,
+								"total_gold_earned": totals.TotalGoldEarned,
+								"total_gold_spent":  totals.TotalGoldSpent,
+								"total_recruits":    totals.TotalRecruits,
+							})
+						}
+					}
+				}
 			case "join_queue":
 				name := hub.GetClientName(clientID)
 				if mm.Join(clientID, name) {
@@ -428,6 +481,96 @@ func main() {
 				if hub.GetClientInGame(cid) {
 					hub.SendToClient(cid, result)
 					hub.SendToClient(cid, statsMsg)
+				}
+			}
+
+			// v1.1: Persist career stats. For each in-game client:
+			//   1. Resolve DB playerID via token (cheap lookup, indexed).
+			//   2. Map their match-local playerID (1/2) → faction (0/1).
+			//   3. Build CareerStats delta from that faction's MatchStats.
+			//   4. Atomically accumulate into player_career.
+			// Spectators (matchPlayerID=0) and unauthenticated clients are
+			// skipped — they have no career to update.
+			if gs.Store != nil {
+				careerCtx := context.Background()
+				for _, cid := range hub.ClientIDs() {
+					if !hub.GetClientInGame(cid) {
+						continue
+					}
+					matchPlayerID := hub.GetClientPlayerID(cid)
+					if matchPlayerID == 0 {
+						continue // spectator (clash/crash test)
+					}
+					token := hub.GetClientToken(cid)
+					if token == "" {
+						continue // unauthenticated — no career to update
+					}
+					faction := gs.FactionOfPlayer(matchPlayerID)
+					if faction > 1 {
+						continue // unknown faction — shouldn't happen
+					}
+
+					// Resolve DB playerID from token.
+					player, err := gs.Store.FindOrCreatePlayer(careerCtx, token)
+					if err != nil || player == nil {
+						log.Printf("career-stats: client %d token lookup failed: %v", cid, err)
+						continue
+					}
+
+					// Build delta from this faction's slice of MatchStats.
+					// MatchStats uses uint16/int32 (per-match magnitudes are
+					// small); CareerStats uses uint32 (cumulative across many
+					// matches). Cast at the boundary.
+					delta := persist.CareerStats{
+						PlayerID:        player.ID,
+						MatchesPlayed:   1,
+						TotalKills:      uint32(ms.Factions[faction].Kills),
+						TotalDeaths:     uint32(ms.Factions[faction].Deaths),
+						CommanderKills:  uint32(ms.Factions[faction].CommanderKills),
+						TotalGoldEarned: uint32(ms.Factions[faction].GoldEarned),
+						TotalGoldSpent:  uint32(ms.Factions[faction].GoldSpent),
+						TotalRecruits:   uint32(ms.Factions[faction].UnitsRecruited),
+					}
+					if gs.Lifecycle.WinnerFaction == faction {
+						delta.MatchesWon = 1
+						// Commander death = loss of that commander in roster.
+						// Track as commanders_lost when this player lost their
+						// commander (defensive — the death is also handled by
+						// FlushRoster's DeleteCommander path).
+						delta.CommandersLost = 0
+					} else {
+						delta.MatchesLost = 1
+						// Losing faction's commander is dead (permadeath).
+						// This is conservative — assumes the losing player's
+						// commander always dies. FlushRoster's existing path
+						// will actually delete the commander row.
+						delta.CommandersLost = 1
+					}
+
+					if err := gs.Store.AddCareerStats(careerCtx, player.ID, delta); err != nil {
+						log.Printf("career-stats: AddCareerStats for player %d failed: %v",
+							player.ID, err)
+					} else {
+						// Fetch updated totals and push to client so the UI
+						// refreshes immediately after the match.
+						if totals, err := gs.Store.GetCareerStats(careerCtx, player.ID); err == nil && totals != nil {
+							hub.SendJSON(cid, map[string]interface{}{
+								"type":             "career_stats",
+								"matches_played":   totals.MatchesPlayed,
+								"matches_won":      totals.MatchesWon,
+								"matches_lost":     totals.MatchesLost,
+								"total_kills":      totals.TotalKills,
+								"total_deaths":     totals.TotalDeaths,
+								"commander_kills":  totals.CommanderKills,
+								"commanders_lost":  totals.CommandersLost,
+								"total_gold_earned": totals.TotalGoldEarned,
+								"total_gold_spent": totals.TotalGoldSpent,
+								"total_recruits":   totals.TotalRecruits,
+							})
+						}
+						log.Printf("career-stats: player %d +%dw/%dl",
+							player.ID, delta.MatchesWon, delta.MatchesLost)
+					}
 				}
 			}
 		}

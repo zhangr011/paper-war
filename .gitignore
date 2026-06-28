@@ -21,3 +21,8 @@ do-push.sh
 .scratch/far_spawn_test.go
 .scratch/far_spawn_test.go.disabled
 .scratch/v1-polish-pass-2026-06-28.md
+.scratch/_smoke-career.spec.js
+
+# v1.1 plans are working docs, not source.
+.heres/plans/
+.hermes/plans/

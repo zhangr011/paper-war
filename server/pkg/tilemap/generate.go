@@ -47,8 +47,8 @@ const (
 
 	// Objective
 	survivalChance = 15 // 15% of maps roll Survival
-	survivalTicks  = 3000 // 10 minutes at 5Hz... but game runs 10Hz, so 5 minutes
-	captureHold    = 300  // 60 seconds at 5Hz... 30 sec at 10Hz
+	survivalTicks  = 3000 // 5 minutes at ServerTicksPerSecond=10
+	captureHold    = 300  // 30 seconds at ServerTicksPerSecond=10
 )
 
 // GenerateMap creates a procedural terrain map using a heightmap-driven pipeline.

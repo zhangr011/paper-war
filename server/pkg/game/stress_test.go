@@ -141,7 +141,7 @@ func TestStressRapidCommands(t *testing.T) {
 	gs.Map.Objective.Type = 0
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(24), fixed.FromFloat(3), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(24), fixed.FromFloat(93), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(24), fixed.FromFloat(float64(DefaultMapHeight) - 3), 1, component.UnitLightInfantry)
 	gs.PlayerGold[1] = 10000 // plenty for many recruits
 
 	// Flood: send 100 move commands + 100 recruit commands in one batch

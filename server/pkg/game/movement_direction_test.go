@@ -21,8 +21,8 @@ func TestCombatUnitsMoveForward(t *testing.T) {
 	}
 
 	// Spawn team 1 at Y=48, move target at Y=70 (forward = +Y direction)
-	spawnX := fixed.FromFloat(24.0)
-	spawnY := fixed.FromFloat(48.0)
+	spawnX := fixed.FromFloat(float64(DefaultMapWidth) / 2)
+	spawnY := fixed.FromFloat(float64(DefaultMapHeight) / 2)
 	targetY := fixed.FromFloat(70.0)
 
 	// Use roster spawn path (SpawnTeamFromRoster-like, which was the buggy path)
@@ -128,8 +128,8 @@ func TestCombatUnitsFollowCommander(t *testing.T) {
 		gs.Lifecycle.Start()
 	}
 
-	spawnX := fixed.FromFloat(24.0)
-	spawnY := fixed.FromFloat(48.0)
+	spawnX := fixed.FromFloat(float64(DefaultMapWidth) / 2)
+	spawnY := fixed.FromFloat(float64(DefaultMapHeight) / 2)
 
 	gs.SpawnTeamWithType(1, 1, spawnX, spawnY, 3, component.UnitLightInfantry)
 

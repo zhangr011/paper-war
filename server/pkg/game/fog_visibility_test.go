@@ -22,8 +22,8 @@ func TestFogEnemyAppearsAndDisappears(t *testing.T) {
 	gs := NewGameSession()
 	gs.Lifecycle.Start()
 
-	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(24.0), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(24.0), fixed.FromFloat(85.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(float64(DefaultMapWidth) / 2), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) / 2), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
@@ -76,13 +76,13 @@ func TestFogEnemyAppearsAndDisappears(t *testing.T) {
 		t.Errorf("Phase 1: expected 0 enemy units, got %d", p2)
 	}
 
-	// Phase 2: P2 moves to (24,20) — within commander vision radius 12 from (24,10)
-	moveP2(24, 20)
+	// Phase 2: P2 moves to (centerX,20) — within commander vision radius 12 from (centerX,10)
+	moveP2(float64(DefaultMapWidth)/2, 20)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
-	t.Logf("Phase 2: (24,20) currently_visible=%v", grid.IsCurrentlyVisible(24, 20))
-	if !grid.IsCurrentlyVisible(24, 20) {
+	t.Logf("Phase 2: (centerX,20) currently_visible=%v", grid.IsCurrentlyVisible(int32(DefaultMapWidth)/2, 20))
+	if !grid.IsCurrentlyVisible(int32(DefaultMapWidth)/2, 20) {
 		t.Error("Phase 2: (24,20) should be currently visible (within commander radius 12 from y=10)")
 	}
 
@@ -95,25 +95,26 @@ func TestFogEnemyAppearsAndDisappears(t *testing.T) {
 
 	// Phase 3: P1 commander AND P2 both move away to (5,5) and (24,85).
 	// This makes (24,20) transition from FogVisible → FogExplored.
-	moveP2(24, 85)
+	moveP2(float64(DefaultMapWidth)/2, float64(DefaultMapHeight)-10)
 	moveP1(5, 5)
 	gs.Tick()
 
 	grid = gs.FogSys.GetGrid(1)
-	t.Logf("Phase 3: (24,20) state=%d currently_visible=%v",
-		grid.Visible[20*48+24], grid.IsCurrentlyVisible(24, 20))
+	tileIdx := 20*int(DefaultMapWidth) + int(DefaultMapWidth)/2
+	t.Logf("Phase 3: (centerX,20) state=%d currently_visible=%v",
+		grid.Visible[tileIdx], grid.IsCurrentlyVisible(int32(DefaultMapWidth)/2, 20))
 
 	data = gs.GenerateSnapshot(1, fullView(gs))
 	p2 = countEnemyUnitsInSnapshot(t, data, 2)
-	t.Logf("Phase 3 (P2 back at y=85): P2 units visible=%d", p2)
+	t.Logf("Phase 3 (P2 moved away): P2 units visible=%d", p2)
 	if p2 > 0 {
 		t.Errorf("Phase 3: enemy should disappear when out of vision, got %d", p2)
 	}
 
-	// Phase 4: Verify tile (24,20) is now explored (dimmed) but enemy is hidden
+	// Phase 4: Verify tile (centerX,20) is now explored (dimmed) but enemy is hidden
 	grid = gs.FogSys.GetGrid(1)
-	if grid.Visible[20*48+24] != fog.FogExplored {
-		t.Errorf("Phase 4: (24,20) should be FogExplored(1), got %d", grid.Visible[20*48+24])
+	if grid.Visible[tileIdx] != fog.FogExplored {
+		t.Errorf("Phase 4: (centerX,20) should be FogExplored(1), got %d", grid.Visible[tileIdx])
 	}
 }
 
@@ -124,7 +125,7 @@ func TestFogSpectatorSeesAll(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(10.0), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(40.0), fixed.FromFloat(80.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth)-10), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	// Spectator has playerID=0 — no fog grid

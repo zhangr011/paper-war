@@ -14,15 +14,31 @@ import (
 	"github.com/user/paper-war/server/pkg/persist"
 )
 
-func TestDefaultCombatUnitSpeedUsesFiveTimesMovement(t *testing.T) {
-	speed := defaultCombatUnitSpeed(DefaultMapWidth)
+// TestDefaultCombatUnitSpeedCrossesLongAxisInConfiguredTime verifies the
+// core pacing invariant: a unit crossing the map's long axis (the actual
+// traversal direction in PvP, where spawns are at top/bottom of a portrait
+// map) takes `combatUnitCrossMapSeconds` of wall-clock time.
+//
+// Issue #45: previously this test asserted against DefaultMapWidth (the
+// short axis), which meant real PvP traversal took ~9 min instead of the
+// configured 5 min. Now the formula uses max(width, height) and this test
+// reflects that.
+func TestDefaultCombatUnitSpeedCrossesLongAxisInConfiguredTime(t *testing.T) {
+	speed := defaultCombatUnitSpeed(DefaultMapWidth, DefaultMapHeight)
 	effectivePerSecond := fixed.ToFloat((speed / movement.PositionDivisor) * ServerTicksPerSecond)
-	actualSeconds := float64(DefaultMapWidth) / effectivePerSecond
+
+	// Long axis = whichever of width/height is larger. For the default
+	// portrait map (32×48), this is 48.
+	longAxis := DefaultMapHeight
+	if DefaultMapWidth > DefaultMapHeight {
+		longAxis = DefaultMapWidth
+	}
+	actualSeconds := float64(longAxis) / effectivePerSecond
 	wantSeconds := float64(combatUnitCrossMapSeconds) / float64(DefaultMovementMultiplier)
 
 	if actualSeconds < wantSeconds*0.9 || actualSeconds > wantSeconds*1.1 {
-		t.Fatalf("cross-map time = %.1fs, want about %.1fs at %dx movement",
-			actualSeconds, wantSeconds, DefaultMovementMultiplier)
+		t.Fatalf("cross-map time on long axis (%d tiles) = %.1fs, want about %.1fs",
+			longAxis, actualSeconds, wantSeconds)
 	}
 }
 
@@ -33,8 +49,12 @@ func TestNewGameSessionUsesPortraitMap(t *testing.T) {
 	if w != DefaultMapWidth || h != DefaultMapHeight {
 		t.Fatalf("map size = %dx%d, want %dx%d", w, h, DefaultMapWidth, DefaultMapHeight)
 	}
-	if h != w*2 {
-		t.Fatalf("map ratio = %dx%d, want vertical 2:1", w, h)
+	// Portrait orientation: height > width. The exact aspect ratio is
+	// no longer fixed at 2:1 (issue #45 shrank the map from 48×96 to
+	// 30×48, a 1.6:1 ratio) — the ratio is now a tuning parameter,
+	// not a structural invariant.
+	if h <= w {
+		t.Fatalf("map ratio = %dx%d, want portrait (h > w)", w, h)
 	}
 }
 
@@ -73,7 +93,7 @@ func TestSpawnSquadUsesDefaultCombatUnitSpeed(t *testing.T) {
 	gs := NewGameSession()
 	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
 
-	want := defaultCombatUnitSpeed(gs.Map.Width)
+	want := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	count := 0

@@ -34,8 +34,8 @@ func TestRosterCombatUnitsHaveFormationAttraction(t *testing.T) {
 		gs.Lifecycle.Start()
 	}
 
-	spawnX := fixed.FromFloat(24.0)
-	spawnY := fixed.FromFloat(48.0)
+	spawnX := fixed.FromFloat(float64(DefaultMapWidth) / 2)
+	spawnY := fixed.FromFloat(float64(DefaultMapHeight) / 2)
 
 	// Build a roster commander with 6 combat units — the structure that
 	// would come from the persistent store in solo mode.

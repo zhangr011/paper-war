@@ -15,7 +15,7 @@ func TestFogGridSentInSnapshot(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(20.0), fixed.FromFloat(20.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(40.0), fixed.FromFloat(80.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
@@ -67,7 +67,7 @@ func TestFogClearPreservesExplored(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(24.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(40.0), fixed.FromFloat(80.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
@@ -126,7 +126,7 @@ func TestCombatUnitsProvideVision(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(10.0), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(40.0), fixed.FromFloat(80.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
@@ -148,8 +148,8 @@ func TestCombatUnitsProvideVision(t *testing.T) {
 		}
 		pos, ok := posPool.GetPtr(e)
 		if ok {
-			pos.X = fixed.FromFloat(30.0)
-			pos.Y = fixed.FromFloat(30.0)
+			pos.X = fixed.FromFloat(20.0)
+			pos.Y = fixed.FromFloat(20.0)
 			moved = true
 		}
 	})
@@ -159,8 +159,8 @@ func TestCombatUnitsProvideVision(t *testing.T) {
 	grid = gs.FogSys.GetGrid(1)
 	t.Logf("after unit move: visible=%d", countState(grid, fog.FogVisible))
 
-	if !grid.IsCurrentlyVisible(30, 30) {
-		t.Error("tile (30,30) should be visible from combat unit")
+	if !grid.IsCurrentlyVisible(20, 20) {
+		t.Error("tile (20,20) should be visible from combat unit")
 	}
 }
 

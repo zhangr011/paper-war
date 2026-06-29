@@ -56,12 +56,20 @@ type GameSession struct {
 
 const (
 	ServerTicksPerSecond      = 10
-	DefaultMapWidth           = 48
-	DefaultMapHeight          = 96
+	// DefaultMapWidth/Height are shrunk from the original 48×96 (issue #45).
+	// The 30×48 portrait map with axis-aware speed tuning hits all four
+	// pacing invariants: cross-map ≤ 240 s, PvP first-contact ≤ 120 s,
+	// commander vision ≥ 25% of long axis, starter roster ≥ 0.4% of area.
+	// See docs/adr/0020-map-scale-rebalance.md for the full rationale.
+	DefaultMapWidth           = 30
+	DefaultMapHeight          = 48
 	InitialTeamCombatUnits    = 5 // v1: starter roster is 1 Cmd + 5 LI
 	CombatUnitsPerTeamLevel   = 2
 	DefaultMovementMultiplier = 1
-	combatUnitCrossMapSeconds = 300
+	// combatUnitCrossMapSeconds is the wall-clock time a unit takes to
+	// traverse the map's long axis. Reduced from 300 → 240 in issue #45
+	// to hit the ≤ 4 min cross-map target after the axis-aware speed fix.
+	combatUnitCrossMapSeconds = 240
 	StartGold                 = 50 // v1: 50 gold start
 )
 
@@ -72,14 +80,31 @@ func CombatUnitCountForTeamLevel(level uint8) int {
 	return InitialTeamCombatUnits + int(level-1)*CombatUnitsPerTeamLevel
 }
 
-func defaultCombatUnitSpeed(mapWidth int32) int64 {
+// defaultCombatUnitSpeed computes the velocity (in 12.4 fixed-point) that
+// a combat unit should move per tick so that it crosses the map's longest
+// axis in `combatUnitCrossMapSeconds` of wall-clock time.
+//
+// Issue #45: previously this took `mapWidth` and computed against the short
+// axis, but PvP traversal actually happens on the *long* axis (spawns at
+// top/bottom of a portrait map). The result was real matches taking ~9 min
+// to first contact despite a 5-min configured cross-map time. Now we
+// compute against max(width, height) so the formula is correct regardless
+// of orientation.
+//
+// Callers can pass either dimension; we'll pick the longer internally.
+// Movement applies velocity with integer division by PositionDivisor per
+// tick, so we round up to the next divisor step to preserve the target.
+func defaultCombatUnitSpeed(mapWidth, mapHeight int32) int64 {
+	traversalAxis := mapWidth
+	if mapHeight > mapWidth {
+		traversalAxis = mapHeight
+	}
 	ticks := int64(ServerTicksPerSecond * combatUnitCrossMapSeconds)
-	distance := int64(mapWidth) << fixed.FractionBits
+	distance := int64(traversalAxis) << fixed.FractionBits
 	speed := distance * movement.PositionDivisor * DefaultMovementMultiplier / ticks
 
-	// Movement applies velocity with integer division by movement.PositionDivisor.
-	// Round up to the next divisor step so the effective speed remains near the
-	// configured side-to-side target after truncation.
+	// Round up to the next divisor step so the effective speed remains near
+	// the configured target after per-tick truncation.
 	if rem := speed % movement.PositionDivisor; rem != 0 {
 		speed += movement.PositionDivisor - rem
 	}
@@ -631,7 +656,7 @@ func (gs *GameSession) SpawnSquad(playerID uint32, squadID uint32, cx, cy int64,
 // SpawnSquadWithType creates a commander of the given type + N combat units.
 func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, cy int64, unitCount int, cmdType component.CombatUnitType) {
 	em := gs.World.Entities()
-	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
 
 	// --- Commander ---
 	cmdEntity := em.Create()
@@ -726,7 +751,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 // Returns the spawned commander entity.
 func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, cy int64, cmd persist.Commander) ecs.Entity {
 	em := gs.World.Entities()
-	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
 
 	// Parse commander type
 	cmdType, _ := component.ParseCombatUnitType(cmd.Type)
@@ -1085,7 +1110,7 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 
 func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
-	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width)
+	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
 	spacing := fixed.FromFloat(0.6)
 
 	stats := component.CombatUnitTypeTable[unitType]

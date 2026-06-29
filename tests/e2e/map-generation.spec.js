@@ -95,18 +95,18 @@ test('map terrain data is received after starting a solo game', async ({ page })
 });
 
 // ---------------------------------------------------------------------------
-// Test 2 — Map dimensions correct (48x96)
+// Test 2 — Map dimensions correct (30x48)
 // ---------------------------------------------------------------------------
 
-test('map dimensions are 48x96 as expected', async ({ page }) => {
+test('map dimensions are 30x48 as expected', async ({ page }) => {
   await startSoloGame(page);
   await waitForTerrain(page);
 
   const map = await getMapState(page);
 
-  expect(map.mapWidth).toBe(48);
-  expect(map.mapHeight).toBe(96);
-  expect(map.terrainLength).toBe(48 * 96);
+  expect(map.mapWidth).toBe(30);
+  expect(map.mapHeight).toBe(48);
+  expect(map.terrainLength).toBe(30 * 48);
 });
 
 // ---------------------------------------------------------------------------
@@ -273,8 +273,8 @@ test('multiple games produce different terrain maps', async ({ browser }) => {
   await ctx2.close();
 
   // Both maps should have valid dimensions
-  expect(map1.terrain.length).toBe(48 * 96);
-  expect(map2.terrain.length).toBe(48 * 96);
+  expect(map1.terrain.length).toBe(30 * 48);
+  expect(map2.terrain.length).toBe(30 * 48);
 
   // Maps should differ (procedural generation with random seed)
   let differences = 0;

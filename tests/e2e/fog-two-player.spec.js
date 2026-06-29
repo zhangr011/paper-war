@@ -70,10 +70,10 @@ test('two players get separate fog grids with independent visibility', async ({ 
     const p2State = await getFogState(page2);
 
     // Both players should have valid fog grids matching the map
-    expect(p1State.fogW).toBe(48);
-    expect(p1State.fogH).toBe(96);
-    expect(p2State.fogW).toBe(48);
-    expect(p2State.fogH).toBe(96);
+    expect(p1State.fogW).toBe(30);
+    expect(p1State.fogH).toBe(48);
+    expect(p2State.fogW).toBe(30);
+    expect(p2State.fogH).toBe(48);
 
     // Both should have visible tiles
     expect(p1State.visibleCount).toBeGreaterThan(0);

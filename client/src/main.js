@@ -1236,6 +1236,8 @@ export class Game {
     };
 
     this.renderer.beginFrame();
+    // Update zoom for the instanced unit shader (issue #45 follow-up).
+    this.renderer.setZoom(this.camera.zoom);
 
     // Pass 1: Terrain
     this.renderer.drawTerrain(terrainTiles, cameraOffset);

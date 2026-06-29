@@ -127,11 +127,18 @@ in vec2 a_spriteSize;    // per-instance: sprite size (pixels)
 in vec4 a_tint;          // per-instance: color tint
 uniform mat4 u_projection;
 uniform vec2 u_atlasSize; // atlas dimensions for texcoord normalization
+uniform float u_zoom;     // camera zoom — scales the on-screen quad without
+                          // affecting atlas sampling (decoupled from a_spriteSize)
 out vec2 v_texcoord;
 out vec4 v_tint;
 void main() {
-  vec2 pos = a_position * a_spriteSize + a_worldPos;
+  // Vertex position: scale the unit quad by spriteSize AND zoom so the
+  // rendered quad tracks the camera zoom (matches terrain tile scaling).
+  vec2 pos = a_position * a_spriteSize * u_zoom + a_worldPos;
   gl_Position = u_projection * vec4(pos, 0.0, 1.0);
+  // Texcoord: use spriteSize ONLY (no zoom). Sampling a 32×32 cell of the
+  // atlas regardless of on-screen size — this is the decoupling that lets
+  // units scale visually without going out of atlas bounds.
   v_texcoord = (a_texcoord * a_spriteSize + a_spriteOffset) / u_atlasSize;
   v_tint = a_tint;
 }
@@ -441,6 +448,7 @@ class InstancedBatch {
     this.uProjection = gl.getUniformLocation(program, 'u_projection');
     this.uTexture = gl.getUniformLocation(program, 'u_texture');
     this.uAtlasSize = gl.getUniformLocation(program, 'u_atlasSize');
+    this.uZoom = gl.getUniformLocation(program, 'u_zoom');
 
     // Unit quad vertices (position + texcoord): a fullscreen quad 0..1
     const quadVerts = new Float32Array([
@@ -540,14 +548,28 @@ class InstancedBatch {
     return true;
   }
 
-  /** Draw all queued instances and reset. */
-  flush(projectionMatrix, texture, atlasWidth, atlasHeight) {
+  /** Draw all queued instances and reset.
+   *
+   *  @param {Float32Array} projectionMatrix  orthographic projection
+   *  @param {WebGLTexture} texture           atlas texture to sample
+   *  @param {number} atlasWidth              atlas width in pixels (for texcoord normalization)
+   *  @param {number} atlasHeight             atlas height in pixels
+   *  @param {number} [zoom=1]                camera zoom factor. Scales the
+   *                                          on-screen quad size WITHOUT
+   *                                          affecting atlas sampling —
+   *                                          this is the decoupling that
+   *                                          lets units grow when the
+   *                                          camera zooms in (matching
+   *                                          terrain tile scaling).
+   */
+  flush(projectionMatrix, texture, atlasWidth, atlasHeight, zoom = 1) {
     if (this.instanceCount === 0) return;
 
     const gl = this.gl;
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uProjection, false, projectionMatrix);
     gl.uniform2f(this.uAtlasSize, atlasWidth, atlasHeight);
+    if (this.uZoom) gl.uniform1f(this.uZoom, zoom);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(this.uTexture, 0);
@@ -677,6 +699,18 @@ export class Renderer {
     this.effectsBatch.reset();
   }
 
+  /**
+   * Set the camera zoom factor for the next endFrame() flush.
+   * The instanced unit shader uses this to scale unit quads to match
+   * terrain tile scaling (issue #45 follow-up: units weren't tracking
+   * camera zoom, appearing disproportionately small when zoomed in and
+   * huge when zoomed out).
+   * @param {number} zoom
+   */
+  setZoom(zoom) {
+    this.currentZoom = zoom;
+  }
+
   // -----------------------------------------------------------------------
   // Batch population methods
   // The actual game data (tiles, objects, units, effects) will come from
@@ -762,7 +796,12 @@ export class Renderer {
    *                [spriteW]:number, [spriteH]:number}>} units
    * @param {{ x:number, y:number }} camera
    */
-  drawUnits(units, camera) {
+  drawUnits(units, camera, zoom = 1) {
+    // NOTE: zoom is forwarded to unitBatch.flush via the renderer's
+    // render() loop. This method only pushes instances; the zoom uniform
+    // is applied at flush time. Kept in the signature so callers know
+    // the rendered size depends on zoom (the position is already
+    // pre-scaled by the caller via TILE_WIDTH*zoom in world-pixel space).
     const batch = this.unitBatch;
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
@@ -932,7 +971,12 @@ export class Renderer {
     // (set via setUnitTexture) rather than the shared white pixel.  This
     // keeps the unit batch on its own texture binding so terrain/effects
     // passes are unaffected.
-    this.unitBatch.flush(proj, this.unitTexture, this.unitAtlasWidth, this.unitAtlasHeight);
+    //
+    // v1.2.1: pass the camera zoom so the instanced shader can scale
+    // unit quads to match terrain tiles. Before this, units rendered at
+    // a fixed 32×32 pixels regardless of zoom level, so zooming in made
+    // units look tiny relative to the map and zooming out made them huge.
+    this.unitBatch.flush(proj, this.unitTexture, this.unitAtlasWidth, this.unitAtlasHeight, this.currentZoom || 1);
 
     // Pass 4: effects
     this.effectsBatch.flush(proj, tex, time);

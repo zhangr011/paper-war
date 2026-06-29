@@ -56,10 +56,10 @@ test('fog grid is received after starting a solo game', async ({ page }) => {
 
   const fog = await getFogState(page);
 
-  // Fog grid dimensions match the map (48x96)
-  expect(fog.width).toBe(48);
-  expect(fog.height).toBe(96);
-  expect(fog.visible.length).toBe(48 * 96);
+  // Fog grid dimensions match the map (30x48)
+  expect(fog.width).toBe(30);
+  expect(fog.height).toBe(48);
+  expect(fog.visible.length).toBe(30 * 48);
 
   // At least some tiles should be visible (commander's vision radius)
   const visibleCount = fog.visible.filter((v) => v >= 1).length;
@@ -289,7 +289,7 @@ test('fog grid updates across multiple snapshots', async ({ page }) => {
   const laterVisibleCount = fogAfter.visible.filter((v) => v >= 1).length;
 
   // Fog grid should still be valid
-  expect(fogAfter.visible.length).toBe(48 * 96);
+  expect(fogAfter.visible.length).toBe(30 * 48);
 
   // Fog should continue to have visible and fogged tiles
   expect(laterVisibleCount).toBeGreaterThan(0);

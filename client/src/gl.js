@@ -129,12 +129,15 @@ uniform mat4 u_projection;
 uniform vec2 u_atlasSize; // atlas dimensions for texcoord normalization
 uniform float u_zoom;     // camera zoom — scales the on-screen quad without
                           // affecting atlas sampling (decoupled from a_spriteSize)
+uniform float u_unitScale; // visual scale multiplier for units (1.5 = 50% larger).
+                          // Multiplies the on-screen quad but NOT atlas sampling.
 out vec2 v_texcoord;
 out vec4 v_tint;
 void main() {
-  // Vertex position: scale the unit quad by spriteSize AND zoom so the
-  // rendered quad tracks the camera zoom (matches terrain tile scaling).
-  vec2 pos = a_position * a_spriteSize * u_zoom + a_worldPos;
+  // Vertex position: scale the unit quad by spriteSize, zoom, AND unitScale
+  // so the rendered quad grows proportionally. The centering offset (for
+  // unitScale != 1.0) is handled on the CPU side in buildUnitDescriptors.
+  vec2 pos = a_position * a_spriteSize * u_zoom * u_unitScale + a_worldPos;
   gl_Position = u_projection * vec4(pos, 0.0, 1.0);
   // Texcoord: use spriteSize ONLY (no zoom). Sampling a 32×32 cell of the
   // atlas regardless of on-screen size — this is the decoupling that lets
@@ -449,6 +452,7 @@ class InstancedBatch {
     this.uTexture = gl.getUniformLocation(program, 'u_texture');
     this.uAtlasSize = gl.getUniformLocation(program, 'u_atlasSize');
     this.uZoom = gl.getUniformLocation(program, 'u_zoom');
+    this.uUnitScale = gl.getUniformLocation(program, 'u_unitScale');
 
     // Unit quad vertices (position + texcoord): a fullscreen quad 0..1
     const quadVerts = new Float32Array([
@@ -554,15 +558,10 @@ class InstancedBatch {
    *  @param {WebGLTexture} texture           atlas texture to sample
    *  @param {number} atlasWidth              atlas width in pixels (for texcoord normalization)
    *  @param {number} atlasHeight             atlas height in pixels
-   *  @param {number} [zoom=1]                camera zoom factor. Scales the
-   *                                          on-screen quad size WITHOUT
-   *                                          affecting atlas sampling —
-   *                                          this is the decoupling that
-   *                                          lets units grow when the
-   *                                          camera zooms in (matching
-   *                                          terrain tile scaling).
+   *  @param {number} [zoom=1]                camera zoom factor.
+   *  @param {number} [unitScale=1]           per-unit visual scale (1.5 = 150%).
    */
-  flush(projectionMatrix, texture, atlasWidth, atlasHeight, zoom = 1) {
+  flush(projectionMatrix, texture, atlasWidth, atlasHeight, zoom = 1, unitScale = 1) {
     if (this.instanceCount === 0) return;
 
     const gl = this.gl;
@@ -570,6 +569,7 @@ class InstancedBatch {
     gl.uniformMatrix4fv(this.uProjection, false, projectionMatrix);
     gl.uniform2f(this.uAtlasSize, atlasWidth, atlasHeight);
     if (this.uZoom) gl.uniform1f(this.uZoom, zoom);
+    if (this.uUnitScale) gl.uniform1f(this.uUnitScale, unitScale);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(this.uTexture, 0);
@@ -709,6 +709,10 @@ export class Renderer {
    */
   setZoom(zoom) {
     this.currentZoom = zoom;
+  }
+
+  setUnitScale(scale) {
+    this.unitScale = scale;
   }
 
   // -----------------------------------------------------------------------
@@ -976,7 +980,7 @@ export class Renderer {
     // unit quads to match terrain tiles. Before this, units rendered at
     // a fixed 32×32 pixels regardless of zoom level, so zooming in made
     // units look tiny relative to the map and zooming out made them huge.
-    this.unitBatch.flush(proj, this.unitTexture, this.unitAtlasWidth, this.unitAtlasHeight, this.currentZoom || 1);
+    this.unitBatch.flush(proj, this.unitTexture, this.unitAtlasWidth, this.unitAtlasHeight, this.currentZoom || 1, this.unitScale || 1);
 
     // Pass 4: effects
     this.effectsBatch.flush(proj, tex, time);

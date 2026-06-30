@@ -68,6 +68,15 @@ const UNIT_SIZES = [
   { w: 28, h: 24 }, // 6 Motor Missile
 ];
 
+// Global visual scale multiplier for combat unit sprites. 1.0 = sprite
+// fills exactly one atlas cell (32×32px at zoom=1). 1.5 = sprite is 50%
+// larger than one tile, making units more visible without changing the
+// simulation. The scale is applied in the vertex shader (u_unitScale
+// uniform) so atlas sampling is unaffected — the sprite pixels are simply
+// stretched to fill a larger quad. HP bars and selection highlights use
+// this constant too so they track the visual size.
+const UNIT_SCALE = 1.5;
+
 // Unit type colors (team-tinted): each type has a base hue
 const UNIT_TYPE_COLORS = [
   { r: 0.3, g: 0.6, b: 0.9 }, // 0 LI  — blue
@@ -1236,8 +1245,9 @@ export class Game {
     };
 
     this.renderer.beginFrame();
-    // Update zoom for the instanced unit shader (issue #45 follow-up).
+    // Update zoom + unit scale for the instanced unit shader.
     this.renderer.setZoom(this.camera.zoom);
+    this.renderer.setUnitScale(UNIT_SCALE);
 
     // Pass 1: Terrain
     this.renderer.drawTerrain(terrainTiles, cameraOffset);
@@ -1666,8 +1676,8 @@ export class Game {
     // requires the on-screen quad to also be 32×32.  Visual size
     // variation between unit types comes from the silhouettes
     // themselves — vehicles fill more of the cell than infantry.
-    const spriteW = ATLAS_CELL * zoom;
-    const spriteH = ATLAS_CELL * zoom;
+    const spriteW = ATLAS_CELL * zoom * UNIT_SCALE;
+    const spriteH = ATLAS_CELL * zoom * UNIT_SCALE;
     const timeMs = performance.now();
 
     for (const unit of units) {
@@ -1679,11 +1689,12 @@ export class Game {
       if (!unit.alive && !(unit.dyingAt > 0)) continue;
 
       // Raw world-pixel position (same formula as terrain tiles).
-      // Centre the 32×32 sprite on the unit's tile footprint: shift
-      // left by half the width difference vs. the legacy per-type size
-      // so the sprite visually anchors where the old quad used to be.
-      const sx = unit.renderX * TILE_WIDTH * zoom;
-      const sy = unit.renderY * TILE_HEIGHT * zoom;
+      // Centre the sprite on the unit's tile footprint: shift left/up
+      // by half the extra growth from UNIT_SCALE so the sprite grows
+      // outward from the center, not from the top-left corner.
+      const halfExtra = ATLAS_CELL * zoom * (UNIT_SCALE - 1) / 2;
+      const sx = unit.renderX * TILE_WIDTH * zoom - halfExtra;
+      const sy = unit.renderY * TILE_HEIGHT * zoom - halfExtra;
 
       // Size index still drives tint selection (below).
       const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
@@ -1819,8 +1830,8 @@ export class Game {
       const sy = unit.renderY * TILE_HEIGHT * zoom;
       const sizeIdx = Math.min(unit.unitType || 0, UNIT_SIZES.length - 1);
       const size = UNIT_SIZES[sizeIdx];
-      const w = size.w * zoom;
-      const h = size.h * zoom;
+      const w = size.w * zoom * UNIT_SCALE;
+      const h = size.h * zoom * UNIT_SCALE;
 
       // Selection circle/highlight below the unit
       highlights.push({

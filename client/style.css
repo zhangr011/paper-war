@@ -42,6 +42,70 @@
 
   /* 9-slice border widths must match the wood-frame-9slice.png frame ring. */
   --frame-slice: 14;
+
+  /* ===================================================================
+     v1.3 Design System (issue #46) — semantic tokens
+     Based on ui-ux-pro-max skill output. Old literal names above are
+     aliased here; new code should prefer the semantic names.
+     See docs/design-system.md for the full system + WCAG verification.
+     =================================================================== */
+
+  /* --- Semantic colors (new) --- */
+  --color-background: var(--paper-bg);
+  --color-surface: var(--paper-light);
+  --color-surface-dark: var(--paper-dark);
+  --color-primary: var(--panel-header);
+  --color-on-primary: var(--paper-light);
+  --color-foreground: var(--text-heading);
+  --color-foreground-muted: var(--text-dark);
+  --color-muted: var(--text-muted);
+  --color-border-new: var(--border-color);       /* '-new' suffix avoids clash with built-in */
+  --color-border-light-new: var(--border-light);
+  --color-accent: var(--gold-accent);
+  --color-action-bg: var(--action-btn-bg);
+  --color-action-hover: var(--action-btn-hover);
+  --color-success: var(--morale-green);
+  --color-danger: var(--morale-red);
+  --color-map-bg: var(--map-bg);
+
+  /* --- Spacing scale (4px base) --- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  /* --- Shadow ramp (4 levels) --- */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.10);
+  --shadow-sm: var(--shadow);                    /* alias preserves existing usage */
+  --shadow-md: 0 4px 8px rgba(0,0,0,0.25);
+  --shadow-lg: 0 10px 20px rgba(0,0,0,0.30);
+
+  /* --- Radii --- */
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  /* --- Typography scale --- */
+  --text-display: 32px;
+  --text-heading-size: 22px;
+  --text-subheading: 18px;
+  --text-body: 14px;
+  --text-body-strong: 14px;
+  --text-caption: 12px;
+  --text-micro: 10px;
+  --text-mono-size: 13px;
+
+  /* --- Animation tokens --- */
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* --- Touch target minimum (skill rule: CRITICAL, 44×44px) --- */
+  --touch-min: 44px;
 }
 
 /* --- Reset & Base --- */
@@ -1517,4 +1581,121 @@ body.spectator-mode #gold {
   gap: 10px;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+/* ===================================================================
+   v1.3 Accessibility + Touch + Animation (issue #46 phases 4-6)
+   Driven by ui-ux-pro-max skill rules:
+   - Focus States (ux-guidelines.csv: "Use visible focus rings on
+     interactive elements" — Severity: High)
+   - Touch Target Size (ux-guidelines.csv: "Minimum 44x44px" — Severity: High)
+   - Easing Functions (ux-guidelines.csv: "Use ease-out for entering,
+     ease-in for exiting" — Severity: Low)
+   =================================================================== */
+
+/* --- Phase 4: Focus-visible outlines (keyboard nav) --- */
+/* Applied globally so every interactive element gets a visible focus
+   ring when navigated by keyboard. Mouse clicks don't trigger it
+   (:focus-visible vs :focus). Color is the gold accent on a dark
+   outline for max contrast on both paper-bg and navy-header surfaces. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Buttons specifically: thicker ring that doesn't get clipped by the
+   border. The 3px offset ensures the ring renders outside the box. */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Form inputs (login username field) */
+input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+/* Canvas (game) — no focus ring, it's a continuous-interaction surface */
+canvas:focus-visible {
+  outline: none;
+}
+
+/* --- Phase 5: Touch target minimum (44×44px) --- */
+/* Rule: "Minimum 44x44px touch targets" — applied to every interactive
+   button and clickable control. Padding alone wasn't enough on the
+   smaller icon buttons (formation, recruit, build, minimap controls). */
+.lobby-btn,
+.cmd-type-btn,
+.formation-btn,
+.recruit-btn,
+.build-btn,
+.clash-size-btn,
+.clash-terrain-btn,
+.tactic-slot,
+#zoom-in-btn,
+#zoom-out-btn,
+#center-btn,
+#tactics-btn {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+}
+
+/* Tables and grids: cells aren't touch targets, exempt. */
+/* Cancel button is intentionally small (it's a quick-escape), but
+   still respects the floor. */
+.lobby-btn-cancel {
+  min-height: var(--touch-min);
+}
+
+/* --- Phase 6: Animation tokens --- */
+/* Replace ad-hoc `transition: all 0.2s ease` with named tokens.
+   The skill flags `linear` as an anti-pattern. */
+button,
+[role="button"],
+.lobby-btn,
+.cmd-type-btn,
+.formation-btn,
+.recruit-btn,
+.build-btn {
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+/* Hover lift on primary action buttons (subtle, doesn't shift layout
+   on touch devices — transform doesn't trigger reflow). */
+.lobby-btn-solo:hover,
+.lobby-btn-clash:hover,
+#find-match-btn:hover,
+#career-btn:hover,
+#leaderboard-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Screen transitions: fade-in for the .screen flip (currently a hard
+   display:none → active class flip). The transition is opt-in — only
+   fires when the .active class is added. */
+.screen {
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-out);
+}
+.screen.active {
+  opacity: 1;
+}
+
+/* Respect the user's motion preference (skill rule: prefers-reduced-motion) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

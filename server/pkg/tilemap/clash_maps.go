@@ -6,15 +6,15 @@ import (
 	"github.com/user/paper-war/server/pkg/component"
 )
 
-// clashMap creates a 48×96 GameMap filled with Plains.
+// clashMap creates a 32×32 GameMap filled with Plains.
 func clashMap() *GameMap {
-	return NewGameMap(48, 96)
+	return NewGameMap(32, 32)
 }
 
-const cw int32 = 48
-const ch int32 = 96
-const cmidX int32 = 24
-const cmidY int32 = 48
+const cw int32 = 32
+const ch int32 = 32
+const cmidX int32 = 16
+const cmidY int32 = 16
 
 // setSym sets terrain at (x,y) and its horizontal mirror (w-1-x, y).
 func setSym(m *GameMap, x, y int32, t component.TerrainType) {
@@ -33,8 +33,8 @@ func setSymRect(m *GameMap, cx, y, hw, h int32, t component.TerrainType) {
 
 // ---------------------------------------------------------------------------
 // ClashPlains: Open field. Few scattered trees. Fast ranged engagements.
-// v1.4: single central road connects the two bases (top-center ↔ bottom-
-// center). Scattered forests don't block the road.
+// v1.4: single central road connects the two bases. Scattered forests
+// don't block the road.
 // ---------------------------------------------------------------------------
 func ClashPlains() *GameMap {
 	m := clashMap()
@@ -43,8 +43,8 @@ func ClashPlains() *GameMap {
 	// central road corridor (cmidX-1 .. cmidX+1) so there's exactly one
 	// path between the bases.
 	clusters := [][2]int32{
-		{8, 20}, {12, 35}, {6, 50}, {15, 65}, {10, 80},
-		{18, 25}, {20, 55}, {14, 75},
+		{5, 6}, {8, 12}, {4, 20}, {10, 24},
+		{12, 8}, {14, 22}, {6, 26},
 	}
 	for _, c := range clusters {
 		setSym(m, c[0], c[1], component.TerrainForest)
@@ -53,7 +53,6 @@ func ClashPlains() *GameMap {
 				if dx == 0 && dy == 0 {
 					continue
 				}
-				// Don't place forest on the road corridor
 				nx := c[0] + dx
 				if nx >= cmidX-1 && nx <= cmidX+1 {
 					continue
@@ -63,9 +62,9 @@ func ClashPlains() *GameMap {
 		}
 	}
 
-	// Light hills in center (off-road)
-	setSymRect(m, cmidX-6, cmidY-3, 3, 6, component.TerrainHill)
-	setSymRect(m, cmidX+6, cmidY-3, 3, 6, component.TerrainHill)
+	// Light hills off-center
+	setSymRect(m, cmidX-5, cmidY-2, 2, 4, component.TerrainHill)
+	setSymRect(m, cmidX+5, cmidY-2, 2, 4, component.TerrainHill)
 
 	// Single road from top spawn to bottom spawn (2 tiles wide).
 	// This is the ONE path connecting the two bases.
@@ -79,6 +78,7 @@ func ClashPlains() *GameMap {
 
 // ---------------------------------------------------------------------------
 // ClashForest: Dense tree cover, narrow clearings. Melee/ambush advantage.
+// v1.4: single vertical corridor connecting the two bases.
 // ---------------------------------------------------------------------------
 func ClashForest() *GameMap {
 	m := clashMap()
@@ -91,25 +91,22 @@ func ClashForest() *GameMap {
 	}
 
 	// Carve a single vertical clearing through center.
-	// v1.4: removed horizontal + diagonal clearings — there is now ONE
-	// path (the central corridor) connecting the two bases. The rest
-	// of the map is dense forest.
 	for y := int32(0); y < ch; y++ {
-		for dx := int32(-3); dx <= 3; dx++ {
+		for dx := int32(-2); dx <= 2; dx++ {
 			m.SetTerrain(cmidX+dx, y, component.TerrainPlain)
 		}
 	}
 
 	// Small clearings near spawns
-	for dx := int32(-6); dx <= 6; dx++ {
-		for dy := int32(-3); dy <= 3; dy++ {
-			m.SetTerrain(cmidX+dx, 8+dy, component.TerrainPlain)
-			m.SetTerrain(cmidX+dx, ch-9+dy, component.TerrainPlain)
+	for dx := int32(-4); dx <= 4; dx++ {
+		for dy := int32(-2); dy <= 2; dy++ {
+			m.SetTerrain(cmidX+dx, 4+dy, component.TerrainPlain)
+			m.SetTerrain(cmidX+dx, ch-5+dy, component.TerrainPlain)
 		}
 	}
 
 	// Road along center vertical
-	for y := int32(10); y < ch-10; y++ {
+	for y := int32(5); y < ch-5; y++ {
 		m.SetTerrain(cmidX, y, component.TerrainRoad)
 		m.SetTerrain(cmidX-1, y, component.TerrainRoad)
 	}
@@ -119,15 +116,12 @@ func ClashForest() *GameMap {
 
 // ---------------------------------------------------------------------------
 // ClashRoad: Central highway flanked by mixed terrain. Chokepoint control.
-// v1.4: narrowed the road from 5 tiles to 2 — a single tight corridor
-// connecting the two bases. Forests and terrain on both sides are
-// impassable barriers (not alternate routes).
+// v1.4: narrowed the road to 2 tiles — a single tight corridor.
 // ---------------------------------------------------------------------------
 func ClashRoad() *GameMap {
 	m := clashMap()
 
-	// Single central road (2 tiles wide, down from 5).
-	// This is the ONE path connecting the two bases.
+	// Single central road (2 tiles wide).
 	for y := int32(0); y < ch; y++ {
 		for dx := int32(-1); dx <= 0; dx++ {
 			m.SetTerrain(cmidX+dx, y, component.TerrainRoad)
@@ -135,48 +129,43 @@ func ClashRoad() *GameMap {
 	}
 
 	// Forest patches on both sides
-	// Left side forests
 	forestPatches := [][4]int32{ // {x, y, w, h}
-		{3, 10, 5, 8},
-		{2, 30, 6, 6},
-		{4, 55, 5, 7},
-		{3, 75, 4, 8},
+		{2, 3, 4, 5},
+		{1, 12, 4, 4},
+		{2, 22, 3, 5},
 	}
 	for _, p := range forestPatches {
 		for dy := int32(0); dy < p[3]; dy++ {
 			for dx := int32(0); dx < p[2]; dx++ {
-				// Left side
 				m.SetTerrain(p[0]+dx, p[1]+dy, component.TerrainForest)
-				// Right side (mirror)
 				m.SetTerrain(cw-1-p[0]-dx, p[1]+dy, component.TerrainForest)
 			}
 		}
 	}
 
-	// Hill bunkers flanking the road at 1/4 and 3/4 marks
-	for _, my := range []int32{24, 72} {
-		// Left bunker
-		for dy := int32(-3); dy <= 3; dy++ {
-			for dx := int32(-3); dx <= 3; dx++ {
-				m.SetTerrain(cmidX-8+dx, my+dy, component.TerrainHill)
-				m.SetTerrain(cmidX+8+dx, my+dy, component.TerrainHill)
+	// Hill bunkers flanking the road at 1/3 and 2/3 marks
+	for _, my := range []int32{8, 24} {
+		for dy := int32(-2); dy <= 2; dy++ {
+			for dx := int32(-2); dx <= 2; dx++ {
+				m.SetTerrain(cmidX-5+dx, my+dy, component.TerrainHill)
+				m.SetTerrain(cmidX+5+dx, my+dy, component.TerrainHill)
 			}
 		}
 	}
 
 	// Shallow ponds along the road edges
-	for _, py := range []int32{15, 40, 60, 85} {
-		for dy := int32(0); dy < 3; dy++ {
-			for dx := int32(0); dx < 3; dx++ {
-				m.SetTerrain(cmidX-7+dx, py+dy, component.TerrainShallow)
-				m.SetTerrain(cmidX+5+dx, py+dy, component.TerrainShallow)
+	for _, py := range []int32{5, 14, 20, 28} {
+		for dy := int32(0); dy < 2; dy++ {
+			for dx := int32(0); dx < 2; dx++ {
+				m.SetTerrain(cmidX-4+dx, py+dy, component.TerrainShallow)
+				m.SetTerrain(cmidX+3+dx, py+dy, component.TerrainShallow)
 			}
 		}
 	}
 
 	// Wall fortifications at center crossroads
-	for _, wy := range []int32{cmidY - 2, cmidY + 2} {
-		for dx := int32(-6); dx <= -4; dx++ {
+	for _, wy := range []int32{cmidY - 1, cmidY + 1} {
+		for dx := int32(-4); dx <= -3; dx++ {
 			m.SetTerrain(cmidX+dx, wy, component.TerrainWall)
 			m.SetTerrain(cmidX-dx-1, wy, component.TerrainWall)
 		}
@@ -187,15 +176,13 @@ func ClashRoad() *GameMap {
 
 // ---------------------------------------------------------------------------
 // ClashRiver: River bisects the map. ONE bridge crossing. Bridge control.
-// v1.4: reduced from 3 bridges to 1 — the single bridge is the only path
-// between the two bases. Whichever team controls the bridge wins.
 // ---------------------------------------------------------------------------
 func ClashRiver() *GameMap {
 	m := clashMap()
 
-	// River running horizontally across the middle (y=44..52)
-	riverTop := int32(44)
-	riverBot := int32(52)
+	// River running horizontally across the middle (y=13..19)
+	riverTop := int32(13)
+	riverBot := int32(19)
 	for y := riverTop; y <= riverBot; y++ {
 		for x := int32(0); x < cw; x++ {
 			if y == riverTop || y == riverBot {
@@ -206,18 +193,16 @@ func ClashRiver() *GameMap {
 		}
 	}
 
-	// 1 central bridge only (was 3: left, center, right).
-	// This is the ONE path connecting the two bases.
+	// 1 central bridge only — the ONE path connecting the two bases.
 	bx := cmidX
 	for y := riverTop - 1; y <= riverBot+1; y++ {
 		for dx := int32(-2); dx <= 2; dx++ {
 			m.SetTerrain(bx+dx, y, component.TerrainBridge)
 		}
 	}
-	// Road approach to bridge (single corridor from each base)
 	for y := int32(0); y < ch; y++ {
 		if y >= riverTop-1 && y <= riverBot+1 {
-			continue // bridge tiles already set
+			continue
 		}
 		for dx := int32(-1); dx <= 1; dx++ {
 			m.SetTerrain(bx+dx, y, component.TerrainRoad)
@@ -226,8 +211,8 @@ func ClashRiver() *GameMap {
 
 	// Forest patches on each side of river (away from the road)
 	forests := [][3]int32{ // x, y, size
-		{4, 15, 4}, {15, 20, 3}, {20, 10, 5},
-		{4, 70, 4}, {15, 75, 3}, {20, 80, 5},
+		{3, 5, 3}, {10, 7, 2}, {13, 3, 3},
+		{3, 24, 3}, {10, 24, 2}, {13, 27, 3},
 	}
 	for _, f := range forests {
 		for dy := int32(0); dy < f[2]; dy++ {
@@ -238,10 +223,10 @@ func ClashRiver() *GameMap {
 	}
 
 	// Hills overlooking the single bridge
-	for dy := int32(-2); dy <= 2; dy++ {
-		for dx := int32(-2); dx <= 2; dx++ {
-			m.SetTerrain(bx+dx, riverTop-5+dy, component.TerrainHill)
-			m.SetTerrain(bx+dx, riverBot+5+dy, component.TerrainHill)
+	for dy := int32(-1); dy <= 1; dy++ {
+		for dx := int32(-1); dx <= 1; dx++ {
+			m.SetTerrain(bx+dx, riverTop-3+dy, component.TerrainHill)
+			m.SetTerrain(bx+dx, riverBot+3+dy, component.TerrainHill)
 		}
 	}
 
@@ -250,17 +235,18 @@ func ClashRiver() *GameMap {
 
 // ---------------------------------------------------------------------------
 // ClashStronghold: Central fortress with walls and gates. Siege warfare.
+// v1.4: smaller fortress ring for the 32×32 map. Only the N-S road.
 // ---------------------------------------------------------------------------
 func ClashStronghold() *GameMap {
 	m := clashMap()
 
-	// Outer wall ring (16×16 centered on map center)
-	wallR := int32(10)
-	gateWidth := int32(3) // 3-tile wide gates
+	// Outer wall ring (centered on map center) — smaller for 32×32
+	wallR := int32(6)
+	gateWidth := int32(2)
 
-	// Build wall ring
-	for dy := int32(-wallR); dy <= wallR; dy++ {
-		for dx := int32(-wallR); dx <= wallR; dx++ {
+	// Build wall ring (Chebyshev distance == wallR)
+	for dy := -wallR; dy <= wallR; dy++ {
+		for dx := -wallR; dx <= wallR; dx++ {
 			dist := dx
 			if dy < 0 {
 				if -dy > dist {
@@ -280,36 +266,27 @@ func ClashStronghold() *GameMap {
 					dist = dx
 				}
 			}
-			// Only outer ring (Chebyshev distance == wallR)
 			if dist == wallR {
 				m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainWall)
 			}
 		}
 	}
 
-	// Carve gates (N, S, E, W)
+	// Carve gates (N, S)
 	for dx := int32(-gateWidth); dx <= gateWidth; dx++ {
-		// North gate
 		m.SetTerrain(cmidX+dx, cmidY-wallR, component.TerrainRoad)
-		// South gate
 		m.SetTerrain(cmidX+dx, cmidY+wallR, component.TerrainRoad)
-	}
-	for dy := int32(-gateWidth); dy <= gateWidth; dy++ {
-		// West gate
-		m.SetTerrain(cmidX-wallR, cmidY+dy, component.TerrainRoad)
-		// East gate
-		m.SetTerrain(cmidX+wallR, cmidY+dy, component.TerrainRoad)
 	}
 
 	// Inner stronghold tile at center
-	for dy := int32(-3); dy <= 3; dy++ {
-		for dx := int32(-3); dx <= 3; dx++ {
+	for dy := int32(-2); dy <= 2; dy++ {
+		for dx := int32(-2); dx <= 2; dx++ {
 			m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainStronghold3)
 		}
 	}
 	// Stronghold inner ring
-	for dy := int32(-5); dy <= 5; dy++ {
-		for dx := int32(-5); dx <= 5; dx++ {
+	for dy := int32(-4); dy <= 4; dy++ {
+		for dx := int32(-4); dx <= 4; dx++ {
 			t := m.TileAt(cmidX+dx, cmidY+dy)
 			if t != nil && t.TerrainType == component.TerrainPlain {
 				m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainStronghold1)
@@ -317,9 +294,7 @@ func ClashStronghold() *GameMap {
 		}
 	}
 
-	// Roads from gates outward to map edges.
-	// v1.4: only the N-S road connects the two bases. The E-W cross-
-	// road is removed — it was an alternate path.
+	// Only the N-S road connects the two bases (v1.4: E-W removed)
 	for y := int32(0); y < ch; y++ {
 		m.SetTerrain(cmidX, y, component.TerrainRoad)
 		m.SetTerrain(cmidX-1, y, component.TerrainRoad)
@@ -327,12 +302,12 @@ func ClashStronghold() *GameMap {
 
 	// Forest patches outside walls
 	outerForests := [][2]int32{
-		{5, 10}, {18, 8}, {5, 25}, {18, 30},
-		{5, 70}, {18, 72}, {5, 85}, {18, 80},
+		{3, 4}, {12, 3}, {3, 9}, {12, 10},
+		{3, 24}, {12, 25}, {3, 28}, {12, 27},
 	}
 	for _, f := range outerForests {
-		for dy := int32(-2); dy <= 2; dy++ {
-			for dx := int32(-2); dx <= 2; dx++ {
+		for dy := int32(-1); dy <= 1; dy++ {
+			for dx := int32(-1); dx <= 1; dx++ {
 				setSym(m, f[0]+dx, f[1]+dy, component.TerrainForest)
 			}
 		}
@@ -343,42 +318,32 @@ func ClashStronghold() *GameMap {
 
 // ---------------------------------------------------------------------------
 // ClashHills: Rolling hills with valleys. Ranged units on high ground.
+// v1.4: 2 ridges with 1 central pass each.
 // ---------------------------------------------------------------------------
 func ClashHills() *GameMap {
 	m := clashMap()
 
-	// Hill ridges running horizontally across the map
-	// Ridge 1: y=20-26
-	// Ridge 2: y=44-52 (center)
-	// Ridge 3: y=70-76
-	ridges := [][2]int32{{20, 26}, {44, 52}, {70, 76}}
+	// 2 hill ridges with single central passes
+	ridges := [][2]int32{{6, 9}, {22, 25}}
 	for _, r := range ridges {
 		for y := r[0]; y <= r[1]; y++ {
 			for x := int32(0); x < cw; x++ {
-				// Main ridge = hill
-				if y == r[0] || y == r[1] {
-					m.SetTerrain(x, y, component.TerrainHill)
-				} else {
-					m.SetTerrain(x, y, component.TerrainHill)
-				}
+				m.SetTerrain(x, y, component.TerrainHill)
 			}
 		}
-		// Create a single gap (pass) in each ridge — centered only.
-		// v1.4: was 3 passes per ridge (left, center, right); now 1.
-		// The central pass is the ONLY path between the two bases.
-		gapX := cmidX
+		// Single central gap
 		for y := r[0]; y <= r[1]; y++ {
 			for dx := int32(-2); dx <= 2; dx++ {
-				m.SetTerrain(gapX+dx, y, component.TerrainPlain)
+				m.SetTerrain(cmidX+dx, y, component.TerrainPlain)
 			}
 		}
 	}
 
-	// Valleys between ridges: some swamp (low ground)
-	for _, sy := range []int32{33, 34, 61, 62} {
-		for _, sx := range []int32{4, 10, 16, 22, 28, 34, 40} {
-			for dy := int32(0); dy < 3; dy++ {
-				for dx := int32(0); dx < 3; dx++ {
+	// Valleys between ridges: some swamp
+	for _, sy := range []int32{14, 15} {
+		for _, sx := range []int32{3, 8, 12, 20, 24, 28} {
+			for dy := int32(0); dy < 2; dy++ {
+				for dx := int32(0); dx < 2; dx++ {
 					if sx+dx < cw {
 						m.SetTerrain(sx+dx, sy+dy, component.TerrainSwamp)
 					}
@@ -389,12 +354,11 @@ func ClashHills() *GameMap {
 
 	// Forest patches in valleys
 	valleyForests := [][2]int32{
-		{5, 33}, {15, 35}, {30, 34}, {40, 36},
-		{5, 61}, {15, 63}, {30, 62}, {40, 64},
+		{3, 14}, {10, 14}, {20, 15}, {27, 14},
 	}
 	for _, f := range valleyForests {
-		for dy := int32(0); dy < 3; dy++ {
-			for dx := int32(0); dx < 3; dx++ {
+		for dy := int32(0); dy < 2; dy++ {
+			for dx := int32(0); dx < 2; dx++ {
 				if f[0]+dx < cw {
 					m.SetTerrain(f[0]+dx, f[1]+dy, component.TerrainForest)
 				}
@@ -402,7 +366,7 @@ func ClashHills() *GameMap {
 		}
 	}
 
-	// Roads through the single central pass
+	// Road through the single central pass
 	for y := int32(0); y < ch; y++ {
 		for dx := int32(-1); dx <= 1; dx++ {
 			px := cmidX + dx

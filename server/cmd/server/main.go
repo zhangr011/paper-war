@@ -362,27 +362,26 @@ func main() {
 			}
 
 			mw, mh := gs.MapSize()
-			// v1.4 clash redesign: two bases at opposite ends of the long
-			// axis (top-center and bottom-center), connected by a single
-			// road. Was: both teams at map-center, 4 tiles apart (instant
-			// engagement, no strategy).
+			// v1.4 clash redesign: two bases on the long axis, connected by
+			// a single road. Init distance tuned to 8 tiles (was 4 at v1.0,
+			// 16, then 84 in earlier drafts — 8 plays best: close enough for
+			// immediate engagement, enough room for a formation phase).
 			//
-			// Team 1: top-center, 6 tiles from the top edge.
-			// Team 2: bottom-center, 6 tiles from the bottom edge.
-			// Init distance: mh - 12 tiles (was 4). On a 96-tall map that's
-			// 84 tiles — units must traverse the single road to engage.
-			spawnMargin := int32(6)
+			// Team 1: (mw/2, mh/2 - 4)
+			// Team 2: (mw/2, mh/2 + 4)
+			// Init distance: 8 tiles.
+			halfDist := int32(4)
 			cx := fixed.FromFloat(float64(mw) / 2)
-			cy1 := fixed.FromFloat(float64(spawnMargin))
-			cy2 := fixed.FromFloat(float64(mh - spawnMargin))
+			cy1 := fixed.FromFloat(float64(mh/2 - halfDist))
+			cy2 := fixed.FromFloat(float64(mh/2 + halfDist))
 
 			// Record base positions on the map so the client (minimap
 			// flags) and matchmaker (match_found payload) know where
 			// the spawns are. Procedural maps set this in GenerateMap;
 			// clash maps previously left it empty.
 			gs.Map.Spawns = [][2]int32{
-				{int32(mw) / 2, spawnMargin},
-				{int32(mw) / 2, mh - spawnMargin},
+				{int32(mw) / 2, mh/2 - halfDist},
+				{int32(mw) / 2, mh/2 + halfDist},
 			}
 
 			// Spawn teams, splitting into squads of max 10

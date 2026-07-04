@@ -12,10 +12,17 @@ const POLL_INTERVAL = 200;
 // read by server/pkg/game/session.go seedFromEnvOrTime() and by the
 // global RNG seeding in cmd/server/main.go.
 //
-// Override at the command line:
-//   PAPER_WAR_TEST_SEED=1234 npx playwright test
-const DEFAULT_TEST_SEED = '42';
-const testSeed = process.env.PAPER_WAR_TEST_SEED || DEFAULT_TEST_SEED;
+// IMPORTANT: only forward the seed to the server when the test runner
+// explicitly sets PAPER_WAR_TEST_SEED. We do NOT set a default here,
+// because the full e2e suite includes tests that REQUIRE random seeds
+// (e.g. map-generation.spec.js "multiple games produce different
+// terrain maps"). Pinning the seed globally would break those tests.
+//
+// To run with a pinned seed (e.g. for multiplayer-playtest stability):
+//   PAPER_WAR_TEST_SEED=42 npx playwright test
+// To run the full suite with random seeds (default):
+//   npx playwright test
+const testSeed = process.env.PAPER_WAR_TEST_SEED || '';
 
 let serverProcess = null;
 
@@ -71,12 +78,16 @@ async function globalSetup() {
   await waitForPortFree(SERVER_PORT, 3000);
 
   // Issue #47 Fix A: pass PAPER_WAR_TEST_SEED to the server process so
-  // map generation + global RNG are deterministic in test mode.
-  const serverEnv = {
-    ...process.env,
-    PAPER_WAR_TEST_SEED: testSeed,
-  };
-  console.log(`[test mode] PAPER_WAR_TEST_SEED=${testSeed}`);
+  // map generation + global RNG are deterministic — but ONLY when the
+  // test runner explicitly sets it. Without the env var, the server
+  // uses time-based seeds (random maps each match).
+  const serverEnv = { ...process.env };
+  if (testSeed) {
+    serverEnv.PAPER_WAR_TEST_SEED = testSeed;
+    console.log(`[test mode] PAPER_WAR_TEST_SEED=${testSeed}`);
+  } else {
+    console.log('[test mode] PAPER_WAR_TEST_SEED not set — random seeds');
+  }
 
   serverProcess = exec(serverBin, { cwd: serverDir, env: serverEnv }, (err) => {
     if (err && !err.killed) {

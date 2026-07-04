@@ -362,9 +362,28 @@ func main() {
 			}
 
 			mw, mh := gs.MapSize()
-			cx1 := fixed.FromFloat(float64(mw)/2 - 2)
-			cx2 := fixed.FromFloat(float64(mw)/2 + 2)
-			cy := fixed.FromFloat(float64(mh) / 2)
+			// v1.4 clash redesign: two bases at opposite ends of the long
+			// axis (top-center and bottom-center), connected by a single
+			// road. Was: both teams at map-center, 4 tiles apart (instant
+			// engagement, no strategy).
+			//
+			// Team 1: top-center, 6 tiles from the top edge.
+			// Team 2: bottom-center, 6 tiles from the bottom edge.
+			// Init distance: mh - 12 tiles (was 4). On a 96-tall map that's
+			// 84 tiles — units must traverse the single road to engage.
+			spawnMargin := int32(6)
+			cx := fixed.FromFloat(float64(mw) / 2)
+			cy1 := fixed.FromFloat(float64(spawnMargin))
+			cy2 := fixed.FromFloat(float64(mh - spawnMargin))
+
+			// Record base positions on the map so the client (minimap
+			// flags) and matchmaker (match_found payload) know where
+			// the spawns are. Procedural maps set this in GenerateMap;
+			// clash maps previously left it empty.
+			gs.Map.Spawns = [][2]int32{
+				{int32(mw) / 2, spawnMargin},
+				{int32(mw) / 2, mh - spawnMargin},
+			}
 
 			// Spawn teams, splitting into squads of max 10
 			squadID := uint32(1)
@@ -373,7 +392,7 @@ func main() {
 				if n > 10 {
 					n = 10
 				}
-				gs.SpawnSquadWithType(1, squadID, cx1, cy, n, t1Cmd)
+				gs.SpawnSquadWithType(1, squadID, cx, cy1, n, t1Cmd)
 				t1Units -= n
 				squadID++
 			}
@@ -382,7 +401,7 @@ func main() {
 				if n > 10 {
 					n = 10
 				}
-				gs.SpawnSquadWithType(2, squadID, cx2, cy, n, t2Cmd)
+				gs.SpawnSquadWithType(2, squadID, cx, cy2, n, t2Cmd)
 				t2Units -= n
 				squadID++
 			}

@@ -4,10 +4,13 @@ import "github.com/user/paper-war/server/pkg/component"
 
 type Tile struct {
 	TerrainType component.TerrainType
-	Elevation   int8
-	BlockLOS    bool
-	Health      int32
-	MaxHealth   int32
+	// Elevation is a discrete hill-layer band, only meaningful when
+	// TerrainType == TerrainHill. Values: 0 = low (implicit for non-hill
+	// tiles), 1 = mid (hill slope), 2 = peak (rocky summit). Issue #49.
+	Elevation uint8
+	BlockLOS  bool
+	Health    int32
+	MaxHealth int32
 }
 
 type ObjectiveType uint8

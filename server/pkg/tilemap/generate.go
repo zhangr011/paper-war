@@ -93,16 +93,25 @@ func generateMapOnce(w, h int32, seed int64) *GameMap {
 	}
 
 	// Stage 2: Classify hills from heightmap
-	// Find the threshold that gives ~hillFraction coverage
+	// Find the threshold that gives ~hillFraction coverage.  Within the
+	// hill region, the top 25% by height (top ~3% of total area) is
+	// promoted to peak layer (2); the rest of the hills become mid
+	// layer (1).  Non-hill tiles keep the implicit zero-value (low).
+	// Issue #49 — discrete 3-layer model replaces the continuous 0-100
+	// int8 elevation that no downstream consumer actually consumed as
+	// a continuous signal.
 	hillThreshold := findPercentile(heightmap, 1.0-hillFraction)
+	peakThreshold := findPercentile(heightmap, 1.0-hillFraction*0.25)
 	for y := int32(0); y < h; y++ {
 		for x := int32(0); x < w; x++ {
-			if heightmap[y*w+x] >= hillThreshold {
+			v := heightmap[y*w+x]
+			if v >= hillThreshold {
 				gm.SetTerrain(x, y, component.TerrainHill)
-				// Store normalized elevation
-				elev := int8((heightmap[y*w+x] - heightmap[minIndex(heightmap)]) /
-					(heightmap[maxIndex(heightmap)] - heightmap[minIndex(heightmap)]) * 100)
-				gm.TileAt(x, y).Elevation = clampInt8(elev)
+				if v >= peakThreshold {
+					gm.TileAt(x, y).Elevation = 2
+				} else {
+					gm.TileAt(x, y).Elevation = 1
+				}
 			}
 		}
 	}
@@ -120,22 +129,6 @@ func generateMapOnce(w, h int32, seed int64) *GameMap {
 
 	// Stage 5: Forest — second noise layer with adaptive threshold
 	applyForest(gm, p, w, h)
-
-	// Stage 6: Elevation for non-hill tiles
-	for y := int32(0); y < h; y++ {
-		for x := int32(0); x < w; x++ {
-			tile := gm.TileAt(x, y)
-			if tile.TerrainType != component.TerrainHill {
-				hMin, hMax := heightmap[minIndex(heightmap)], heightmap[maxIndex(heightmap)]
-				hRange := hMax - hMin
-				if hRange == 0 {
-					hRange = 1
-				}
-				norm := (heightmap[y*w+x] - hMin) / hRange * 100
-				tile.Elevation = clampInt8(int8(norm))
-			}
-		}
-	}
 
 	// Stage 7: Pass detection & stronghold placement
 	strongholds := placeStrongholds(gm, r, w, h)
@@ -182,28 +175,6 @@ func minIndex(data []float64) int {
 		}
 	}
 	return minIdx
-}
-
-func maxIndex(data []float64) int {
-	maxVal := data[0]
-	maxIdx := 0
-	for i, v := range data {
-		if v > maxVal {
-			maxVal = v
-			maxIdx = i
-		}
-	}
-	return maxIdx
-}
-
-func clampInt8(v int8) int8 {
-	if v < 0 {
-		return 0
-	}
-	if v > 100 {
-		return 100
-	}
-	return v
 }
 
 // traceRiver traces a downhill path from a random high point to the lowest point.
@@ -754,7 +725,6 @@ func placeSpawn(gm *GameMap, targetX, targetY int32, w, h int32) [2]int32 {
 			tile := gm.TileAt(cx+dx, cy+dy)
 			if tile != nil {
 				tile.TerrainType = component.TerrainPlain
-				tile.Elevation = 0
 				tile.BlockLOS = false
 				tile.Health = 0
 				tile.MaxHealth = 0

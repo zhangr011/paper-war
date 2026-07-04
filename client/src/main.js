@@ -109,6 +109,39 @@ function teamTint(base, team) {
   return base; // team 0 or other: use base color
 }
 
+/**
+ * Apply hill-layer shading to an RGB triplet (each channel in [0,1]).
+ * Issue #49 — discrete 3-layer model replaces the continuous 0-100
+ * elevation blend.  Layer 1 (mid slope) is neutral, layer 2 (peak)
+ * blends toward stone gray (#bcbcb8) to evoke the rocky-summit look
+ * of the reference design.  Layer 0 (low hill / valley shadow) is
+ * included for robustness even though Stage 2 of map generation
+ * currently produces only layers 1 and 2 for hills.
+ *
+ * Returns the shaded channels as a tuple so the caller can spread
+ * or assign them — both the CPU terrain batch path and the per-pixel
+ * image-data path use this single helper to prevent drift.
+ */
+function hillShadeRGB(r, g, b, layer) {
+  if (layer === 2) {
+    // Peak: blend toward stone-gray summit.  0.55 weight matches the
+    // upper endpoint of the legacy continuous blend so the visual
+    // identity of mountain peaks is preserved.
+    return [
+      r + (0.74 - r) * 0.55,
+      g + (0.74 - g) * 0.55,
+      b + (0.72 - b) * 0.55,
+    ];
+  }
+  if (layer === 0) {
+    // Low hill / valley shadow.  0.88 matches the floor of the legacy
+    // continuous darken branch (1.0 - 0.4 * 0.35 ≈ 0.86, rounded).
+    return [r * 0.88, g * 0.88, b * 0.88];
+  }
+  // Layer 1 (mid slope): unchanged.
+  return [r, g, b];
+}
+
 // Selection highlight color
 const SELECTION_COLOR = { r: 0.2, g: 0.8, b: 1.0, a: 0.25 };
 const SELECTION_BORDER_COLOR = { r: 0.3, g: 0.9, b: 1.0, a: 0.7 };
@@ -218,7 +251,7 @@ export class Game {
     this.mapWidth = MAP_WIDTH;
     this.mapHeight = MAP_HEIGHT;
     this.terrainData = null; // Uint8Array from server (terrain types)
-    this.elevationData = null; // Uint8Array from server (elevation 0-100)
+    this.elevationData = null; // Uint8Array from server (hill layer 0/1/2 — see issue #49)
     this.minimapTerrainCanvas = null; // offscreen canvas for cached minimap terrain
 
     // Game time for timer display
@@ -1379,29 +1412,10 @@ export class Game {
             b *= brightness + Math.max(0, brightness - 1.0) * 0.8;
           }
 
-          // Elevation shading for hills — peak brightness still controlled
-          // client-side because it depends on continuous elevation data, not
-          // on/off patterns.  Plains jitter and water shimmer are now done in
-          // the shader, so we don't repeat them here.
-          // Low-elevation hills darken slightly; peaks lighten toward stone
-          // gray (design #bcbcb8) instead of warm brown, giving the rocky
-          // summit look of the reference art.
+          // Hill-layer shading — discrete 3-layer model (issue #49).
+          // See hillShadeRGB: layer 0 valley-shadow, 1 mid, 2 peak.
           if (hasElevation && tileType === 5) {
-            const elev = this.elevationData[idx]; // 0-100
-            const t = elev / 100;
-            // Below 40% elevation: slight darkening (valley shadow).
-            // Above 40%: progressive lightening toward stone gray peaks.
-            if (t < 0.4) {
-              const shade = 1.0 - (0.4 - t) * 0.35;
-              r *= shade;
-              g *= shade;
-              b *= shade;
-            } else {
-              const peakT = (t - 0.4) / 0.6; // [0,1] for upper band
-              r = r + (0.74 - r) * peakT * 0.55;
-              g = g + (0.74 - g) * peakT * 0.55;
-              b = b + (0.72 - b) * peakT * 0.55;
-            }
+            [r, g, b] = hillShadeRGB(r, g, b, this.elevationData[idx]);
           }
         } else {
           // Fallback: simple checkerboard (no texture shader path)
@@ -1917,18 +1931,8 @@ export class Game {
         }
 
         if (this.elevationData && terrainType === 5) {
-          const t = this.elevationData[idx] / 100;
-          if (t < 0.4) {
-            const shade = 1.0 - (0.4 - t) * 0.35;
-            r *= shade;
-            g *= shade;
-            b *= shade;
-          } else {
-            const peakT = (t - 0.4) / 0.6;
-            r = r + (0.74 - r) * peakT * 0.55;
-            g = g + (0.74 - g) * peakT * 0.55;
-            b = b + (0.72 - b) * peakT * 0.55;
-          }
+          // Hill-layer shading — discrete 3-layer model (issue #49).
+          [r, g, b] = hillShadeRGB(r, g, b, this.elevationData[idx]);
         }
 
         pixels[pi] = Math.min(255, Math.round(r * 255));

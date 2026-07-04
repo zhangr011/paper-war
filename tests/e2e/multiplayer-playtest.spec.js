@@ -137,17 +137,32 @@ test.describe.serial('Multiplayer playtest', () => {
     log(`A result: ${JSON.stringify(rA).slice(0, 300)}`);
     log(`B result: ${JSON.stringify(rB).slice(0, 300)}`);
 
-    // Give both a moment to render the overlay
-    await pageA.waitForTimeout(2000).catch(() => {});
+    // Issue #47 Fix C: replace the 2-second fixed wait + single-shot
+    // grabOverlay with an explicit waitForSelector on the visible
+    // overlay. The previous race was: drive() exits as soon as it sees
+    // display != 'none', but showMatchResult() flips to display: flex
+    // asynchronously via a snapshot handler. waitForSelector polls the
+    // DOM and resolves the moment the overlay becomes visible.
+    const OVERLAY_VISIBLE = '#match-result-overlay';
+    const OVERLAY_TIMEOUT = 10000; // 10s grace after drive loop ends
+    const overlayAVisible = await pageA
+      .waitForSelector(OVERLAY_VISIBLE, { timeout: OVERLAY_TIMEOUT, state: 'visible' })
+      .then(() => true)
+      .catch(() => false);
+    const overlayBVisible = await pageB
+      .waitForSelector(OVERLAY_VISIBLE, { timeout: OVERLAY_TIMEOUT, state: 'visible' })
+      .then(() => true)
+      .catch(() => false);
+    log(`Overlay visible: A=${overlayAVisible} B=${overlayBVisible}`);
 
-    const grabOverlay = async (page, who) => {
+    const grabOverlay = async (page) => {
       return await page.evaluate(() => {
         const el = document.getElementById('match-result-overlay');
         return el ? el.innerText.slice(0, 800) : null;
       });
     };
-    const overlayA = await grabOverlay(pageA, 'A');
-    const overlayB = await grabOverlay(pageB, 'B');
+    const overlayA = overlayAVisible ? await grabOverlay(pageA) : null;
+    const overlayB = overlayBVisible ? await grabOverlay(pageB) : null;
     log(`A overlay:\n${overlayA || '(none)'}`);
     log(`B overlay:\n${overlayB || '(none)'}`);
 

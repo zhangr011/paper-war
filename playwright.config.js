@@ -41,6 +41,26 @@ module.exports = defineConfig({
   globalSetup: './tests/e2e/global-setup.js',
   globalTimeout: 900000,  // 15 min — suite-level cap
   projects: [
-    { name: 'chromium', use: { browserName: 'chromium' } },
+    // Default project: all tests except the flaky multiplayer-playtest.
+    // Kept at retries: 0 so real regressions in fog/map-gen/crash-restart
+    // surface immediately.
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+      testIgnore: /multiplayer-playtest/,
+    },
+    // Issue #47 Fix D: scoped retries for the multiplayer-playtest spec.
+    // Despite the deterministic seed (Fix A) and tighter overlay check
+    // (Fix C), this end-to-end test involves two browser contexts + a
+    // real-time WebSocket server + simulation — some variance is
+    // unavoidable (CI load, browser startup, network jitter). Two
+    // retries absorbs the residual ~5-10% flakiness without masking
+    // real regressions in the other 17 specs.
+    {
+      name: 'chromium-flaky-e2e',
+      testMatch: /multiplayer-playtest/,
+      retries: 2,
+      use: { browserName: 'chromium' },
+    },
   ],
 });

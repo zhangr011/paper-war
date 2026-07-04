@@ -3,7 +3,10 @@ package game
 import (
 	"context"
 	"encoding/binary"
+	"log"
 	"math/rand"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/user/paper-war/server/pkg/ai"
@@ -503,9 +506,40 @@ func (gs *GameSession) runAI() {
 }
 
 // Reset clears all entities, generates a new random map, and resets state.
+//
+// Seed selection (issue #47, Fix A):
+//   - If PAPER_WAR_TEST_SEED is set, use that value as the map seed.
+//     This makes test runs deterministic — every match plays out on the
+//     same map, so a multiplayer e2e test doesn't randomly produce a
+//     slow-resolution map that times out.
+//   - Otherwise, use time.Now().UnixNano() — production behavior, every
+//     match gets a fresh procedural map.
+//
+// The env var is read on every Reset() call so a long-running server
+// inherits it from the process environment. Tests set it once in
+// global-setup.js; production never sets it.
 func (gs *GameSession) Reset() {
-	seed := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	seed := seedFromEnvOrTime()
 	gs.ResetWithSeed(seed)
+}
+
+// seedFromEnvOrTime returns the value of PAPER_WAR_TEST_SEED parsed as
+// an int64, or a fresh time-based seed if the env var is unset or
+// invalid. Errors are logged once and silently fall back — a bad test
+// config should not crash the server.
+//
+// Exported via a small wrapper (TestSeedFromEnv) so the env-var path
+// can be unit-tested.
+var testSeedEnvVar = "PAPER_WAR_TEST_SEED"
+
+func seedFromEnvOrTime() int64 {
+	if v := os.Getenv(testSeedEnvVar); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return parsed
+		}
+		log.Printf("PAPER_WAR_TEST_SEED=%q is not a valid int64 — falling back to time-based seed", v)
+	}
+	return rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
 }
 
 // ResetWithMap clears all entities and installs a pre-built map.

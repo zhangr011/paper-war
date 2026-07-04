@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/user/paper-war/server/pkg/component"
@@ -46,7 +47,21 @@ func main() {
 	// Seed the global RNG so each match plays out differently.
 	// Without this, Go defaults to seed=1 and every clash match is
 	// a byte-for-byte identical replay.
-	rand.Seed(time.Now().UnixNano())
+	//
+	// Issue #47 Fix A: in test mode (PAPER_WAR_TEST_SEED set), pin the
+	// global RNG to the same seed so AI behavior is also deterministic.
+	// Production leaves the env var unset and gets time-based seeding.
+	if v := os.Getenv("PAPER_WAR_TEST_SEED"); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			log.Printf("test mode: pinning global RNG seed to %d (PAPER_WAR_TEST_SEED)", parsed)
+			rand.Seed(parsed)
+		} else {
+			log.Printf("PAPER_WAR_TEST_SEED=%q invalid (%v) — using time-based seed", v, err)
+			rand.Seed(time.Now().UnixNano())
+		}
+	} else {
+		rand.Seed(time.Now().UnixNano())
+	}
 
 	// 1. Initialize game session (portrait map, ECS world, all systems)
 	gs := game.NewGameSession()

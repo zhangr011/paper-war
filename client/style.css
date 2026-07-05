@@ -1326,6 +1326,15 @@ body.spectator-mode #gold {
   border-radius: 4px;
   background: rgba(80, 80, 80, 0.15);
 }
+/* frontend-design skill — reinforce team identity structurally, not
+   just via the section title's hue. Each team section carries a
+   colored left-edge accent (inset box-shadow so the existing 1px
+   border and cell layout are untouched) matching its team color.
+   Terrain (the 3rd section) stays neutral. Skill: "hierarchy via
+   size, spacing, contrast — not color alone" applied to spatial
+   grouping. */
+.clash-section:nth-of-type(1) { box-shadow: inset 3px 0 0 #1E5BD0; }
+.clash-section:nth-of-type(2) { box-shadow: inset 3px 0 0 #B02025; }
 .clash-section-title {
   font-family: var(--font-display);
   font-size: 17px;

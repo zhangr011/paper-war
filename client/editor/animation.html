@@ -72,6 +72,18 @@
     .info { color: var(--muted); font-size: 12px; }
     code { background: var(--panel); padding: 1px 4px; border-radius: 2px;
            color: var(--accent); }
+    .tune-table { border-collapse: collapse; margin-bottom: 8px; }
+    .tune-table th, .tune-table td { padding: 2px 6px; text-align: left; }
+    .tune-table th { color: var(--muted); font-weight: 600;
+                     font-size: 11px; text-transform: uppercase;
+                     letter-spacing: 0.05em; }
+    .tune-table td:first-child { color: var(--muted); }
+    .tune-input {
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 2px 4px; font: inherit; width: 50px;
+    }
+    .tune-input:focus { border-color: var(--accent); outline: none; }
     .columns { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
     .col { background: var(--panel); border: 1px solid var(--border);
            border-radius: 4px; padding: 10px; }
@@ -114,9 +126,12 @@
     </div>
 
     <div class="col">
-      <h2>Constants</h2>
-      <div class="info" id="constants"></div>
-      <button id="copy-btn">Copy constants to clipboard</button>
+      <h2>Constants (editable)</h2>
+      <div id="constants"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="copy-btn">Copy constants to clipboard</button>
+        <button id="reset-btn">Reset to source</button>
+      </div>
       <div class="info" id="copy-status" style="margin-top:6px"></div>
     </div>
   </div>

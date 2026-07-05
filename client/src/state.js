@@ -76,6 +76,17 @@ const FACING_AXIS_SWITCH_RATIO = 1.5;
 // induced facing lock without depending on the renderer module.
 const ATTACK_DURATION_MS = (3 / 14) * 1000;
 
+// Issue #52 — How long the unit stays planted after firing. Decoupled
+// from ATTACK_DURATION_MS (the sprite animation) so the unit holds its
+// position well past the swing — the animation plays once (~214ms) then
+// the unit holds alert-idle while the freeze window continues. Tuned to
+// the median server attack cooldown (5 ticks @ 10Hz = 500ms; see
+// server/pkg/component/unit_type.go) so the unit reads as "set between
+// shots" instead of sliding the moment the swing completes. Per-unit-
+// type cooldown variation (2–12 ticks) is a follow-up — would need the
+// server to ship Cooldown in the snapshot.
+const ATTACK_FREEZE_MS = 500;
+
 // Accelerated correction: when the interpolated position is far from the
 // target, blend toward it faster to avoid a visible "slide".
 const CORRECTION_THRESHOLD = 5.0; // world units (only genuine desyncs, not normal movement)
@@ -552,7 +563,7 @@ export class StateManager {
       // here (units in the fade window are skipped by the alive check).
       const freezeForAttack =
         unit.attackTriggeredAt > 0 &&
-        now - unit.attackTriggeredAt < ATTACK_DURATION_MS;
+        now - unit.attackTriggeredAt < ATTACK_FREEZE_MS;
       if (freezeForAttack) {
         unit.renderAngle = lerpAngle(unit.prevAngle, unit.currAngle, t);
         continue;
@@ -612,7 +623,7 @@ export class StateManager {
       // instead of turning its back if movement resumes mid-swing.
       const inAttackSwing =
         unit.attackTriggeredAt > 0 &&
-        performance.now() - unit.attackTriggeredAt < ATTACK_DURATION_MS;
+        performance.now() - unit.attackTriggeredAt < ATTACK_FREEZE_MS;
       if (!inAttackSwing) {
         const dxSnap = unit.currX - unit.prevX;
         const dySnap = unit.currY - unit.prevY;

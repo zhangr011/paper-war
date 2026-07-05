@@ -280,6 +280,7 @@ await test('getRenderUnits includes dying units within 600ms window', async () =
 
 const EVENT_PROJECTILE = 4;
 const ATTACK_DURATION_MS = (3 / 14) * 1000; // mirrors state.js
+const ATTACK_FREEZE_MS = 500; // mirrors state.js (#52 plant window)
 
 await test('Issue #48: attack-fire event stamps attackTriggeredAt on the attacker', async () => {
   const sm = new StateManager();
@@ -339,10 +340,10 @@ await test('Issue #48: facing locks for the duration of an attack swing', async 
     type: EVENT_PROJECTILE, entityID: 1, tick: 3,
   }]);
   sm.update(mockTime);
-  shiftTime(sm, 50); // well within ATTACK_DURATION_MS (~214ms)
+  shiftTime(sm, 50); // well within ATTACK_FREEZE_MS (500ms)
   assert.equal(u.facing, 1, `facing must stay DIR_E during swing, got ${u.facing}`);
-  // After the swing elapses, the next movement delta can update facing again.
-  mockTime = 1150 + Math.ceil(ATTACK_DURATION_MS) + 50;
+  // After the plant window elapses, the next movement delta can update facing again.
+  mockTime = 1150 + Math.ceil(ATTACK_FREEZE_MS) + 50;
   sm.applySnapshot(4, 3, [{
     entityID: 1, changedMask: CHANGED_POSITION,
     x: 1, y: 10,
@@ -592,9 +593,9 @@ await test('Issue #52: render position freezes for the attack swing then resumes
   assert.equal(sm.getUnit(60).renderX, frozenAt,
     'renderX must not advance during the attack swing');
 
-  // Past ATTACK_DURATION_MS — the freeze releases and interpolation
+  // Past ATTACK_FREEZE_MS — the freeze releases and interpolation
   // resumes (catching up via the accelerated-correction path).
-  mockTime += Math.ceil(ATTACK_DURATION_MS) + 200;
+  mockTime += Math.ceil(ATTACK_FREEZE_MS) + 200;
   sm.update(mockTime);
   const afterSwingX = sm.getUnit(60).renderX;
   assert.ok(afterSwingX > frozenAt,

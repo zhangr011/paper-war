@@ -1071,6 +1071,23 @@ body.spectator-mode #gold {
 #lobby-screen.active .lobby-roster   { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 160ms; }
 #lobby-screen.active .lobby-cmd-select { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 240ms; }
 #lobby-screen.active .lobby-queue    { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 320ms; }
+
+/* frontend-design skill — career dossier cascade. Stats reveal row by
+   row like a service record filling in. Title at 0 ms, then each
+   .career-row enters at 80 + n*45 ms; the back-button row inherits the
+   queue's end-of-list beat. Scoped to #career-screen.active so it
+   (re)fires on every screen flip. */
+#career-screen.active .lobby-title          { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 0ms; }
+#career-screen.active .career-row:nth-child(1)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 80ms; }
+#career-screen.active .career-row:nth-child(2)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 125ms; }
+#career-screen.active .career-row:nth-child(3)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 170ms; }
+#career-screen.active .career-row:nth-child(4)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 215ms; }
+#career-screen.active .career-row:nth-child(5)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 260ms; }
+#career-screen.active .career-row:nth-child(6)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 305ms; }
+#career-screen.active .career-row:nth-child(7)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 350ms; }
+#career-screen.active .career-row:nth-child(8)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 395ms; }
+#career-screen.active .career-row:nth-child(9)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 440ms; }
+#career-screen.active .career-row:nth-child(10) { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 485ms; }
 .login-subtitle {
   font-family: var(--font-body);
   font-size: 11px;

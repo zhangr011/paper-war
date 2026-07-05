@@ -1293,6 +1293,15 @@ body.spectator-mode #gold {
   color: var(--text-dark);
   text-shadow: 0 1px 0 rgba(255,255,255,0.25);
   margin-bottom: 4px;
+  /* frontend-design skill — primary-action emphasis ("each screen should
+     have only one primary CTA"). The gold Start Match button is the
+     single primary action on the lobby; a soft warm-gold glow lifts it
+     above the equally-saturated red Clash button without dimming that
+     feature, so the hierarchy reads at a glance. Glow uses the existing
+     --gold-accent so no new hue is introduced. */
+  box-shadow:
+    0 0 0 1px rgba(200, 168, 50, 0.4),
+    0 4px 14px -2px rgba(200, 168, 50, 0.45);
 }
 .lobby-btn-solo:hover {
   background:

@@ -27,6 +27,39 @@ if (!MOTION) {
 if (MOTION && !prefersReduced) {
   installButtonPressSpring();
   installLoginSpringEntrance();
+  installHoverSprings();
+}
+
+// --- 3. Per-page hover springs on primary CTAs ---------------------------
+
+function installHoverSprings() {
+  // Buttons that DON'T already have a CSS transform-on-hover (verified
+  // via grep — login-btn / #leaderboard-refresh-btn / #clash-start-btn
+  // only change background on :hover, never transform). Motion adds a
+  // spring translateY lift to fill that gap with tactile physics; lobby
+  // CTAs are skipped because they already carry a CSS translateY(-1px)
+  // hover lift and animating the same property from two engines would
+  // conflict.
+  const targets = [
+    '.login-btn',
+    '#leaderboard-refresh-btn',
+    '#clash-start-btn',
+  ];
+  const lift = (el) => MOTION.animate(el, { y: -2 }, { type: 'spring', stiffness: 400, damping: 20 });
+  const drop = (el) => MOTION.animate(el, { y: 0 }, { type: 'spring', stiffness: 350, damping: 18 });
+  const bind = (el) => {
+    if (!el || el.dataset.motionHover) return;
+    el.dataset.motionHover = '1';
+    el.addEventListener('pointerenter', () => lift(el));
+    el.addEventListener('pointerleave', () => drop(el));
+  };
+  // Bind now + re-bind after any screen flip (clash-start / refresh
+  // become visible only when their screen activates).
+  targets.forEach((sel) => bind(document.querySelector(sel)));
+  document.querySelectorAll('.screen').forEach((screen) => {
+    new MutationObserver(() => targets.forEach((sel) => bind(document.querySelector(sel))))
+      .observe(screen, { attributes: true, attributeFilter: ['class'] });
+  });
 }
 
 // --- 1. Button press spring (all pages) ----------------------------------

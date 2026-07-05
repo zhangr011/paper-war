@@ -1088,6 +1088,14 @@ body.spectator-mode #gold {
 #career-screen.active .career-row:nth-child(8)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 395ms; }
 #career-screen.active .career-row:nth-child(9)  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 440ms; }
 #career-screen.active .career-row:nth-child(10) { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 485ms; }
+
+/* frontend-design skill — leaderboard cascade. Title → table → actions.
+   Per-row nth-child isn't used here because the tbody is JS-injected
+   with a variable row count (matches load async); the whole table
+   reveals as one block instead. */
+#leaderboard-screen.active .lobby-title          { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 0ms; }
+#leaderboard-screen.active .leaderboard-table    { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 100ms; }
+#leaderboard-screen.active .leaderboard-actions  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 200ms; }
 .login-subtitle {
   font-family: var(--font-body);
   font-size: 11px;

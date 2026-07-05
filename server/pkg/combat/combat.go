@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"github.com/user/paper-war/server/pkg/ai"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
@@ -21,6 +22,13 @@ type CombatSystem struct {
 	pathPool     *ecs.ComponentPool[component.PathfindingComponent]
 	MapW, MapH   int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
+	// StateLookup returns the AI state for a squad (0 if unknown or not
+	// AI-driven). Used to suppress auto-pursuit for squads in StateGuard
+	// so they hold ground instead of chasing out-of-range targets. Set
+	// by session.go after both CombatSystem and AISystem are constructed.
+	// CombatSystem resolves the entity→squad mapping via its boidPool
+	// before calling this. Issue #52.
+	StateLookup func(squadID uint32) uint8
 
 	// AttackRecords collects one entry per attack resolution (cooldown
 	// edge) this tick.  The snapshot encoder drains it into
@@ -150,9 +158,19 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		rangeSq := (ac.Range * ac.Range) >> 12
 
 		if distSq > rangeSq {
-			// Target is out of attack range but still viable — pursue it
-			// by setting pathfinding destination. The movement system will
-			// close the gap; once in range, the unit attacks normally.
+			// Target is out of attack range but still viable.
+			// Default: pursue by setting a pathfinding destination so the
+			// movement system closes the gap. Issue #52: a squad in
+			// StateGuard holds ground — skip the pursue so the unit stays
+			// planted. StateLookup returns the AI state for this entity
+			// (0 if unknown / not AI-driven — those still pursue).
+			if s.StateLookup != nil && s.boidPool != nil {
+				if bc, ok := s.boidPool.Get(e); ok {
+					if st := s.StateLookup(bc.SquadID); st == ai.StateGuard {
+						return
+					}
+				}
+			}
 			if s.pathPool != nil {
 				if path, ok := s.pathPool.GetPtr(e); ok {
 					path.TargetX = targetPos.X

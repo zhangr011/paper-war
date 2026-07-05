@@ -233,6 +233,24 @@ func NewGameSession() *GameSession {
 	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.configureAIStrategy(gs.AISys)
 
+	// Issue #52 — wire CombatSystem's state lookup to the AI systems so
+	// squads in StateGuard hold ground instead of auto-pursuing. Both
+	// AI systems (primary + clash) are queried; whichever owns the
+	// squad returns the state, the other returns 0.
+	gs.combatSys.StateLookup = func(squadID uint32) uint8 {
+		if gs.AISys != nil {
+			if st, ok := gs.AISys.States[squadID]; ok {
+				return st.State
+			}
+		}
+		if gs.AISys2 != nil {
+			if st, ok := gs.AISys2.States[squadID]; ok {
+				return st.State
+			}
+		}
+		return 0
+	}
+
 	// 7. Create SnapshotGenerator and Culler
 	gs.SnapGen = network.NewSnapshotGenerator()
 	gs.Culler = network.NewCuller()

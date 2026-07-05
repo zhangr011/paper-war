@@ -780,3 +780,67 @@ func filterCmds(cmds []AICommand, cmdType uint8) []AICommand {
 	}
 	return result
 }
+
+// Issue #52 — Guard policy. When a squad detects an enemy (in or out of
+// weapon range), it must enter StateGuard, emit only CmdAttack, and emit
+// NO CmdMove. The unit holds ground and lets the enemy come to it.
+func TestAIGuardOnEnemyDetected(t *testing.T) {
+	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
+
+	// AI commander standing at (30, 30), full HP.
+	aiCmd := em.Create()
+	posPool.Add(aiCmd, component.PositionComponent{X: fixed.FromFloat(30), Y: fixed.FromFloat(30)})
+	cmdPool.Add(aiCmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
+	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
+	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
+
+	// Enemy commander far away (out of any weapon range — far beyond
+	// commit range too). The v3 Guard policy must NOT chase it.
+	enemy := em.Create()
+	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(50), Y: fixed.FromFloat(50)})
+	cmdPool.Add(enemy, component.CommanderComponent{SquadID: 2, IsAlive: true})
+	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
+	healthPool.Add(enemy, component.HealthComponent{HP: 200, MaxHP: 200})
+
+	sys := NewAISystem(2, nil, 64, 64)
+	sys.RegisterSquad(1, uint32(aiCmd))
+
+	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.States[1].State != StateGuard {
+		t.Errorf("expected StateGuard on enemy detection, got %d", sys.States[1].State)
+	}
+	attackCmds := filterCmds(cmds, CmdAttack)
+	if len(attackCmds) == 0 {
+		t.Error("expected a CmdAttack against the detected enemy")
+	}
+	moveCmds := filterCmds(cmds, CmdMove)
+	if len(moveCmds) != 0 {
+		t.Errorf("Guard must not move, got %d CmdMove(s)", len(moveCmds))
+	}
+}
+
+// Issue #52 — when no enemies remain, the squad exits Guard and returns
+// to a non-combat state (Patrol/Idle/strategic). The no-enemy branch
+// already handles this; the test guards against a regression that would
+// leave squads stuck in Guard forever.
+func TestAIGuardExitsWhenNoEnemies(t *testing.T) {
+	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
+
+	aiCmd := em.Create()
+	posPool.Add(aiCmd, component.PositionComponent{X: fixed.FromFloat(30), Y: fixed.FromFloat(30)})
+	cmdPool.Add(aiCmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
+	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
+	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
+
+	sys := NewAISystem(2, nil, 64, 64)
+	sys.RegisterSquad(1, uint32(aiCmd))
+	// Force the squad into Guard to start; no enemies in the world.
+	sys.States[1].State = StateGuard
+
+	_ = sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.States[1].State == StateGuard {
+		t.Error("squad must leave Guard when no enemies are detected")
+	}
+}

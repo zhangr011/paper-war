@@ -1768,6 +1768,7 @@ export class Game {
         switch (serverState) {
           case 3: state = STATE_IDLE2; break;
           case 5: state = STATE_IDLE2; break;
+          case 10: state = STATE_IDLE2; break; // Guard (#52) — alert idle between shots
           case 4: state = STATE_MOVE; break;  // retreat — same walk cycle
           case 1: case 2: case 6: case 7: case 8: case 9:
             state = STATE_MOVE; break;

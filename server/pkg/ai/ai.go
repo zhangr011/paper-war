@@ -35,6 +35,7 @@ const (
 	StateCapture  uint8 = 7  // moving to capture stronghold
 	StatePush     uint8 = 8  // offensive push toward enemy base
 	StateRegroup  uint8 = 9  // falling back to rally with reinforcements
+	StateGuard    uint8 = 10 // hold position and fire at detected enemies; never pursue
 
 	EvalInterval uint32 = 30
 
@@ -278,7 +279,10 @@ func (as *AISystem) Update(
 		}
 
 		// --- SCAN ENEMIES (scored target selection + force ratio) ---
-		_, bestDist, bestEnemyID, bestEnemyX, bestEnemyY, enemyStrength :=
+		// bestDist / bestEnemyX / bestEnemyY were used by the v2 commit-
+		// range engagement; the v3 Guard policy (issue #52) doesn't move,
+		// so they're discarded. Kept in the signature for callers/tests.
+		_, _, bestEnemyID, _, _, enemyStrength :=
 			as.scanEnemiesScored(cmdPool, posPool, ownerPool, healthPool, unitTypePool, aiFog, pos)
 
 		// --- BASE DEFENSE (scaled response) ---
@@ -317,37 +321,24 @@ func (as *AISystem) Update(
 				continue
 			}
 
-			// v2: Range-aware engagement.
-			// Issue attack always (units fire when in individual range).
-			// Issue move only if enemy is beyond the squad's commit range.
-			commitRange := assessment.CommitRange()
-			commitRangeSq := commitRange * commitRange
-
-			if bestDist <= commitRangeSq {
-				// Within commit range — hold position and fire.
-				state.State = StateAttack
-				cmds = append(cmds, AICommand{
-					Type:     CmdAttack,
-					SquadID:  squadID,
-					TargetID: bestEnemyID,
-				})
-			} else {
-				// Beyond commit range — close distance while firing.
-				state.State = StateApproach
-				cmds = append(cmds, AICommand{
-					Type:     CmdAttack,
-					SquadID:  squadID,
-					TargetID: bestEnemyID,
-				})
-				if !as.MoveDisabled {
-					cmds = append(cmds, AICommand{
-						Type:    CmdMove,
-						SquadID: squadID,
-						TargetX: bestEnemyX,
-						TargetY: bestEnemyY,
-					})
-				}
-			}
+			// v3: Guard policy (issue #52). When any enemy is detected,
+			// hold ground and fire — do not pursue. CombatSystem fires
+			// when the target is within weapon range; out-of-range
+			// targets are ignored this tick (no CmdMove, and the combat
+			// system's auto-pursue is suppressed via StateLookup).
+			// Squad stays in Guard until no enemies remain, at which
+			// point the no-enemy path below returns it to Idle.
+			//
+			// Replaces the v2 commit-range if/else (Approach chased
+			// out-of-range enemies, which broke formation and got kited).
+			// Commit range is now unused for movement; CombatSystem still
+			// resolves in-range attacks as before.
+			state.State = StateGuard
+			cmds = append(cmds, AICommand{
+				Type:     CmdAttack,
+				SquadID:  squadID,
+				TargetID: bestEnemyID,
+			})
 			continue
 		}
 

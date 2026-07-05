@@ -1177,12 +1177,16 @@ body.spectator-mode #gold {
 /* ============================================
    Lobby Screen — Paper Parchment Style
    ============================================ */
-#lobby-screen, #clash-screen {
+#lobby-screen, #clash-screen, #career-screen, #leaderboard-screen {
   justify-content: center;
   align-items: center;
   background: radial-gradient(ellipse at center, #3A2A1A 0%, #1A0F05 100%);
   height: 100vh;
-  /* Match game-screen width so the pre-game→game transition doesn't jump */
+  /* Match game-screen width so the pre-game→game transition doesn't jump.
+     Career + leaderboard added here in the alignment fix — without this
+     they default to 100vw, leaving the .lobby-card pinned to the left
+     edge of a full-width screen while every other screen centres the
+     card in a 520px column. */
   width: min(100vw, 520px);
   margin: 0 auto;
 }

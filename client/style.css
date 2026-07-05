@@ -1050,16 +1050,27 @@ body.spectator-mode #gold {
    existing --duration-slow token, cascading at 0 / 90 / 180 ms. The
    reduced-motion media query at the bottom of this file already nukes
    animation-duration globally, so the cascade is fully respected there. */
-@keyframes login-rise {
+@keyframes rise-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.login-title    { animation: login-rise var(--duration-slow) var(--ease-out) both;
+.login-title    { animation: rise-in var(--duration-slow) var(--ease-out) both;
                   animation-delay: 0ms; }
-.login-subtitle { animation: login-rise var(--duration-slow) var(--ease-out) both;
+.login-subtitle { animation: rise-in var(--duration-slow) var(--ease-out) both;
                   animation-delay: 90ms; }
-#login-form     { animation: login-rise var(--duration-slow) var(--ease-out) both;
+#login-form     { animation: rise-in var(--duration-slow) var(--ease-out) both;
                   animation-delay: 180ms; }
+
+/* frontend-design skill — lobby cascade. Same rise-in, scoped to
+   #lobby-screen.active so it (re)fires on every screen flip into the
+   War Room (display:none → flex restarts the animation). Five beats at
+   ~80 ms each — title → player → roster → commander-select → action
+   buttons — finishing under 650 ms total. */
+#lobby-screen.active .lobby-title    { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 0ms; }
+#lobby-screen.active .lobby-player   { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 80ms; }
+#lobby-screen.active .lobby-roster   { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 160ms; }
+#lobby-screen.active .lobby-cmd-select { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 240ms; }
+#lobby-screen.active .lobby-queue    { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 320ms; }
 .login-subtitle {
   font-family: var(--font-body);
   font-size: 11px;

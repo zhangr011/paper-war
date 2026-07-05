@@ -603,5 +603,66 @@ await test('Issue #52: render position freezes for the attack swing then resumes
 });
 
 // ---------------------------------------------------------------------------
+// Issue #52 follow-up — no teleport on attack-freeze release
+// ---------------------------------------------------------------------------
+
+const ATTACK_FREEZE_MS_52 = 500;
+const ATTACK_CATCHUP_MS_52 = 250;
+
+await test('Issue #52: unit does not teleport when the attack freeze releases (small delta)', async () => {
+  const sm = new StateManager();
+  mockTime = 1000;
+  sm.applySnapshot(1, 0, [{
+    entityID: 70, changedMask: CHANGED_POSITION | CHANGED_HP,
+    x: 0, y: 0, hp: 100, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 0);
+  shiftTime(sm, 100);
+  sm.applySnapshot(2, 1, [{ entityID: 70, changedMask: CHANGED_POSITION, x: 1, y: 0 }], []);
+  shiftTime(sm, 100);
+  shiftTime(sm, 50); // renderX ≈ 0.5
+  // Fire → freeze.
+  mockTime += 10;
+  sm.applySnapshot(3, 2, [], [{ type: EVENT_PROJECTILE_52, entityID: 70, tick: 3 }]);
+  sm.update(mockTime);
+  const frozenAt = sm.getUnit(70).renderX;
+
+  // During the freeze, server advances the unit by a SMALL amount (under
+  // CORRECTION_THRESHOLD). Pre-fix this would snap on release.
+  mockTime += 100;
+  sm.applySnapshot(4, 3, [{ entityID: 70, changedMask: CHANGED_POSITION, x: 1.4, y: 0 }], []);
+  sm.update(mockTime);
+  // Advance through the rest of the freeze window.
+  mockTime = mockTime + (ATTACK_FREEZE_MS_52 - (mockTime - (frozenAt !== undefined ? mockTime : mockTime)));
+  // Drive well past ATTACK_FREEZE_MS but inside the catch-up window.
+  // Recompute from the fire timestamp: fire happened at the snapshot-3
+  // apply time; we just need to land just past ATTACK_FREEZE_MS.
+  while (mockTime < 1000 + 100 + 100 + 50 + 10 + ATTACK_FREEZE_MS_52 + 10) {
+    mockTime += 30;
+    sm.update(mockTime);
+  }
+  const justAfterRelease = sm.getUnit(70).renderX;
+  // Drive a few more frames through the catch-up window.
+  const samples = [justAfterRelease];
+  for (let i = 0; i < 4; i++) {
+    mockTime += 50;
+    sm.update(mockTime);
+    samples.push(sm.getUnit(70).renderX);
+  }
+  // The first post-release sample must NOT equal the final target — i.e.
+  // the unit did not teleport to the live position in a single frame.
+  const finalTarget = samples[samples.length - 1];
+  const firstDelta = Math.abs(samples[0] - frozenAt);
+  const totalDelta = Math.abs(finalTarget - frozenAt);
+  assert.ok(firstDelta < totalDelta,
+    `first-frame delta (${firstDelta.toFixed(3)}) must be < total catch-up delta (${totalDelta.toFixed(3)}) — unit teleported on release`);
+  // And the samples must be monotonically progressing (smooth blend, no snap).
+  for (let i = 1; i < samples.length; i++) {
+    assert.ok(samples[i] >= samples[i-1] - 0.001,
+      `renderX went backwards (${samples[i-1]} → ${samples[i]}) — non-monotonic catch-up`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

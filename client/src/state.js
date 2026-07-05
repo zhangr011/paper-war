@@ -92,6 +92,17 @@ const ATTACK_FREEZE_MS = 500;
 const CORRECTION_THRESHOLD = 5.0; // world units (only genuine desyncs, not normal movement)
 const CORRECTION_SPEED = 3.0;     // blend fraction per tick (0.3 = 30% correction)
 
+// Issue #52 — post-freeze catch-up. While frozen the render position is
+// held while curr/prev keep advancing from snapshots, so on release the
+// delta to the live interpolated target can be anything from sub-pixel
+// (a Guard squad that barely moved) to large (a unit that slid a lot).
+// Without this window the small-delta case hits the `renderX = rx` snap
+// branch below and the unit teleports. For ATTACK_CATCHUP_MS after the
+// freeze ends, always blend (never snap) at a rate that covers a
+// moderate delta over ~200ms.
+const ATTACK_CATCHUP_MS = 250;
+const ATTACK_CATCHUP_SPEED = 6.0; // ≈60%/tick at 10Hz → ~95% catch-up in 3 ticks
+
 // Maximum pending snapshots in the jitter buffer queue
 const MAX_PENDING_SNAPSHOTS = 3;
 
@@ -556,11 +567,12 @@ export class StateManager {
       // Issue #52 — freeze render position for the duration of an attack
       // swing so the unit "plants to fire" instead of sliding through the
       // animation. curr/prev still advance from snapshots; only the render
-      // transform is held. When the swing ends the next frame sees a large
-      // delta and routes through the accelerated-correction path below,
-      // which blends smoothly (~30%/tick) instead of snapping. The die
-      // state has its own anchored-position handling and never reaches
-      // here (units in the fade window are skipped by the alive check).
+      // transform is held. On release the post-freeze catch-up window
+      // (ATTACK_CATCHUP_MS below) blends render back toward the live
+      // interpolated position instead of snapping, regardless of how
+      // large the accumulated delta is. The die state has its own
+      // anchored-position handling and never reaches here (units in the
+      // fade window are skipped by the alive check).
       const freezeForAttack =
         unit.attackTriggeredAt > 0 &&
         now - unit.attackTriggeredAt < ATTACK_FREEZE_MS;
@@ -593,9 +605,19 @@ export class StateManager {
       const dx = rx - unit.renderX;
       const dy = ry - unit.renderY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > CORRECTION_THRESHOLD) {
+      // Issue #52 — post-freeze catch-up window. After the attack freeze
+      // the render position lags curr/prev; without this guard a small
+      // delta (dist ≤ CORRECTION_THRESHOLD) would hit the direct-snap
+      // branch and the unit would teleport. Force the blend path for
+      // ATTACK_CATCHUP_MS after the freeze ends, regardless of delta.
+      const sinceAttack = unit.attackTriggeredAt > 0 ? now - unit.attackTriggeredAt : Infinity;
+      const inCatchup =
+        sinceAttack >= ATTACK_FREEZE_MS &&
+        sinceAttack < ATTACK_FREEZE_MS + ATTACK_CATCHUP_MS;
+      if (dist > CORRECTION_THRESHOLD || inCatchup) {
+        const rate = inCatchup ? ATTACK_CATCHUP_SPEED : CORRECTION_SPEED;
         const correctionT = clamp(
-          CORRECTION_SPEED * (this.tickDuration / 1000),
+          rate * (this.tickDuration / 1000),
           0,
           1,
         );

@@ -248,7 +248,7 @@ body {
 
 .hotkey-label {
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: 600;
   color: var(--text-heading);
   text-transform: uppercase;
@@ -328,7 +328,7 @@ body {
 .resource.card .resource-label {
   display: block;
   font-family: var(--font-body);
-  font-size: 8px;
+  font-size: var(--text-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -504,7 +504,7 @@ body {
 
 .selection-label {
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -539,7 +539,7 @@ body {
   align-items: center;
   padding: 1px 6px;
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -624,7 +624,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.1s, transform 0.05s;
+  transition: border-color var(--duration-fast) var(--ease-out), transform 0.05s;
 }
 
 .minimap-btn:hover {
@@ -659,7 +659,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.1s, transform 0.05s;
+  transition: border-color var(--duration-fast) var(--ease-out), transform 0.05s;
 }
 
 .tactic-slot:hover {
@@ -898,7 +898,7 @@ body.spectator-mode #gold {
 
 .action-name {
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: 600;
   line-height: 1;
 }
@@ -975,7 +975,7 @@ body.spectator-mode #gold {
   .team-test-move-btn {
     height: 22px;
     padding: 0 6px;
-    font-size: 9px;
+    font-size: var(--text-micro);
   }
 }
 
@@ -1361,7 +1361,7 @@ body.spectator-mode #gold {
 /* Recruit button styles */
 .recruit-btn .action-cost {
   display: block;
-  font-size: 9px;
+  font-size: var(--text-micro);
   color: var(--gold-accent);
   margin-top: 2px;
 }
@@ -1390,7 +1390,7 @@ body.spectator-mode #gold {
   top: 0; left: 0; right: 0; bottom: 0;
   pointer-events: none;
   border: 4px solid transparent;
-  transition: border-color 0.1s;
+  transition: border-color var(--duration-fast) var(--ease-out);
   z-index: 50;
 }
 .base-alert-overlay.active {
@@ -1666,6 +1666,21 @@ button,
     color var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
+}
+
+/* Disabled state for async buttons (solo/find-match/clash set .disabled
+   in app.js during matchmaking but had no visual change — violated the
+   loading-buttons + state-clarity rules). Grey-out + no-pointer + drop
+   the hover lift so the disabled state reads unambiguously. */
+button[disabled],
+[role="button"][aria-disabled="true"],
+.lobby-btn[disabled],
+.recruit-btn.disabled,
+.build-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+  pointer-events: none;
 }
 
 /* Hover lift on primary action buttons (subtle, doesn't shift layout

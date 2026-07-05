@@ -431,5 +431,130 @@ await test('Issue #48: axis switches only when the other axis wins by 1.5×', as
 });
 
 // ---------------------------------------------------------------------------
+// Issue #51 — dead units must not persist on the map
+// ---------------------------------------------------------------------------
+
+const C_POS_51 = 1, C_HP_51 = 8; // CHANGED_POSITION, CHANGED_HP
+
+await test('Issue #51: HP=0 snapshot with no death event still kills the unit', async () => {
+  const sm = new StateManager();
+  mockTime = 100;
+  sm.applySnapshot(1, 0, [{
+    entityID: 51, changedMask: C_POS_51 | C_HP_51,
+    x: 5, y: 5, hp: 100, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 0);
+  shiftTime(sm, 100);
+  // Snapshot delivers HP=0 with NO death event
+  mockTime = 200;
+  sm.applySnapshot(2, 1, [{
+    entityID: 51, changedMask: C_HP_51, hp: 0,
+  }], []);
+  sm.update(mockTime);
+  const u = sm.getUnit(51);
+  assert.equal(u.alive, false, 'alive must flip to false on HP=0');
+  assert.ok(u.dyingAt > 0, 'dyingAt must be stamped so the die animation fires');
+  assert.equal(sm.getRenderUnits().filter((x) => x.entityID === 51).length, 1,
+    'unit still rendered inside the fade window');
+  // Past the fade window — must be removed.
+  mockTime = 200 + 800;
+  sm.getRenderUnits(); // triggers the delete of faded units
+  assert.equal(sm.getRenderUnits().filter((x) => x.entityID === 51).length, 0,
+    'unit must be removed after DEATH_FADE_MS');
+});
+
+await test('Issue #51: EventDeath after HP=0 does not reset dyingAt (idempotent)', async () => {
+  const sm = new StateManager();
+  mockTime = 100;
+  sm.applySnapshot(1, 0, [{
+    entityID: 52, changedMask: C_POS_51 | C_HP_51,
+    x: 0, y: 0, hp: 100, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 0);
+  shiftTime(sm, 100);
+  mockTime = 200;
+  sm.applySnapshot(2, 1, [{ entityID: 52, changedMask: C_HP_51, hp: 0 }], []);
+  sm.update(mockTime);
+  const firstDyingAt = sm.getUnit(52).dyingAt;
+  assert.ok(firstDyingAt > 0, 'prerequisite: HP=0 path stamped dyingAt');
+  // Death event arrives a snapshot later
+  mockTime = 300;
+  sm.applySnapshot(3, 2, [], [{ type: 1, entityID: 52, x: 0, y: 0, tick: 3 }]);
+  sm.update(mockTime);
+  assert.equal(sm.getUnit(52).dyingAt, firstDyingAt,
+    'late EventDeath must not reset dyingAt');
+});
+
+await test('Issue #51: trailing snapshot for a deleted unit does not resurrect it (hp>0)', async () => {
+  const sm = new StateManager();
+  mockTime = 100;
+  sm.applySnapshot(1, 0, [{
+    entityID: 53, changedMask: C_POS_51 | C_HP_51,
+    x: 1, y: 1, hp: 50, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 100);
+  // Kill via the canonical event path
+  mockTime = 200;
+  sm.applySnapshot(2, 1, [], [{ type: 1, entityID: 53, x: 1, y: 1, tick: 2 }]);
+  sm.update(mockTime);
+  // Wait past the fade window so getRenderUnits deletes it
+  mockTime = 200 + 800;
+  sm.getRenderUnits();
+  assert.equal(sm.getUnit(53), undefined, 'prerequisite: unit deleted after fade');
+  // A trailing/out-of-order snapshot arrives with the entity alive
+  mockTime = 1100;
+  sm.applySnapshot(3, 2, [{
+    entityID: 53, changedMask: C_POS_51 | C_HP_51,
+    x: 2, y: 2, hp: 30, unitType: 0, team: 1,
+  }], []);
+  sm.update(mockTime);
+  assert.equal(sm.getUnit(53), undefined, 'trailing snapshot must not recreate the dead unit');
+  assert.equal(sm.getRenderUnits().filter((x) => x.entityID === 53).length, 0,
+    'dead unit must not reappear in the render list');
+});
+
+await test('Issue #51: trailing snapshot carrying hp<=0 for a deleted unit does not resurrect it', async () => {
+  const sm = new StateManager();
+  mockTime = 100;
+  sm.applySnapshot(1, 0, [{
+    entityID: 54, changedMask: C_POS_51 | C_HP_51,
+    x: 1, y: 1, hp: 50, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 100);
+  mockTime = 200;
+  sm.applySnapshot(2, 1, [], [{ type: 1, entityID: 54, x: 1, y: 1, tick: 2 }]);
+  sm.update(mockTime);
+  mockTime = 200 + 800;
+  sm.getRenderUnits();
+  assert.equal(sm.getUnit(54), undefined, 'prerequisite: unit deleted after fade');
+  mockTime = 1100;
+  sm.applySnapshot(3, 2, [{
+    entityID: 54, changedMask: C_POS_51 | C_HP_51,
+    x: 9, y: 9, hp: 0, unitType: 0, team: 1,
+  }], []);
+  sm.update(mockTime);
+  assert.equal(sm.getUnit(54), undefined,
+    'trailing hp=0 snapshot must not recreate the dead unit');
+});
+
+await test('Issue #51: canonical event-death path is unchanged', async () => {
+  const sm = new StateManager();
+  mockTime = 100;
+  sm.applySnapshot(1, 0, [{
+    entityID: 55, changedMask: C_POS_51 | C_HP_51,
+    x: 1, y: 1, hp: 50, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 100);
+  mockTime = 200;
+  sm.applySnapshot(2, 1, [], [{ type: 1, entityID: 55, x: 1, y: 1, tick: 2 }]);
+  sm.update(mockTime);
+  const u = sm.getUnit(55);
+  assert.equal(u.alive, false, 'event-death flips alive to false');
+  assert.ok(u.dyingAt > 0, 'event-death stamps dyingAt');
+  assert.equal(sm.getRenderUnits().filter((x) => x.entityID === 55).length, 1,
+    'event-death unit still rendered inside the fade window');
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

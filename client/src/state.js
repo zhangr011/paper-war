@@ -228,10 +228,20 @@ export class StateManager {
     /** Entity ID → UnitState */
     this.units = new Map();
 
+    /** Entity IDs the client has seen die. Prevents `_activateSnapshot`
+     *  from resurrecting a unit the client already removed after the
+     *  death-fade window when a trailing/out-of-order snapshot arrives.
+     *  Bounded FIFO — long matches don't grow it unbounded. Issue #51. */
+    this.deadIDs = new Set();
+    this._deadIDOrder = []; // FIFO backing for the bound
+    this._deadIDCap = 512;
+
     /** Clear all tracked entities. Used on reconnect to drop stale state
      *  before the first post-rejoin snapshot repopulates the world. */
     this.clearEntities = () => {
       this.units.clear();
+      this.deadIDs.clear();
+      this._deadIDOrder.length = 0;
       this.prevTick = 0;
       this.currTick = 0;
       this.nextTick = 0;
@@ -343,9 +353,18 @@ export class StateManager {
     // Process each unit update
     for (let i = 0; i < unitUpdates.length; i++) {
       const u = unitUpdates[i];
+      // Issue #51 — resurrect guard: skip updates for entities the
+      // client has already seen die and removed.  Without this, a
+      // trailing/out-of-order snapshot for a dead entity would hit the
+      // new-unit branch below and silently re-create it alive.
+      if (this.deadIDs.has(u.entityID)) continue;
       let unit = this.units.get(u.entityID);
 
       if (!unit) {
+        // Issue #51 — don't materialise a unit that's arriving already
+        // dead (server's steady-state filter should prevent this, but
+        // late/out-of-order packets can still carry it).
+        if ((u.changedMask & CHANGED_HP) && u.hp <= 0) continue;
         // New unit — create with both prev and curr set to the same values
         unit = new UnitState();
         unit.entityID = u.entityID;
@@ -423,6 +442,15 @@ export class StateManager {
         }
         if (u.changedMask & CHANGED_HP) {
           unit.currHP = u.hp;
+          // Issue #51 — defensive kill: if HP drops to 0 and the unit
+          // isn't already dying, transition it into the death-fade
+          // window now.  EventDeath is normally the trigger, but if it
+          // is dropped / fog-culled / arrives in a later snapshot, the
+          // unit would otherwise sit on the map at 0 HP forever.
+          // `_markDying` is idempotent on `dyingAt`.
+          if (unit.currHP <= 0 && unit.dyingAt === 0) {
+            this._markDying(unit);
+          }
         }
         if (u.changedMask & CHANGED_TARGET_ID) {
           unit.targetID = u.targetID;
@@ -785,8 +813,43 @@ export class StateManager {
           unit.prevX = unit.currX = deathX;
           unit.prevY = unit.currY = deathY;
         }
+        this._rememberDead(entityID);
       }
     }
+  }
+
+  /**
+   * Record an entityID as known-dead so a trailing/out-of-order snapshot
+   * cannot resurrect it after the client removes the unit.  Bounded FIFO
+   * so a very long session doesn't grow the set without limit.  Issue #51.
+   * @param {number} entityID
+   * @private
+   */
+  _rememberDead(entityID) {
+    if (this.deadIDs.has(entityID)) return;
+    this.deadIDs.add(entityID);
+    this._deadIDOrder.push(entityID);
+    while (this._deadIDOrder.length > this._deadIDCap) {
+      const evicted = this._deadIDOrder.shift();
+      this.deadIDs.delete(evicted);
+    }
+  }
+
+  /**
+   * Idempotent transition into the death-fade window.  Used by the
+   * HP=0 defensive-kill path in `_activateSnapshot` (issue #51) so the
+   * die animation fires whether or not `EventDeath` arrives.  Mirrors
+   * the guard in `_handleDeath`: a unit that's already dying keeps its
+   * original timestamp.
+   * @param {UnitState} unit
+   * @private
+   */
+  _markDying(unit) {
+    unit.alive = false;
+    if (unit.dyingAt === 0) {
+      unit.dyingAt = performance.now();
+    }
+    this._rememberDead(unit.entityID);
   }
 
   /**

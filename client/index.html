@@ -441,6 +441,13 @@
 
   </div><!-- /game-screen -->
 
+  <!-- Motion (motiondivision/motion) — vanilla DOM animation library.
+       UMD build, exposes window.Motion { animate, inView, scroll, stagger, ... }.
+       Vendored at install time (no build step); see client/vendor/motion.min.js.
+       defer so it executes before the enhancer module (modules are deferred
+       by default and run in document order). -->
+  <script defer src="vendor/motion.min.js"></script>
   <script type="module" src="src/app.js?v=v9"></script>
+  <script type="module" src="src/motion_enhance.js?v=v1"></script>
 </body>
 </html>

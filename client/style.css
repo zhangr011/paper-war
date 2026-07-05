@@ -1292,8 +1292,8 @@ body.spectator-mode #gold {
   font-weight: 600;
   min-width: 100px;
 }
-.clash-team-blue { color: #4488FF; }
-.clash-team-red { color: #FF4444; }
+.clash-team-blue { color: #1E5BD0; }
+.clash-team-red { color: #B02025; }
 .clash-size-btn {
   padding: 2px 8px;
   font-size: 11px;
@@ -1438,11 +1438,19 @@ body.spectator-mode #gold {
   font-size: 11px;
 }
 .roster-value {
-  color: #FFD700;
+  /* Was #FFD700 gold on parchment — 1.08:1, invisible. Gold accent
+     fails AA as text on light backgrounds (design-system.md note);
+     use --color-primary (navy) for 12.8:1 and rely on font-weight for
+     emphasis. ui-ux-pro-max color-contrast rule. */
+  color: var(--color-primary);
   font-weight: 600;
 }
 .roster-cmd-level {
-  color: #8BC34A;
+  /* Was #8BC34A (light green) on parchment — ~1.8:1, fails AA. Darkened
+     to a forest green that clears 4.5:1 on the parchment card while
+     still reading as a "level / positive" cue (ui-ux-pro-max
+     color-contrast rule). */
+  color: #3A5A1E;
   font-size: 12px;
 }
 .roster-units {
@@ -1494,9 +1502,15 @@ body.spectator-mode #gold {
   background: rgba(255,255,255,0.1);
 }
 .cmd-type-btn.selected {
-  border-color: #FFD700;
-  background: rgba(255,215,0,0.15);
-  color: #FFD700;
+  /* Selected commander-type button. Was gold text (#FFD700) on a 15%
+     gold tint over parchment — ~1.5:1 contrast, effectively invisible.
+     ui-ux-pro-max color-contrast rule + the design-system note that
+     --color-accent fails AA as text on light: pair the gold accent
+     background with --color-primary (navy) text for 5.4:1. */
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 /* v1.1: Career UI ---------------------------------------------------------- */

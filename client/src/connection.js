@@ -412,12 +412,17 @@ export class Connection {
           break;
         }
         case EVENT_PROJECTILE: {
-          // x(int64) + y(int64) + targetX(int64) + targetY(int64) + impactTick(uint32) = 36
-          evt.x = Number(view.getBigInt64(off, true)); off += 8;
-          evt.y = Number(view.getBigInt64(off, true)); off += 8;
-          evt.targetX = Number(view.getBigInt64(off, true)); off += 8;
-          evt.targetY = Number(view.getBigInt64(off, true)); off += 8;
-          evt.impactTick = view.getUint32(off, true); off += 4;
+          // Issue #48 — repurposed as an attack-fire event:
+          //   entityID (uint32, 4B) — attacker that resolved a shot
+          //   tick      (uint32, 4B) — simulation tick of the attack
+          // Total: 8 bytes.  The client stamps its render clock on
+          // receipt and plays the attacker's animation once.  (Was a
+          // 36-byte projectile-pos payload, but the server never
+          // spawned projectiles — see server/pkg/combat/projectile.go,
+          // which is dormant.  Repurposed rather than adding a new
+          // event type.)
+          evt.entityID = view.getUint32(off, true); off += 4;
+          evt.tick = view.getUint32(off, true); off += 4;
           break;
         }
         default:

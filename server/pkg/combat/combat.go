@@ -21,6 +21,21 @@ type CombatSystem struct {
 	pathPool     *ecs.ComponentPool[component.PathfindingComponent]
 	MapW, MapH   int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
+
+	// AttackRecords collects one entry per attack resolution (cooldown
+	// edge) this tick.  The snapshot encoder drains it into
+	// EventProjectile events so the client can drive the attack
+	// animation as a one-shot per shot rather than looping while the
+	// AI is in Attack mode.  Cleared at the start of each Tick.
+	// Issue #48.
+	AttackRecords []AttackRecord
+}
+
+// AttackRecord captures the moment a unit resolved an attack. The client
+// stamps its render clock on receipt and plays the attack animation once.
+type AttackRecord struct {
+	EntityID uint32
+	Tick     uint32
 }
 
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
@@ -55,6 +70,9 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 	// after iterating all entities. This eliminates entity-processing-order
 	// bias (lower entity IDs getting first-strike advantage every tick).
 	pending := make(map[uint32]pendingDmg)
+	// Clear last tick's attack-fire records — snapshot gen between ticks
+	// has already drained them into events. Issue #48.
+	s.AttackRecords = nil
 
 	s.attackPool.Each(func(e ecs.Entity, ac *component.AttackComponent) {
 		if ac.Cooldown > 0 && tick-ac.LastAttack < uint32(ac.Cooldown) {
@@ -109,6 +127,10 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 						groundPos := component.PositionComponent{X: ac.GroundTargetX, Y: ac.GroundTargetY}
 						s.collectSplash(groundPos, ac.Damage, e, ecs.Entity(0), pending)
 						ac.LastAttack = tick
+						s.AttackRecords = append(s.AttackRecords, AttackRecord{
+							EntityID: uint32(e),
+							Tick:     tick,
+						})
 					}
 				}
 			}
@@ -192,6 +214,10 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		}
 
 		ac.LastAttack = tick
+		s.AttackRecords = append(s.AttackRecords, AttackRecord{
+			EntityID: uint32(e),
+			Tick:     tick,
+		})
 	})
 
 	// Apply all pending damage simultaneously — no entity gets first-strike

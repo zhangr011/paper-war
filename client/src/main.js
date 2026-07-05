@@ -149,6 +149,12 @@ const SELECTION_BORDER_COLOR = { r: 0.3, g: 0.9, b: 1.0, a: 0.7 };
 // Cleanup dead units every N frames
 const CLEANUP_INTERVAL = 30; // frames (roughly once per second at 30fps)
 
+// Attack-animation one-shot duration — 3 frames at 14 FPS (see
+// unit_atlas.js ANIM_FPS / FRAMES_PER_STATE).  The renderer plays the
+// swing once per attack-fire event, then returns to alert-idle.
+// Issue #48.
+const ATTACK_DURATION_MS = (3 / 14) * 1000; // ≈214ms
+
 // Terrain type colors tuned to the dark, earthy pixel-art palette of
 // design/map.png.  Histogram analysis of the reference art (Jun 2026) shows
 // the playable area averages RGB(83, 104, 48) with a patchwork of two dominant
@@ -1736,6 +1742,19 @@ export class Game {
         const DIE_DURATION_MS = 600;
         const dieT = Math.min(1, dieElapsed / DIE_DURATION_MS);
         frame = Math.min(dieFrames - 1, Math.floor(dieT * dieFrames));
+      } else if (unit.attackTriggeredAt > 0 &&
+                 timeMs - unit.attackTriggeredAt < ATTACK_DURATION_MS) {
+        // Issue #48 — attack animation is a one-shot keyed off the
+        // server's attack-fire event (EventProjectile).  Drive the frame
+        // from elapsed time like the death anim, play once, then fall
+        // through to alert-idle until the next event arrives.  This
+        // replaces the old behaviour of looping the swing while the AI
+        // was in Attack mode (state 3), which desynced from real shots.
+        state = STATE_ATTACK;
+        const attackFrames = FRAMES_PER_STATE[STATE_ATTACK];
+        const attackElapsed = timeMs - unit.attackTriggeredAt;
+        const attackT = Math.min(1, attackElapsed / ATTACK_DURATION_MS);
+        frame = Math.min(attackFrames - 1, Math.floor(attackT * attackFrames));
       } else {
         // Server state → atlas state mapping.  All "moving" AI states
         // (Patrol/Approach/Scout/Capture/Push/Regroup) collapse to
@@ -1743,8 +1762,11 @@ export class Game {
         // facing system handles the direction).  Defend maps to IDLE2
         // (alert/idle variant) so defenders visually differ from
         // idle garrison units.
+        // Issue #48 — Attack AI (state 3) between shots now maps to
+        // IDLE2 (alert) instead of looping STATE_ATTACK, so idle
+        // attackers don't hold a frozen mid-swing pose.
         switch (serverState) {
-          case 3: state = STATE_ATTACK; break;
+          case 3: state = STATE_IDLE2; break;
           case 5: state = STATE_IDLE2; break;
           case 4: state = STATE_MOVE; break;  // retreat — same walk cycle
           case 1: case 2: case 6: case 7: case 8: case 9:

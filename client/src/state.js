@@ -56,9 +56,25 @@ const DEATH_FADE_MS = 600;
 // Issue #28 — Facing dead-zone.
 // Position deltas below this threshold don't update facing, so units
 // that are essentially stationary don't flicker between directions.
-// In tile-space (state.js stores positions as tile floats), 0.01 tile
-// per tick ≈ 0.1 tile/sec at 10Hz — well below visible movement.
-const FACING_DEADZONE_SQ = 0.01 * 0.01;
+// Issue #48 — bumped from 0.01² to 0.04².  The old threshold only
+// filtered sub-step jitter; the new one also absorbs the small
+// snapshot-delta noise that flips facing on slow diagonals.  0.04 tile
+// per tick ≈ 0.4 tile/sec at 10Hz — still below visible movement speed.
+const FACING_DEADZONE_SQ = 0.04 * 0.04;
+
+// Issue #48 — Axis-lock hysteresis.  Once facing is on a given axis
+// (horizontal E/W or vertical N/S), only switch to the other axis when
+// its component magnitude exceeds the current axis's by this factor.
+// Kills the per-tick diagonal-flip twitch (units walking NE used to
+// alternate N/E every snapshot).  1.5 = "the new axis must be 50%
+// larger before we commit to switching."
+const FACING_AXIS_SWITCH_RATIO = 1.5;
+
+// Issue #48 — Attack-swing duration; matches main.js ATTACK_DURATION_MS
+// (3 frames @ 14 FPS).  Duplicated here because state.js owns the
+// per-unit lifecycle flags and must know when to release the attack-
+// induced facing lock without depending on the renderer module.
+const ATTACK_DURATION_MS = (3 / 14) * 1000;
 
 // Accelerated correction: when the interpolated position is far from the
 // target, blend toward it faster to avoid a visible "slide".
@@ -167,6 +183,16 @@ class UnitState {
     // The renderer plays the die animation for ~600 ms after dyingAt,
     // then the unit is removed from getRenderUnits().
     this.dyingAt = 0;
+
+    // Attack-fire lifecycle — issue #48.
+    //   0          = not currently in an attack swing
+    //   <timestamp> = render clock (performance.now()) the most recent
+    //                 attack-fire event arrived.  The renderer plays the
+    //                 attack animation once over ATTACK_DURATION_MS, then
+    //                 returns to alert-idle until the next event arrives.
+    //                 Facing is locked for the duration so the unit keeps
+    //                 its weapon pointed at the target mid-swing.
+    this.attackTriggeredAt = 0;
 
     // Non-interpolated fields (use curr directly)
     this.targetID = 0;
@@ -528,22 +554,43 @@ export class StateManager {
       // Angle does not use accelerated correction (it would cause spinning)
       unit.renderAngle = ra;
 
-      // Issue #28 — update facing from the (prev → curr) position delta.
-      // We use the snapshot delta rather than the interpolated render
-      // delta because the latter can briefly be zero at t≈0 even when
-      // the unit is moving, causing flicker.  The deadzone prevents
-      // jitter when the unit is essentially stationary.
-      const dxSnap = unit.currX - unit.prevX;
-      const dySnap = unit.currY - unit.prevY;
-      const distSq = dxSnap * dxSnap + dySnap * dySnap;
-      if (distSq > FACING_DEADZONE_SQ) {
-        // Cardinal snap: pick the axis with the larger magnitude.
-        // Ties go to the horizontal axis (E/W), which feels natural for
-        // a side-view bias.  Coordinate system: +y is south on screen.
-        if (Math.abs(dxSnap) >= Math.abs(dySnap)) {
-          unit.facing = dxSnap > 0 ? 1 /*DIR_E*/ : 3 /*DIR_W*/;
-        } else {
-          unit.facing = dySnap > 0 ? 0 /*DIR_S*/ : 2 /*DIR_N*/;
+      // Issue #28 / #48 — update facing from the (prev → curr) position
+      // delta.  We use the snapshot delta rather than the interpolated
+      // render delta because the latter can briefly be zero at t≈0 even
+      // when the unit is moving, causing flicker.  The deadzone prevents
+      // jitter when the unit is essentially stationary.  Issue #48 adds
+      // axis-lock hysteresis: once facing commits to an axis, the other
+      // axis must win by FACING_AXIS_SWITCH_RATIO before we switch,
+      // killing the diagonal-flip twitch.
+      //
+      // Issue #48 — facing is locked for the duration of an attack swing
+      // so the unit keeps its weapon pointed at the target mid-animation
+      // instead of turning its back if movement resumes mid-swing.
+      const inAttackSwing =
+        unit.attackTriggeredAt > 0 &&
+        performance.now() - unit.attackTriggeredAt < ATTACK_DURATION_MS;
+      if (!inAttackSwing) {
+        const dxSnap = unit.currX - unit.prevX;
+        const dySnap = unit.currY - unit.prevY;
+        const distSq = dxSnap * dxSnap + dySnap * dySnap;
+        if (distSq > FACING_DEADZONE_SQ) {
+          const ax = Math.abs(dxSnap);
+          const ay = Math.abs(dySnap);
+          // Current axis: 0 = horizontal (E/W), 1 = vertical (N/S).
+          const currIsVertical = unit.facing === 0 /*S*/ || unit.facing === 2 /*N*/;
+          let pickVertical;
+          if (currIsVertical) {
+            // Switch to horizontal only if dx wins by the ratio.
+            pickVertical = !(ax > ay * FACING_AXIS_SWITCH_RATIO);
+          } else {
+            // Switch to vertical only if dy wins by the ratio.
+            pickVertical = ay > ax * FACING_AXIS_SWITCH_RATIO;
+          }
+          if (!pickVertical) {
+            unit.facing = dxSnap > 0 ? 1 /*DIR_E*/ : 3 /*DIR_W*/;
+          } else {
+            unit.facing = dySnap > 0 ? 0 /*DIR_S*/ : 2 /*DIR_N*/;
+          }
         }
       }
     }
@@ -679,7 +726,8 @@ export class StateManager {
           if (this.onCommanderDown) this.onCommanderDown(ev.data);
           break;
         case EVENT_PROJECTILE:
-          if (this.onProjectile) this.onProjectile(ev.data);
+          this._handleAttack(ev);
+          if (this.onProjectile) this.onProjectile(ev);
           break;
       }
     }
@@ -738,6 +786,27 @@ export class StateManager {
           unit.prevY = unit.currY = deathY;
         }
       }
+    }
+  }
+
+  /**
+   * Handle an attack-fire event (EventProjectile, repurposed in issue #48
+   * to mean "this unit resolved an attack at this tick").  Stamps the
+   * render clock on the attacker so the renderer plays the attack
+   * animation once as a one-shot.  No-op if the attacker isn't in our
+   * unit table (e.g., fog-of-war entity we never knew about).
+   *
+   * Connection.js decodes the payload into {entityID, tick}; the tick is
+   * unused client-side — animation timing is driven off the arrival
+   * moment, which is close enough to the server tick at v1 latencies.
+   * @param {{entityID?:number}} data
+   * @private
+   */
+  _handleAttack(data) {
+    if (!data || typeof data.entityID !== 'number') return;
+    const unit = this.units.get(data.entityID);
+    if (unit && unit.alive) {
+      unit.attackTriggeredAt = performance.now();
     }
   }
 

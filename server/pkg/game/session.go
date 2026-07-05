@@ -1526,6 +1526,23 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		// Clean up snapshot generator's prevStates for dead entities
 		gs.SnapGen.ClearPrevStates(deadIDs)
 	}
+	// Attach attack-fire events from CombatSystem.  Each record is one
+	// attack resolution this tick; the client uses it to drive the attack
+	// animation as a one-shot per shot.  Reuses EventProjectile (declared
+	// but previously unwired) — semantics: "this unit fired at this tick",
+	// payload {entityID uint32, tick uint32} = 8 bytes.  Issue #48.
+	if gs.combatSys != nil && len(gs.combatSys.AttackRecords) > 0 {
+		for _, rec := range gs.combatSys.AttackRecords {
+			data := make([]byte, 8)
+			le := binary.LittleEndian
+			le.PutUint32(data[0:4], rec.EntityID)
+			le.PutUint32(data[4:8], rec.Tick)
+			snap.Events = append(snap.Events, network.Event{
+				Type: network.EventProjectile,
+				Data: data,
+			})
+		}
+	}
 	// Compute base alert: is the player's spawn under attack?
 	snap.BaseAlert = gs.checkBaseAlert(playerID)
 

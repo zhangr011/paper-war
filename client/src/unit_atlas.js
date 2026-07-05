@@ -177,7 +177,7 @@ export function currentFrame(state, entityID, timeMs, stateEnteredMs = 0) {
  * @param {number} dir       0..3 (S, E, N, W)
  * @param {number} frame     0..N-1
  */
-function drawCell(ctx, ox, oy, unitType, state, dir, frame) {
+export function drawCell(ctx, ox, oy, unitType, state, dir, frame) {
   ctx.save();
   ctx.translate(ox, oy);
 

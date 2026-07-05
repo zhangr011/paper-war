@@ -1043,6 +1043,23 @@ body.spectator-mode #gold {
   line-height: 1;
   position: relative;
 }
+
+/* frontend-design skill — staggered page-load reveal on the login card.
+   One orchestrated moment (title → subtitle → form) instead of the whole
+   card appearing at once. Each element rises 8px and fades in over the
+   existing --duration-slow token, cascading at 0 / 90 / 180 ms. The
+   reduced-motion media query at the bottom of this file already nukes
+   animation-duration globally, so the cascade is fully respected there. */
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.login-title    { animation: login-rise var(--duration-slow) var(--ease-out) both;
+                  animation-delay: 0ms; }
+.login-subtitle { animation: login-rise var(--duration-slow) var(--ease-out) both;
+                  animation-delay: 90ms; }
+#login-form     { animation: login-rise var(--duration-slow) var(--ease-out) both;
+                  animation-delay: 180ms; }
 .login-subtitle {
   font-family: var(--font-body);
   font-size: 11px;

@@ -542,6 +542,22 @@ export class StateManager {
     for (const unit of units.values()) {
       if (!unit.alive) continue;
 
+      // Issue #52 — freeze render position for the duration of an attack
+      // swing so the unit "plants to fire" instead of sliding through the
+      // animation. curr/prev still advance from snapshots; only the render
+      // transform is held. When the swing ends the next frame sees a large
+      // delta and routes through the accelerated-correction path below,
+      // which blends smoothly (~30%/tick) instead of snapping. The die
+      // state has its own anchored-position handling and never reaches
+      // here (units in the fade window are skipped by the alive check).
+      const freezeForAttack =
+        unit.attackTriggeredAt > 0 &&
+        now - unit.attackTriggeredAt < ATTACK_DURATION_MS;
+      if (freezeForAttack) {
+        unit.renderAngle = lerpAngle(unit.prevAngle, unit.currAngle, t);
+        continue;
+      }
+
       // Base interpolation
       let rx = lerp(unit.prevX, unit.currX, t);
       let ry = lerp(unit.prevY, unit.currY, t);

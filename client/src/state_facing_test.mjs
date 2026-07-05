@@ -556,5 +556,51 @@ await test('Issue #51: canonical event-death path is unchanged', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Issue #52 — units plant during the attack swing, then resume moving
+// ---------------------------------------------------------------------------
+
+const EVENT_PROJECTILE_52 = 4;
+
+await test('Issue #52: render position freezes for the attack swing then resumes', async () => {
+  const sm = new StateManager();
+  mockTime = 1000;
+  sm.applySnapshot(1, 0, [{
+    entityID: 60, changedMask: CHANGED_POSITION | CHANGED_HP,
+    x: 0, y: 0, hp: 100, unitType: 0, team: 1,
+  }], []);
+  shiftTime(sm, 0);
+  shiftTime(sm, 100); // snap1 active, t=1.0
+  // Snap2 moves the unit to x=1.
+  sm.applySnapshot(2, 1, [{
+    entityID: 60, changedMask: CHANGED_POSITION, x: 1, y: 0,
+  }], []);
+  shiftTime(sm, 100); // elapsed≥tickDuration → snap2 activates, t=0
+  shiftTime(sm, 50);  // t=0.5 → renderX = 0.5
+  const beforeSwingX = sm.getUnit(60).renderX;
+  assert.ok(beforeSwingX > 0, `prerequisite: unit has interpolated forward (got ${beforeSwingX})`);
+
+  // Fire attack event — freeze begins.
+  mockTime += 10;
+  sm.applySnapshot(3, 2, [], [{ type: EVENT_PROJECTILE_52, entityID: 60, tick: 3 }]);
+  sm.update(mockTime);
+  const frozenAt = sm.getUnit(60).renderX;
+
+  // Time advances WITHIN the swing window. The unit would normally keep
+  // interpolating toward x=1, but the freeze must hold renderX.
+  mockTime += 100;
+  sm.update(mockTime);
+  assert.equal(sm.getUnit(60).renderX, frozenAt,
+    'renderX must not advance during the attack swing');
+
+  // Past ATTACK_DURATION_MS — the freeze releases and interpolation
+  // resumes (catching up via the accelerated-correction path).
+  mockTime += Math.ceil(ATTACK_DURATION_MS) + 200;
+  sm.update(mockTime);
+  const afterSwingX = sm.getUnit(60).renderX;
+  assert.ok(afterSwingX > frozenAt,
+    `renderX must resume advancing after the swing (frozen=${frozenAt}, after=${afterSwingX})`);
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

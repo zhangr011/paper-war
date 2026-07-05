@@ -1096,6 +1096,16 @@ body.spectator-mode #gold {
 #leaderboard-screen.active .lobby-title          { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 0ms; }
 #leaderboard-screen.active .leaderboard-table    { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 100ms; }
 #leaderboard-screen.active .leaderboard-actions  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 200ms; }
+
+/* frontend-design skill — clash cascade. Title → Team 1 → Team 2 →
+   Terrain → actions. The three .clash-section siblings are targeted
+   via nth-of-type so the cascade reads "each side, then the
+   battlefield, then go." Scoped to #clash-screen.active. */
+#clash-screen.active .lobby-title                  { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 0ms; }
+#clash-screen.active .clash-section:nth-of-type(1) { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 90ms; }
+#clash-screen.active .clash-section:nth-of-type(2) { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 180ms; }
+#clash-screen.active .clash-section:nth-of-type(3) { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 270ms; }
+#clash-screen.active .clash-actions                { animation: rise-in var(--duration-slow) var(--ease-out) both; animation-delay: 360ms; }
 .login-subtitle {
   font-family: var(--font-body);
   font-size: 11px;

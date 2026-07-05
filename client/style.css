@@ -1042,6 +1042,13 @@ body.spectator-mode #gold {
   letter-spacing: 3px;
   line-height: 1;
   position: relative;
+  /* frontend-design skill — letterpress depth: a faint top highlight
+     catches the (implied) light, a soft warm shadow below the glyphs
+     reads as ink pressed into parchment. Stays within the verified
+     palette (no new hues), only adds depth via layered shadows. */
+  text-shadow:
+    0 1px 0 rgba(255, 248, 230, 0.55),
+    0 2px 3px rgba(58, 42, 26, 0.18);
 }
 
 /* frontend-design skill — staggered page-load reveal on the login card.

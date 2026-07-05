@@ -19,7 +19,8 @@
       <h1 class="login-title">Paper War</h1>
       <p class="login-subtitle">Real-Time Strategy</p>
       <form id="login-form" autocomplete="off">
-        <input type="text" id="login-username" placeholder="Enter your name" maxlength="20" required>
+        <label class="sr-only" for="login-username">Player name</label>
+        <input type="text" id="login-username" name="login-username" placeholder="Enter your name" maxlength="20" autocomplete="username" required>
         <button type="submit" class="login-btn">Join</button>
       </form>
     </div>

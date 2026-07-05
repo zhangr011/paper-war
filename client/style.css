@@ -1624,6 +1624,19 @@ canvas:focus-visible {
   outline: none;
 }
 
+/* Visually-hidden but screen-reader-available label (rule: form-labels).
+   Used for inputs whose visible affordance is a placeholder only, so
+   VoiceOver/TalkBack still announce a proper field name. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --- Phase 5: Touch target minimum (44×44px) --- */
 /* Rule: "Minimum 44x44px touch targets" — applied to every interactive
    button and clickable control. Padding alone wasn't enough on the

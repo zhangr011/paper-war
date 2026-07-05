@@ -1670,10 +1670,15 @@ body.spectator-mode #gold {
 .leaderboard-table tbody tr.leaderboard-self {
   background: rgba(255,215,0,0.12);
 }
-.leaderboard-table tbody tr.leaderboard-self td:first-child::before {
-  content: '▶ ';
-  color: #FFD700;
-  font-size: 10px;
+/* frontend-design skill — self-row marker. Was a '▶' Unicode glyph
+   (font-dependent, renders inconsistently across systems; the skill
+   flags decorative glyphs the way it flags emoji-as-icons). Replaced
+   with a CSS-drawn gold accent bar via inset box-shadow — crisp on
+   every platform, no layout shift (a real border would nudge the
+   cell content), and reads as a rankings-board "you are here" marker
+   rather than a play button. */
+.leaderboard-table tbody tr.leaderboard-self td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 .leaderboard-actions {
   display: flex;

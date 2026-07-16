@@ -679,6 +679,13 @@ func main() {
 	// via env (GLM_BASE_URL, GLM_MODEL) and overridable per request.
 	http.HandleFunc("/editor/ai", aiProxy)
 
+	// 6c. Snapshot data for the Clash Map editor (client/editor/map.html).
+	// Returns the six hand-authored clash maps as JSON so the editor can
+	// load them as editable starting points. Serializes straight from
+	// clash_maps.go, so it stays in sync with the Go source — no
+	// hand-copied snapshot to drift (unlike the units editor's SOURCE_STATS).
+	http.HandleFunc("/editor/clash-maps", clashMapsJSON)
+
 	// 7. Start server — Serve() registers /ws and calls http.ListenAndServe
 	addr := ":9091"
 	log.Printf("Paper War server starting on %s", addr)
@@ -768,6 +775,45 @@ func spawnSquadsForPlayerWithCmdType(gs *game.GameSession, playerID uint32, play
 	ct := component.CombatUnitType(cmdType)
 	gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(cy), 1, ct)
 	gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(cy), 1, ct)
+}
+
+// clashMapSnapshot is the JSON shape the Clash Map editor consumes for one
+// hand-authored clash map. Terrain and Elevation are row-major (y*W+x),
+// matching GameMap.Tiles layout. []int (not []uint8) so encoding/json emits a
+// number array — []byte aliases serialize as base64 strings.
+type clashMapSnapshot struct {
+	W         int32 `json:"w"`
+	H         int32 `json:"h"`
+	Terrain   []int `json:"terrain"`
+	Elevation []int `json:"elevation"`
+}
+
+// clashMapsJSON serializes the six hand-authored clash maps (clash_maps.go)
+// as JSON so client/editor/map.html can load them as editable snapshots.
+// Reads straight from LoadClashMap, so the editor never holds a stale copy.
+func clashMapsJSON(w http.ResponseWriter, r *http.Request) {
+	names := []string{"plains", "forest", "road", "river", "stronghold", "hills"}
+	out := make(map[string]clashMapSnapshot, len(names))
+	for _, name := range names {
+		gm := tilemap.LoadClashMap(name)
+		if gm == nil {
+			continue
+		}
+		n := int(gm.Width) * int(gm.Height)
+		snap := clashMapSnapshot{
+			W:         gm.Width,
+			H:         gm.Height,
+			Terrain:   make([]int, n),
+			Elevation: make([]int, n),
+		}
+		for i, t := range gm.Tiles {
+			snap.Terrain[i] = int(t.TerrainType)
+			snap.Elevation[i] = int(t.Elevation)
+		}
+		out[name] = snap
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // combatPrompt / animationPrompt instruct the model to return a strict JSON

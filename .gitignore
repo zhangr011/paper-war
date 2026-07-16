@@ -28,3 +28,6 @@ do-push.sh
 .heres/plans/
 .hermes/plans/
 .gstack/
+
+# CodeGraph local index (tool artifact)
+.codegraph/

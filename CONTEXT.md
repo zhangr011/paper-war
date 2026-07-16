@@ -91,9 +91,29 @@ _Avoid_: user, client (means the browser)
 A side in the conflict (Player or Enemy). Determines ally/enemy relationships.
 _Avoid_: side, team
 
+**Map**:
+The board a match is played on: a 2D grid of Tiles with Spawn positions and an Objective. Produced either procedurally (Match Map) or by hand (Clash Map). The two variants share the same structure but differ in size, features, and how they are used — see ADR-0022.
+_Avoid_: board, level, scenario
+
+**Clash Map**:
+A Map used by the spectator/balance harness. Terrain-only in live use — its Spawns and Objective are overridden at runtime. Hand-authored as Go source.
+_Avoid_: test map, arena
+
+**Match Map**:
+A Map used by solo and PvP queue. Full features: procedural terrain, elevation, Spawns, and an Objective (Elimination/Capture/Survival).
+_Avoid_: real map, game map
+
 **Tile**:
-One cell in the game map. Has a terrain type and optional destructible health.
+One cell in a Map. Has a Terrain Type and, for hills, an Elevation band. Some tiles carry destructible health.
 _Avoid_: cell, grid square
+
+**Terrain Type**:
+The classification of a Tile. v1 has 16 types (Plain, Road, Shallow, Deep, Forest, Hill, Swamp, Bridge, Wall, Snow, Desert, Stronghold1–5). Determines movement cost per Movement Profile and, for some, destructibility.
+_Avoid_: tile type, ground
+
+**Elevation**:
+The discrete hill-layer band of a Hill Tile: low, mid, or peak. Visual only — affects rendering, not movement or combat.
+_Avoid_: height, altitude
 
 **Objective**:
 The win condition for a match, determined by the map. Types: Elimination (wipe all enemies), Capture (hold a target stronghold for N ticks), Survival (player eliminates all AI defenders before time expires). In v1, the player is always the attacker and the AI is always the defender. Stored as an explicit field on GameMap with type-specific data.

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paper War — Combat Unit Editor</title>
+  <style>
+    /* Dev tool only — deliberately NOT using the ui-ux-pro-max design
+       system (ADR-0021). Plain dark UI, minimal CSS. Mirrors
+       animation.html so the two editors feel like siblings. */
+    :root {
+      --bg: #1a1a1a;
+      --panel: #2a2a2a;
+      --border: #444;
+      --text: #e0e0e0;
+      --muted: #888;
+      --accent: #c8a832;     /* gold, matches in-game accent */
+      --bad:   #c8503c;      /* validation / imbalance warn */
+      --good:  #5aa05a;
+      --front: #6fa3d6;      /* frontline role tint  */
+      --ranged:#d6a36f;      /* ranged role tint    */
+      --heavy: #c8a832;      /* heavy role tint     */
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: 12px;
+    }
+    h1 { font-size: 16px; margin: 0 0 8px; }
+    h2 { font-size: 13px; margin: 16px 0 6px; color: var(--muted);
+         text-transform: uppercase; letter-spacing: 0.05em; }
+    .info { color: var(--muted); font-size: 12px; }
+    code { background: var(--panel); padding: 1px 4px; border-radius: 2px;
+           color: var(--accent); }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+           margin-bottom: 6px; }
+    button {
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 4px 10px; cursor: pointer; font: inherit;
+    }
+    button:hover { border-color: var(--accent); }
+    button.active { background: var(--accent); color: #1a1a1a;
+                    border-color: var(--accent); font-weight: 600; }
+    .columns { display: flex; gap: 16px; flex-wrap: wrap;
+               align-items: flex-start; }
+    .col { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 4px; padding: 10px; }
+    .col.grow { flex: 1 1 720px; }
+
+    table.stats, table.matrix, table.metrics {
+      border-collapse: collapse; width: 100%;
+    }
+    table.stats th, table.stats td,
+    table.matrix th, table.matrix td,
+    table.metrics th, table.metrics td {
+      padding: 3px 6px; text-align: left;
+      border-bottom: 1px solid #333;
+    }
+    table.stats th, table.matrix th, table.metrics th {
+      color: var(--muted); font-weight: 600; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    table.stats td.unit { color: var(--text); white-space: nowrap; }
+    .role-pill {
+      display: inline-block; padding: 1px 6px; border-radius: 8px;
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .role-Frontline { background: var(--front); color: #14233a; }
+    .role-Ranged    { background: var(--ranged); color: #2a1c0e; }
+    .role-Heavy     { background: var(--heavy); color: #1a1a1a; }
+
+    .num {
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 2px 4px; font: inherit; width: 56px;
+    }
+    .num:focus { border-color: var(--accent); outline: none; }
+    .num.dirty { border-color: var(--accent); }
+    select.num { width: 92px; }
+
+    table.stats td.warn, .warn-text { color: var(--bad); }
+    .ok-text { color: var(--good); }
+
+    table.matrix input { width: 48px; text-align: center; }
+    table.metrics td.num-c { text-align: right; font-variant-numeric: tabular-nums; }
+
+    textarea.export {
+      width: 100%; min-height: 220px;
+      background: #111; color: var(--text);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 8px; font: 11px/1.45 "SF Mono", Menlo, Consolas, monospace;
+    }
+    .hidden { display: none; }
+    .pillbar { display: flex; gap: 4px; margin: 4px 0 0; }
+    .pillbar .seg { height: 8px; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Paper War — Combat Unit Editor</h1>
+  <p class="info">
+    Dev tool for authoring combat-unit balance — the <code>CombatUnitTypeTable</code>
+    and damage matrix in <code>server/pkg/component/unit_type.go</code> that drive
+    the AI commander's recruit / counter logic (<code>server/pkg/ai/ai.go</code>)
+    and the playtest + clash-balance tests. Read-only against game code — tunes
+    parameters only, exports Go source to paste back. Served by the Go
+    <code>http.FileServer</code>; no build step.
+  </p>
+
+  <div class="row">
+    <button id="reset-btn">Reset to source</button>
+    <button id="copy-go-btn">Copy Go source</button>
+    <button id="show-go-btn">Show Go source</button>
+    <button id="export-json-btn">Export JSON</button>
+    <button id="import-json-btn">Import JSON…</button>
+    <input type="file" id="json-file" accept="application/json" class="hidden" />
+    <span class="info" id="status" style="margin-left:8px"></span>
+  </div>
+
+  <div class="col" style="margin-bottom:8px">
+    <h2>AI balance assistant — GLM</h2>
+    <div class="info" style="margin-bottom:6px">
+      Describe a balance change in plain language; the linked GLM model returns a
+      JSON delta that merges into the table (then re-validates). Key from
+      <code>GLM_API_KEY</code> env on the server, or enter one below (stored only
+      in this browser's localStorage).
+    </div>
+    <div class="row">
+      <label>Backend</label>
+      <select id="ai-backend" class="num" style="width:140px">
+        <option value="claude">Claude CLI</option>
+        <option value="glm">GLM (HTTP)</option>
+      </select>
+      <label>API key</label>
+      <input type="password" id="ai-key" class="num" style="width:220px" placeholder="glm-… (or set GLM_API_KEY env)" />
+      <label>Base URL</label>
+      <input type="text" id="ai-base" class="num" style="width:260px" />
+      <label>Model</label>
+      <input type="text" id="ai-model" class="num" style="width:120px" />
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <label>Prompt</label>
+      <textarea id="ai-prompt" rows="2" style="flex:1;min-width:320px;max-width:760px"
+        placeholder="e.g. Snipers dominate — make them squishier and slower to fire; lower their HP to 22 and raise Cooldown to 16."></textarea>
+    </div>
+    <div class="row">
+      <button id="ai-apply-btn" class="active">Ask GLM &amp; apply</button>
+      <button id="ai-quick-1">Snipers too strong</button>
+      <button id="ai-quick-2">Speed up the early game</button>
+      <button id="ai-quick-3">Make heavy armor tankier vs guns</button>
+      <span class="info" id="ai-status" style="margin-left:8px"></span>
+    </div>
+  </div>
+
+  <div class="columns">
+    <div class="col grow">
+      <h2>Combat unit stats — editable</h2>
+      <div id="stats-table"></div>
+      <div class="info" id="dirty-flag" style="margin-top:6px"></div>
+    </div>
+
+    <div class="col">
+      <h2>Damage matrix — weapon × armor (%, 100 = 1.0×)</h2>
+      <div id="matrix-table"></div>
+      <p class="info" style="margin-top:6px">
+        Rows = weapon, cols = armor. Drives <code>DamageMultiplier()</code> and the
+        AI's "can it hurt this" counter-logic.
+      </p>
+    </div>
+  </div>
+
+  <div class="columns">
+    <div class="col grow">
+      <h2>Derived balance metrics</h2>
+      <div id="metrics-table"></div>
+      <p class="info">
+        DPS = Damage / (Cooldown × tick). Effective-DPS columns multiply by the
+        damage-matrix % for that weapon vs armor. Gold-eff = stat per recruit-gold.
+      </p>
+    </div>
+
+    <div class="col">
+      <h2>AI recruitment view</h2>
+      <div id="ai-view"></div>
+      <p class="info">
+        What the AI commander sees: tactical role, recruit cost, and the
+        role-ratio target the adaptive recruiter aims for.
+      </p>
+    </div>
+  </div>
+
+  <div id="export-wrap" class="hidden">
+    <h2>Go source — paste into server/pkg/component/unit_type.go</h2>
+    <textarea class="export" id="export-text" readonly></textarea>
+  </div>
+
+  <script type="module" src="units_editor.js"></script>
+</body>
+</html>

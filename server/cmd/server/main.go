@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -666,6 +670,15 @@ func main() {
 		log.Printf("Client files served from: %s", clientDir)
 	}
 
+	// 6b. AI proxy for the combat-unit editor (client/editor/units.html).
+	// The editor POSTs a balance instruction + current stats here; we forward
+	// to the GLM chat-completions API and return its JSON-delta suggestion.
+	// Registered before "/" so it wins the DefaultServeMux precedence.
+	// Key resolution: GLM_API_KEY env (preferred, keeps the key off the
+	// client) → client-supplied apiKey. Base URL + model are configurable
+	// via env (GLM_BASE_URL, GLM_MODEL) and overridable per request.
+	http.HandleFunc("/editor/ai", aiProxy)
+
 	// 7. Start server — Serve() registers /ws and calls http.ListenAndServe
 	addr := ":9091"
 	log.Printf("Paper War server starting on %s", addr)
@@ -755,4 +768,259 @@ func spawnSquadsForPlayerWithCmdType(gs *game.GameSession, playerID uint32, play
 	ct := component.CombatUnitType(cmdType)
 	gs.SpawnTeamWithType(playerID, baseSquadID, fixed.FromFloat(x1), fixed.FromFloat(cy), 1, ct)
 	gs.SpawnTeamWithType(playerID, baseSquadID+1, fixed.FromFloat(x2), fixed.FromFloat(cy), 1, ct)
+}
+
+// combatPrompt / animationPrompt instruct the model to return a strict JSON
+// delta the editor can merge. Shared across both backends.
+var combatPrompt = `You are a game-balance designer for "Paper War", a real-time strategy game.
+You receive the current CombatUnitTypeTable (JSON, keyed by unit) and a 4x3
+damage matrix ([weapon][armor] percent, 100 = 1.0x), plus a user instruction.
+Respond with ONLY a JSON object describing the changes. Schema:
+{
+  "stats": { "<UnitKey>": { "field": value }, ... },
+  "damageMatrix": [[w0a0,w0a1,w0a2], ...]
+}
+Valid unit keys: LightInfantry, HeavyInfantry, Sniper, AntiArmorInfantry,
+MotorGun, MotorArtillery, MotorMissile.
+Valid fields: Weapon(Gun|Cannon|Sniper|Missile), Armor(Light|Heavy|Building),
+Cost(int>=1), HP(int>0), Damage(int>0), Range(int 1..32), Cooldown(int>=1),
+RecruitCost(int>=0 gold), KillBounty(int ~= 80% of RecruitCost).
+Include only the units/fields you change; damageMatrix is optional and must
+be a full 4x3 if present. No prose, no markdown fences, no comments.`
+
+var animationPrompt = `You are a pixel-art animation timing designer for "Paper War", a real-time strategy game.
+You receive the current per-state animation parameters and a user instruction.
+There are 5 states, indexed 0..4: idle, idle2, move, attack, die.
+  - framesPerState: array of 5 ints, the frame count per state. Each 1..4
+    (MAX_FRAMES_PER_SPRITE — the atlas reserves 4 cells per sprite slot).
+  - animFps: array of 5 ints, playback rate in frames-per-second. Each 1..30.
+Respond with ONLY a JSON object describing the changes. Schema:
+{
+  "framesPerState": [n0,n1,n2,n3,n4],
+  "animFps":        [n0,n1,n2,n3,n4]
+}
+Arrays are optional — include only the ones you change, but each must be the
+full length-5 array. No prose, no markdown fences, no comments.`
+
+// sysPromptFor returns the system prompt for the given editor kind.
+func sysPromptFor(kind string) string {
+	if kind == "animation" {
+		return animationPrompt
+	}
+	return combatPrompt
+}
+
+// runClaudeCLI drives the locally-installed `claude` CLI in print mode to
+// satisfy an editor prompt, then writes an OpenAI-shaped envelope so the
+// client's response parsing is identical to the GLM path.
+//
+// `claude` authenticates itself (no key needed here). We pass
+// --dangerously-skip-permissions because the call is a local one-shot text
+// generation with no tool use; this keeps the CLI non-interactive. The
+// command runs from CLAUDE_CLI_DIR (env, default "/tmp") so it doesn't pull
+// in an arbitrary project's context.
+func runClaudeCLI(w http.ResponseWriter, instruction, model, sysPrompt string,
+	stats, matrix, frames, fps json.RawMessage) {
+	// Build the same user-message JSON the GLM path sends.
+	userObj := map[string]interface{}{"instruction": instruction}
+	if len(stats) > 0 && string(stats) != "null" {
+		userObj["stats"] = stats
+	}
+	if len(matrix) > 0 && string(matrix) != "null" {
+		userObj["damageMatrix"] = matrix
+	}
+	if len(frames) > 0 && string(frames) != "null" {
+		userObj["framesPerState"] = frames
+	}
+	if len(fps) > 0 && string(fps) != "null" {
+		userObj["animFps"] = fps
+	}
+	userMsg, _ := json.Marshal(userObj)
+
+	args := []string{
+		"-p", string(userMsg),
+		"--append-system-prompt", sysPrompt,
+		"--output-format", "json",
+		"--dangerously-skip-permissions",
+	}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	dir := os.Getenv("CLAUDE_CLI_DIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+
+	cmd := exec.Command("claude", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		stderr := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		// `claude` not on PATH is the most likely failure — surface it plainly.
+		http.Error(w, "claude CLI failed: "+err.Error()+" "+stderr, http.StatusBadGateway)
+		return
+	}
+
+	var cr struct {
+		Result  string `json:"result"`
+		IsError bool   `json:"is_error"`
+	}
+	if err := json.Unmarshal(out, &cr); err != nil {
+		http.Error(w, "could not parse claude output: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if cr.IsError {
+		http.Error(w, "claude returned error: "+cr.Result, http.StatusBadGateway)
+		return
+	}
+
+	// Wrap into the OpenAI chat-completion shape the client expects.
+	envelope := map[string]interface{}{
+		"choices": []map[string]interface{}{
+			{"message": map[string]string{"role": "assistant", "content": cr.Result}},
+		},
+		"model": "claude-cli",
+	}
+	body, _ := json.Marshal(envelope)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
+}
+
+// aiProxy forwards an editor prompt to an LLM and returns the model's JSON
+// delta. Two backends:
+//   - "glm" (default): OpenAI-compatible HTTP chat-completions (Zhipu GLM).
+//   - "claude": shells out to the locally-installed `claude` CLI in print
+//     mode, then wraps its result into the same OpenAI-shaped envelope the
+//     client already parses — so the editor code is backend-agnostic.
+//
+// kind selects the system prompt + delta schema:
+//   "combat" (default) — {stats, damageMatrix}
+//   "animation"        — {framesPerState, animFps}
+//
+// GLM auth precedence: GLM_API_KEY env → request apiKey. The claude backend
+// needs no key (the CLI authenticates itself) but requires the `claude`
+// binary on PATH.
+//
+// Request body:
+//   {kind?, backend?, prompt, ..., model?, apiKey?, baseUrl?}
+func aiProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Kind    string          `json:"kind"`
+		Backend string          `json:"backend"`
+		Prompt  string          `json:"prompt"`
+		Stats   json.RawMessage `json:"stats"`
+		Matrix  json.RawMessage `json:"damageMatrix"`
+		Frames  json.RawMessage `json:"framesPerState"`
+		Fps     json.RawMessage `json:"animFps"`
+		Model   string          `json:"model"`
+		APIKey  string          `json:"apiKey"`
+		BaseURL string          `json:"baseUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Kind == "" {
+		req.Kind = "combat"
+	}
+	if req.Backend == "" {
+		req.Backend = "glm"
+	}
+
+	// Claude CLI backend doesn't need a GLM key/base; it shells out to the
+	// locally-installed `claude` command. Resolve GLM auth only for the HTTP
+	// path so the editor works without any GLM config when backend=claude.
+	if req.Backend == "claude" {
+		runClaudeCLI(w, req.Prompt, req.Model, sysPromptFor(req.Kind), req.Stats, req.Matrix, req.Frames, req.Fps)
+		return
+	}
+
+	key := os.Getenv("GLM_API_KEY")
+	if key == "" {
+		key = req.APIKey
+	}
+	if key == "" {
+		http.Error(w, "no GLM API key — set GLM_API_KEY env or pass apiKey", http.StatusUnauthorized)
+		return
+	}
+	base := os.Getenv("GLM_BASE_URL")
+	if base == "" {
+		base = req.BaseURL
+	}
+	if base == "" {
+		base = "https://open.bigmodel.cn/api/paas/v4"
+	}
+	model := req.Model
+	if model == "" {
+		model = os.Getenv("GLM_MODEL")
+	}
+	if model == "" {
+		model = "glm-5.2"
+	}
+
+	sysPrompt := sysPromptFor(req.Kind)
+
+	// User message: instruction + whichever context blobs are present for
+	// this kind. Empty RawMessages unmarshal to "null"; skip those so the
+	// model only sees relevant fields.
+	userObj := map[string]interface{}{"instruction": req.Prompt}
+	if len(req.Stats) > 0 && string(req.Stats) != "null" {
+		userObj["stats"] = req.Stats
+	}
+	if len(req.Matrix) > 0 && string(req.Matrix) != "null" {
+		userObj["damageMatrix"] = req.Matrix
+	}
+	if len(req.Frames) > 0 && string(req.Frames) != "null" {
+		userObj["framesPerState"] = req.Frames
+	}
+	if len(req.Fps) > 0 && string(req.Fps) != "null" {
+		userObj["animFps"] = req.Fps
+	}
+	userMsg, _ := json.Marshal(userObj)
+
+	body := struct {
+		Model          string                    `json:"model"`
+		Messages       []map[string]string       `json:"messages"`
+		Temperature    float64                   `json:"temperature"`
+		ResponseFormat map[string]string         `json:"response_format,omitempty"`
+	}{
+		Model: model,
+		Messages: []map[string]string{
+			{"role": "system", "content": sysPrompt},
+			{"role": "user", "content": string(userMsg)},
+		},
+		Temperature:    0.2,
+		ResponseFormat: map[string]string{"type": "json_object"},
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	httpReq, err := http.NewRequest(http.MethodPost, base+"/chat/completions", bytes.NewReader(bodyBytes))
+	if err != nil {
+		http.Error(w, "bad upstream url: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		http.Error(w, "GLM request failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Stream the upstream body through verbatim. The client parses the
+	// OpenAI-shaped {choices:[{message:{content}}]} envelope itself, so the
+	// editor keeps working against any OpenAI-compatible endpoint.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }

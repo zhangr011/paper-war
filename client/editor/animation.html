@@ -88,6 +88,13 @@
     .col { background: var(--panel); border: 1px solid var(--border);
            border-radius: 4px; padding: 10px; }
     .atlas-wrap { overflow: auto; max-width: 100%; }
+    textarea {
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 4px 6px; font: inherit; resize: vertical;
+    }
+    textarea:focus { border-color: var(--accent); outline: none; }
+    label.ai-lbl { color: var(--muted); min-width: 60px; }
   </style>
 </head>
 <body>
@@ -100,6 +107,43 @@
 
   <div class="row" id="unit-row"></div>
   <div class="row" id="state-row"></div>
+
+  <div class="col" style="margin-bottom:8px">
+    <h2>AI timing assistant — GLM</h2>
+    <div class="info" style="margin-bottom:6px">
+      Describe an animation-timing change in plain language; the linked GLM model
+      returns a JSON delta over <code>FRAMES_PER_STATE</code> /
+      <code>ANIM_FPS</code> that merges into the table and re-renders live.
+      Key from <code>GLM_API_KEY</code> env on the server, or enter one below
+      (shared with the combat-unit editor; stored only in this browser's
+      localStorage).
+    </div>
+    <div class="row">
+      <label class="ai-lbl">Backend</label>
+      <select id="ai-backend" class="tune-input" style="width:140px">
+        <option value="claude">Claude CLI</option>
+        <option value="glm">GLM (HTTP)</option>
+      </select>
+      <label class="ai-lbl">API key</label>
+      <input type="password" id="ai-key" class="tune-input" style="width:200px" placeholder="glm-… (or set GLM_API_KEY env)" />
+      <label class="ai-lbl">Base URL</label>
+      <input type="text" id="ai-base" class="tune-input" style="width:240px" />
+      <label class="ai-lbl">Model</label>
+      <input type="text" id="ai-model" class="tune-input" style="width:110px" />
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <label class="ai-lbl">Prompt</label>
+      <textarea id="ai-prompt" rows="2" style="flex:1;min-width:300px;max-width:760px"
+        placeholder="e.g. Make the attack animation snappier: 4 frames at 18 fps."></textarea>
+    </div>
+    <div class="row">
+      <button id="ai-apply-btn" class="active">Ask GLM &amp; apply</button>
+      <button id="ai-quick-1">Snappier attack</button>
+      <button id="ai-quick-2">Livelier idle</button>
+      <button id="ai-quick-3">Faster movement</button>
+      <span class="info" id="ai-status" style="margin-left:8px"></span>
+    </div>
+  </div>
   <div class="row" id="dir-row"></div>
   <div class="row">
     <label>FPS override</label>

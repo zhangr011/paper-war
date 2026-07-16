@@ -27,3 +27,4 @@ do-push.sh
 # v1.1 plans are working docs, not source.
 .heres/plans/
 .hermes/plans/
+.gstack/

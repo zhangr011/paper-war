@@ -377,6 +377,161 @@ function renderAll() {
   renderPreview();
 }
 
+// --- AI timing assistant (GLM via /editor/ai proxy) ---------------------
+//
+// Mirrors the combat-unit editor's AI panel. Sends the current
+// framesPerState + animFps + a prompt to /editor/ai with kind:"animation";
+// the proxy forwards to GLM with a system prompt that forces a strict
+// {framesPerState?, animFps?} delta. We clamp + merge + re-render live.
+
+const AI_DEFAULTS = {
+  backend: 'claude',                       // 'claude' (CLI) or 'glm' (HTTP)
+  base: 'https://open.bigmodel.cn/api/paas/v4',
+  model: 'glm-5.2',
+};
+
+function loadAiConfig() {
+  return {
+    backend: localStorage.getItem('ai_backend') || AI_DEFAULTS.backend,
+    key: localStorage.getItem('glm_api_key') || '',
+    base: localStorage.getItem('glm_base_url') || AI_DEFAULTS.base,
+    model: localStorage.getItem('glm_model') || AI_DEFAULTS.model,
+  };
+}
+
+function syncBackendVisibility(backend) {
+  for (const id of ['ai-key', 'ai-base']) {
+    const el = $(id);
+    if (el) el.disabled = (backend !== 'glm');
+  }
+}
+
+function bindAi() {
+  const cfg = loadAiConfig();
+  $('ai-backend').value = cfg.backend;
+  $('ai-key').value = cfg.key;
+  $('ai-base').value = cfg.base;
+  $('ai-model').value = cfg.model;
+  syncBackendVisibility(cfg.backend);
+
+  $('ai-backend').addEventListener('change', (e) => {
+    localStorage.setItem('ai_backend', e.target.value);
+    syncBackendVisibility(e.target.value);
+  });
+  $('ai-key').addEventListener('change', (e) =>
+    localStorage.setItem('glm_api_key', e.target.value.trim()));
+  $('ai-base').addEventListener('change', (e) =>
+    localStorage.setItem('glm_base_url', e.target.value.trim() || AI_DEFAULTS.base));
+  $('ai-model').addEventListener('change', (e) =>
+    localStorage.setItem('glm_model', e.target.value.trim() || AI_DEFAULTS.model));
+
+  const quick = [
+    ['ai-quick-1', 'Make the attack animation snappier: 4 frames at 18 fps. Keep die at 4 frames but slow it to 6 fps for a heavier fall.'],
+    ['ai-quick-2', 'Make idle breathing more lively: bump idle and idle2 to 10 fps. Keep idle2 occasional by leaving its frame count at 2.'],
+    ['ai-quick-3', 'Speed up all movement: set move to 4 frames at 14 fps.'],
+  ];
+  for (const [id, text] of quick) $(id).addEventListener('click', () => { $('ai-prompt').value = text; });
+
+  $('ai-apply-btn').addEventListener('click', aiApply);
+}
+
+function aiStatus(msg, kind) {
+  const el = $('ai-status');
+  el.textContent = msg;
+  el.style.color = kind === 'bad' ? '#c8503c' : kind === 'good' ? '#5aa05a' : 'var(--muted)';
+}
+
+// Strip markdown fences and isolate the {...} block if the model wrapped it.
+function extractJson(text) {
+  if (!text) return null;
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1);
+  try { return JSON.parse(t); } catch { return null; }
+}
+
+// Merge a model delta into framesPerState / animFps. Each array must be the
+// full length-STATES array; values are clamped to valid ranges. Returns a
+// short change summary.
+function applyAiDelta(delta) {
+  const changes = [];
+  if (Array.isArray(delta.framesPerState) && delta.framesPerState.length === STATES) {
+    for (let s = 0; s < STATES; s++) {
+      const v = Math.max(1, Math.min(MAX_FRAMES, Math.round(delta.framesPerState[s])));
+      if (v !== framesPerState[s]) {
+        framesPerState[s] = v;
+        changes.push(`frames[${STATE_NAMES[s]}]=${v}`);
+      }
+    }
+  }
+  if (Array.isArray(delta.animFps) && delta.animFps.length === STATES) {
+    for (let s = 0; s < STATES; s++) {
+      const v = Math.max(1, Math.min(30, Math.round(delta.animFps[s])));
+      if (v !== animFps[s]) {
+        animFps[s] = v;
+        changes.push(`fps[${STATE_NAMES[s]}]=${v}`);
+      }
+    }
+    ui.fps = animFps[ui.state];
+    $('fps-input').value = ui.fps;
+  }
+  ui.scrubFrame = null;
+  return changes;
+}
+
+async function aiApply() {
+  const prompt = $('ai-prompt').value.trim();
+  if (!prompt) { aiStatus('Enter a prompt first.', 'bad'); return; }
+  const cfg = loadAiConfig();
+  aiStatus(cfg.backend === 'claude' ? 'Asking Claude CLI…' : 'Asking GLM…', '');
+  $('ai-apply-btn').disabled = true;
+  try {
+    const resp = await fetch('/editor/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'animation',
+        backend: cfg.backend,
+        prompt,
+        framesPerState,
+        animFps,
+        model: cfg.model,
+        apiKey: cfg.key,
+        baseUrl: cfg.base,
+      }),
+    });
+    const body = await resp.text();
+    if (!resp.ok) {
+      aiStatus(`Proxy error ${resp.status}: ${body.slice(0, 160)}`, 'bad');
+      return;
+    }
+    let envelope;
+    try { envelope = JSON.parse(body); } catch {
+      aiStatus('Bad response (not JSON).', 'bad'); return;
+    }
+    const content = envelope?.choices?.[0]?.message?.content;
+    const delta = extractJson(content);
+    if (!delta) {
+      aiStatus('No JSON delta in model response.', 'bad');
+      console.log('GLM raw content:', content);
+      return;
+    }
+    const changes = applyAiDelta(delta);
+    if (!changes.length) {
+      aiStatus('Model returned no applicable changes.', 'bad'); return;
+    }
+    renderAll();
+    aiStatus(`Applied ${changes.length} change(s): ${changes.join(', ')}`, 'good');
+  } catch (err) {
+    aiStatus('Request failed: ' + err.message, 'bad');
+  } finally {
+    $('ai-apply-btn').disabled = false;
+  }
+}
+
 // --- Init ---------------------------------------------------------------
 
 rebuildUnitRow();
@@ -384,5 +539,6 @@ rebuildStateRow();
 rebuildDirRow();
 bindPlayback();
 bindCopy();
+bindAi();
 renderAll();
 requestAnimationFrame(loop);

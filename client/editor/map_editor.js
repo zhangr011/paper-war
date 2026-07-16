@@ -79,6 +79,20 @@ const RUNTIME_SPAWNS = [
   { x: 16, y: 20, color: '#d6a36f' },
 ];
 
+// Movement-profile terrain costs — copied verbatim from
+// server/pkg/component/profiles.go (StandardMovementProfiles). cost 0 =
+// impassable. Used by the live connectivity check (mirrors isConnected in
+// map_validate.go) so the editor flags a clash map whose runtime spawns
+// can't reach each other before you export it.
+const PROFILE_COSTS = {
+  Light: [1,1,2,0,2,3,3,1,0,2,2,1,1,1,1,1],
+  Heavy: [1,1,0,0,3,4,4,1,0,3,2,1,1,1,1,1],
+};
+
+// Last connectivity result — { Light: bool, Heavy: bool }. render() reads
+// this to ring the spawn markers red when a profile can't connect.
+let connState = { Light: true, Heavy: true };
+
 // --- Model -----------------------------------------------------------------
 const N = GRID * GRID;
 let terrain = new Uint8Array(N);   // all 0 (Plain)
@@ -107,6 +121,54 @@ function toCss([r, g, b]) {
   return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
 }
 
+// isConnected — faithful port of server/pkg/tilemap/map_validate.go. 4-dir
+// BFS from start to end; a tile is traversable when its profile cost > 0.
+// Note (matches server): the start tile's own cost is NOT checked — only
+// neighbors — so the editor flags exactly what GenerateMap's validation would.
+function isConnected(start, end, costs) {
+  if (start.x === end.x && start.y === end.y) return true;
+  const visited = new Uint8Array(N);
+  const queue = [start.y * GRID + start.x];
+  visited[queue[0]] = 1;
+  const dirs = [1, -1, GRID, -GRID]; // +x, -x, +y, -y (row-major)
+  while (queue.length) {
+    const cur = queue.shift();
+    const cx = cur % GRID, cy = (cur - cx) / GRID;
+    for (const d of dirs) {
+      const nx = cx + (d === 1 ? 1 : d === -1 ? -1 : 0);
+      const ny = cy + (d === GRID ? 1 : d === -GRID ? -1 : 0);
+      if (nx < 0 || nx >= GRID || ny < 0 || ny >= GRID) continue;
+      const ni = ny * GRID + nx;
+      if (visited[ni]) continue;
+      if (costs[terrain[ni]] === 0) continue; // impassable
+      if (nx === end.x && ny === end.y) return true;
+      visited[ni] = 1;
+      queue.push(ni);
+    }
+  }
+  return false;
+}
+
+// checkConnectivity runs both movement profiles between the runtime spawns
+// and updates the live status badge. Called after every paint/load/clear.
+function checkConnectivity() {
+  const [a, b] = RUNTIME_SPAWNS;
+  connState = {
+    Light: isConnected(a, b, PROFILE_COSTS.Light),
+    Heavy: isConnected(a, b, PROFILE_COSTS.Heavy),
+  };
+  const el = document.getElementById('conn-status');
+  if (connState.Light && connState.Heavy) {
+    el.innerHTML = 'connectivity: <span class="ok">both profiles OK</span>';
+  } else {
+    const failed = [
+      !connState.Light ? 'Light' : null,
+      !connState.Heavy ? 'Heavy' : null,
+    ].filter(Boolean).join(' + ');
+    el.innerHTML = `connectivity: <span class="warn">${failed} stranded ⚠</span>`;
+  }
+}
+
 function render() {
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
@@ -123,11 +185,20 @@ function render() {
     ctx.beginPath(); ctx.moveTo(0, i * TILE + 0.5); ctx.lineTo(GRID * TILE, i * TILE + 0.5); ctx.stroke();
   }
   // Runtime spawn markers — squads appear here regardless of authored terrain.
+  // Ringed red when a movement profile can't connect them (stranded spawn).
+  const stranded = !(connState.Light && connState.Heavy);
   for (const s of RUNTIME_SPAWNS) {
     ctx.fillStyle = s.color;
     ctx.beginPath();
     ctx.arc(s.x * TILE + TILE / 2, s.y * TILE + TILE / 2, TILE * 0.35, 0, Math.PI * 2);
     ctx.fill();
+    if (stranded) {
+      ctx.strokeStyle = '#c8503c';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(s.x * TILE + TILE / 2, s.y * TILE + TILE / 2, TILE * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }
 
@@ -141,6 +212,7 @@ function paintAt(px, py) {
   applyBrush(x, y);
   if (mirror) applyBrush(mirrorX(x), y);
   render();
+  checkConnectivity();
 }
 
 function applyBrush(x, y) {
@@ -232,6 +304,7 @@ document.getElementById('clear-btn').onclick = () => {
   terrain = new Uint8Array(N);
   elevation = new Uint8Array(N);
   render();
+  checkConnectivity();
   setStatus('Cleared.');
 };
 
@@ -271,6 +344,7 @@ document.getElementById('load-btn').onclick = () => {
   }
   document.getElementById('map-name').value = capitalize(name);
   render();
+  checkConnectivity();
   setStatus(`Loaded "${name}".`);
 };
 
@@ -344,28 +418,51 @@ function setStatus(msg, bad = false) {
   statusEl.className = 'info' + (bad ? ' warn' : '');
 }
 
-document.getElementById('show-go-btn').onclick = () => {
+// Gate export when connectivity is failing — confirm before shipping a map
+// whose runtime spawns can't reach each other (one side would be unwinnable).
+// "Export anyway" is offered because there are legitimate reasons to export a
+// knowingly-broken map (debugging pathfinding, testing stranded-spawn logic).
+function maybeExport(action) {
+  if (connState.Light && connState.Heavy) {
+    action();
+    return;
+  }
+  const failed = [
+    !connState.Light ? 'Light' : null,
+    !connState.Heavy ? 'Heavy' : null,
+  ].filter(Boolean).join(' + ');
+  if (confirm(
+    `Connectivity check FAILED for ${failed} profile(s) between the runtime ` +
+    `spawns (16,12) and (16,20). One side may be unwinnable.\n\nExport anyway?`
+  )) {
+    action();
+  }
+}
+
+function doShowGo() {
   document.getElementById('export-wrap').classList.remove('hidden');
   document.getElementById('export-text').value = generateGo();
   setStatus('Go source generated.');
-};
-
-document.getElementById('copy-go-btn').onclick = async () => {
+}
+async function doCopyGo() {
   const src = generateGo();
   try {
     await navigator.clipboard.writeText(src);
     setStatus('Copied Go source to clipboard.');
   } catch {
-    // Fallback: show it for manual copy.
     document.getElementById('export-wrap').classList.remove('hidden');
     document.getElementById('export-text').value = src;
     setStatus('Clipboard blocked — source shown below.', true);
   }
-};
+}
+
+document.getElementById('show-go-btn').onclick = () => maybeExport(doShowGo);
+document.getElementById('copy-go-btn').onclick = () => maybeExport(doCopyGo);
 
 // --- Init ------------------------------------------------------------------
 buildTerrainPalette();
 buildElevPalette();
 setActiveTool('terrain');
 render();
+checkConnectivity();
 loadSnapshots();

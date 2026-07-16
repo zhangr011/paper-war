@@ -84,3 +84,32 @@ test('blank canvas + painting writes expected SetTerrain calls', async ({ page }
   // Func name from default "Custom".
   expect(src).toMatch(/func ClashCustom\(\) \*GameMap/);
 });
+
+test('connectivity: blank canvas is OK, walling a spawn strands it', async ({ page }) => {
+  await page.goto(`${BASE}/editor/map.html`);
+  await page.waitForFunction(() => document.querySelectorAll('#snapshot-select option').length > 1);
+  await page.click('#clear-btn');
+
+  // Blank canvas (all Plain) → both profiles connected.
+  await page.waitForFunction(() => document.getElementById('conn-status').textContent.includes('both profiles OK'));
+
+  // Wall off spawn (16,12): paint a ring of Wall (terrain id 8) around it.
+  // Mirror off so the wall only goes where we paint it.
+  await page.click('#mirror-btn'); // toggles Off
+  const wallIdx = 8;
+  await page.locator('#terrain-palette .swatch').nth(wallIdx).click();
+  // Paint Wall at the 4 neighbors of (16,12): (15,12),(17,12),(16,11),(16,13).
+  for (const [tx, ty] of [[15,12],[17,12],[16,11],[16,13]]) {
+    await page.locator('#canvas').click({ position: { x: tx*16+8, y: ty*16+8 } });
+  }
+  // (16,12) is now surrounded by walls on all 4 sides → stranded.
+  await page.waitForFunction(() =>
+    document.getElementById('conn-status').textContent.includes('stranded'));
+
+  // Export is gated: with connectivity failing, the confirm dialog should
+  // appear. Accept it and confirm the source still generates.
+  page.on('dialog', d => d.accept());
+  await page.click('#show-go-btn');
+  const src = await page.inputValue('#export-text');
+  expect(src).toMatch(/func ClashCustom/);
+});

@@ -104,6 +104,56 @@ let brushElev = 1;           // active elevation layer
 let mirror = true;
 let painting = false;
 
+// --- Undo / redo -----------------------------------------------------------
+// Stroke-level history: one mousedown→mouseup drag, one Clear, or one Load
+// = one undo step. Each entry is a full terrain+elevation snapshot (2 KB);
+// capped at HIST_MAX entries. Standard semantics — any new edit after an
+// undo discards the redo branch.
+const HIST_MAX = 50;
+let undoStack = [];
+let redoStack = [];
+
+function snapshot() {
+  return { t: terrain.slice(), e: elevation.slice() };
+}
+function restore(s) {
+  terrain = s.t.slice();
+  elevation = s.e.slice();
+}
+// pushHistory records the CURRENT state BEFORE an impending edit, so undo
+// returns to it. Call at the start of a stroke / Clear / Load.
+function pushHistory() {
+  undoStack.push(snapshot());
+  if (undoStack.length > HIST_MAX) undoStack.shift();
+  redoStack = [];
+  updateUndoButtons();
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  restore(undoStack.pop());
+  afterEdit();
+  setStatus('Undo.');
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+  afterEdit();
+  setStatus('Redo.');
+}
+// Re-render + re-validate after any history restore.
+function afterEdit() {
+  buildTerrainPalette(); // refresh active-swatch highlight vs restored tile
+  render();
+  checkConnectivity();
+  updateUndoButtons();
+}
+function updateUndoButtons() {
+  document.getElementById('undo-btn').disabled = undoStack.length === 0;
+  document.getElementById('redo-btn').disabled = redoStack.length === 0;
+}
+
 const TILE = 16;             // canvas is 512×512, 16px per tile
 
 // --- DOM -------------------------------------------------------------------
@@ -226,12 +276,18 @@ function applyBrush(x, y) {
   }
 }
 
-canvas.addEventListener('mousedown', (e) => { painting = true; paintAt(e.offsetX, e.offsetY); });
+canvas.addEventListener('mousedown', (e) => {
+  pushHistory();            // one undo step per stroke (mousedown→mouseup)
+  painting = true;
+  paintAt(e.offsetX, e.offsetY);
+});
 window.addEventListener('mouseup', () => { painting = false; });
 canvas.addEventListener('mousemove', (e) => { if (painting) paintAt(e.offsetX, e.offsetY); });
 // Touch support — drag-paint on trackpads/tablets.
 canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault(); painting = true;
+  e.preventDefault();
+  pushHistory();            // stroke boundary for touch too
+  painting = true;
   const t = e.touches[0], r = canvas.getBoundingClientRect();
   paintAt(t.clientX - r.left, t.clientY - r.top);
 }, { passive: false });
@@ -300,11 +356,26 @@ document.getElementById('mirror-btn').onclick = (e) => {
   e.target.textContent = mirror ? 'On' : 'Off';
 };
 
+// Undo / redo buttons + keyboard. Ignore shortcuts when focus is in the map
+// name text field so typing there isn't hijacked.
+document.getElementById('undo-btn').onclick = undo;
+document.getElementById('redo-btn').onclick = redo;
+window.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod || e.key.toLowerCase() !== 'z') return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  if (e.shiftKey) redo(); else undo();
+});
+
 document.getElementById('clear-btn').onclick = () => {
+  pushHistory();
   terrain = new Uint8Array(N);
   elevation = new Uint8Array(N);
   render();
   checkConnectivity();
+  updateUndoButtons();
   setStatus('Cleared.');
 };
 
@@ -328,11 +399,13 @@ async function loadSnapshots() {
 let snapshots = {};
 
 document.getElementById('load-btn').onclick = () => {
+  pushHistory();            // loading replaces the canvas — make it undoable
   const name = document.getElementById('snapshot-select').value;
   if (!name || !snapshots[name]) {
     terrain = new Uint8Array(N);
     elevation = new Uint8Array(N);
     render();
+    checkConnectivity();
     setStatus('Blank canvas.');
     return;
   }
@@ -345,6 +418,7 @@ document.getElementById('load-btn').onclick = () => {
   document.getElementById('map-name').value = capitalize(name);
   render();
   checkConnectivity();
+  updateUndoButtons();
   setStatus(`Loaded "${name}".`);
 };
 
@@ -465,4 +539,5 @@ buildElevPalette();
 setActiveTool('terrain');
 render();
 checkConnectivity();
+updateUndoButtons();
 loadSnapshots();

@@ -40,6 +40,8 @@
     button:hover { border-color: var(--accent); }
     button.active { background: var(--accent); color: #1a1a1a;
                     border-color: var(--accent); font-weight: 600; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button:disabled:hover { border-color: var(--border); }
     .columns { display: flex; gap: 16px; flex-wrap: wrap;
                align-items: flex-start; }
     .col { background: var(--panel); border: 1px solid var(--border);
@@ -109,6 +111,9 @@
     </select>
     <button id="load-btn">Load</button>
     <button id="clear-btn">Clear</button>
+    <button id="undo-btn">Undo</button>
+    <button id="redo-btn">Redo</button>
+    <span class="info" style="margin-left:4px">⌘Z / ⇧⌘Z</span>
     <span style="flex:1"></span>
     <label>Map name:</label>
     <input type="text" id="map-name" value="Custom" style="width:140px" />

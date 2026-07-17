@@ -203,16 +203,17 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			dmg = 1
 		}
 
-		// Apply damage to primary target (with stronghold terrain bonus)
+		// Apply damage to primary target, reduced by the defender's terrain
+		// defense: stronghold bonus on a stronghold tile, otherwise terrain
+		// cover (Forest/Hill). Mutually exclusive — a tile is one terrain
+		// type. Issue #55 phase 1 generalizes the stronghold bonus to cover.
 		effectiveDmg := dmg
 		if s.TerrainFn != nil {
 			tx := int32(fixed.ToFloat(targetPos.X))
 			ty := int32(fixed.ToFloat(targetPos.Y))
-			terrain := s.TerrainFn(tx, ty)
-			shLevel := strongholdLevelFromTerrain(terrain)
-			if shLevel > 0 {
-				bonusPct := StrongholdDefenseBonus(shLevel)
-				effectiveDmg = effectiveDmg * (100 - bonusPct) / 100
+			defPct := terrainDefensePct(s.TerrainFn(tx, ty))
+			if defPct > 0 {
+				effectiveDmg = effectiveDmg * (100 - defPct) / 100
 				if effectiveDmg < 1 {
 					effectiveDmg = 1
 				}
@@ -468,4 +469,15 @@ func strongholdLevelFromTerrain(t component.TerrainType) int {
 		return 5
 	}
 	return 0
+}
+
+// terrainDefensePct returns the total damage-reduction % for a defender on the
+// given terrain: the stronghold bonus on a stronghold tile, otherwise terrain
+// cover (Forest/Hill). 0 = no reduction. Stronghold and cover never combine —
+// a tile is exactly one terrain type. Issue #55 phase 1.
+func terrainDefensePct(terrain component.TerrainType) int32 {
+	if shLevel := strongholdLevelFromTerrain(terrain); shLevel > 0 {
+		return StrongholdDefenseBonus(shLevel)
+	}
+	return TerrainCoverBonus(terrain)
 }

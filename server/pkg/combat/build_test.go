@@ -242,3 +242,75 @@ func TestStrongholdDamageReduction(t *testing.T) {
 		t.Errorf("effective damage = %d, want 63 (100 * 0.63)", effectiveDmg)
 	}
 }
+
+func TestTerrainCoverBonus(t *testing.T) {
+	tests := []struct {
+		terrain component.TerrainType
+		wantPct int32
+	}{
+		{component.TerrainPlain, 0},
+		{component.TerrainForest, 25},
+		{component.TerrainHill, 15},
+		{component.TerrainRoad, 0},
+		{component.TerrainWall, 0},
+		// Stronghold terrain routes through StrongholdDefenseBonus, not cover.
+		{component.TerrainStronghold3, 0},
+	}
+	for _, tt := range tests {
+		got := TerrainCoverBonus(tt.terrain)
+		if got != tt.wantPct {
+			t.Errorf("TerrainCoverBonus(%d) = %d, want %d", tt.terrain, got, tt.wantPct)
+		}
+	}
+}
+
+// TestCoverDamageReductionByWeapon verifies the acceptance criterion for
+// issue #55 phase 1: a unit attacked while on Forest takes measurably less
+// damage than the same unit on Plain, across every weapon type. Mirrors the
+// stronghold damage test — cover applies at the same spot in the resolution
+// path (damage matrix → terrain defense), so exercising the math per weapon
+// is the faithful unit-level check.
+func TestCoverDamageReductionByWeapon(t *testing.T) {
+	cover := TerrainCoverBonus(component.TerrainForest) // 25
+	if cover == 0 {
+		t.Fatal("Forest cover is 0 — cover not configured")
+	}
+	armors := []component.ArmorType{component.ArmorLight, component.ArmorHeavy}
+	for _, weapon := range []component.WeaponType{
+		component.WeaponGun, component.WeaponCannon,
+		component.WeaponSniper, component.WeaponMissile,
+	} {
+		for _, armor := range armors {
+			base := int32(100) * component.DamageMultiplier(weapon, armor) / 100
+			if base == 0 {
+				continue // weapon can't damage this armor (e.g. Gun vs Building)
+			}
+			onPlain := base
+			onForest := base * (100 - cover) / 100
+			if onForest >= onPlain {
+				t.Errorf("%v vs %v: Forest dmg %d not < Plain dmg %d",
+					weapon, armor, onForest, onPlain)
+			}
+			if onForest < 1 {
+				t.Errorf("%v vs %v: Forest dmg clamped below 1", weapon, armor)
+			}
+		}
+	}
+}
+
+// TestTerrainDefensePctCombines confirms the combat-path helper picks
+// stronghold bonus on stronghold tiles and cover on Forest/Hill, never both.
+func TestTerrainDefensePctCombines(t *testing.T) {
+	cases := map[component.TerrainType]int32{
+		component.TerrainPlain:        0,
+		component.TerrainForest:       25,
+		component.TerrainHill:         15,
+		component.TerrainStronghold1:  StrongholdDefenseBonus(1),
+		component.TerrainStronghold5:  StrongholdDefenseBonus(5),
+	}
+	for terrain, want := range cases {
+		if got := terrainDefensePct(terrain); got != want {
+			t.Errorf("terrainDefensePct(%d) = %d, want %d", terrain, got, want)
+		}
+	}
+}

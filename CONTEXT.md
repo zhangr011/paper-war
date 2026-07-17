@@ -108,12 +108,32 @@ One cell in a Map. Has a Terrain Type and, for hills, an Elevation band. Some ti
 _Avoid_: cell, grid square
 
 **Terrain Type**:
-The classification of a Tile. v1 has 16 types (Plain, Road, Shallow, Deep, Forest, Hill, Swamp, Bridge, Wall, Snow, Desert, Stronghold1–5). Determines movement cost per Movement Profile and, for some, destructibility.
+The classification of a Tile — Plain, Road, Shallow, Deep, Forest, Hill, Swamp, Bridge, Wall, Snow, Desert. Determines movement cost per Movement Profile and, for some, destructibility. (Strongholds were once terrain types but are now Buildings — see Stronghold.)
 _Avoid_: tile type, ground
 
 **Elevation**:
 The discrete hill-layer band of a Hill Tile: low, mid, or peak. Visual only — affects rendering, not movement or combat.
 _Avoid_: height, altitude
+
+**Building**:
+A structure entity placed on a Map with HP and an owning Faction (or neutral). Two kinds: player-built defensive structures (Watchtower, Barricade, Turret, placed via the build system for gold) and Strongholds (pre-placed, capturable). Buildings have Building armor — only Cannon and Missile damage them.
+_Avoid_: structure, turret
+
+**Stronghold**:
+A capturable, garrisonable Building that grants buffs to the units inside it. Neutral at match start; a Faction claims it by reducing its HP to zero (it then flips to that Faction and restores HP). Garrisoned CombatUnits fire out and share incoming damage with the Stronghold by a level-scaled split. A distinct concept from a Target.
+_Avoid_: fortress, base, objective
+
+**Garrison**:
+The CombatUnits inside a Stronghold, up to its Capacity. They receive the Stronghold's buffs (defense, recovery), fire out at enemies, and absorb a share of damage dealt to the Stronghold.
+_Avoid_: occupants, defenders
+
+**Capacity**:
+The maximum number of CombatUnits a Stronghold's Garrison can hold. Scales with the Stronghold's level.
+_Avoid_: slots, space
+
+**Target**:
+The Capture objective's win point — the location a Faction must control to win a Capture match. A distinct concept from a Stronghold, which is a capturable resource but not itself the win condition.
+_Avoid_: stronghold (when you mean the objective point)
 
 **Objective**:
 The win condition for a match, determined by the map. Types: Elimination (wipe all enemies), Capture (hold a target stronghold for N ticks), Survival (player eliminates all AI defenders before time expires). In v1, the player is always the attacker and the AI is always the defender. Stored as an explicit field on GameMap with type-specific data.

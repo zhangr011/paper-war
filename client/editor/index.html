@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paper War — Dev Editors</title>
+  <style>
+    /* Dev tool shell only — deliberately NOT using the ui-ux-pro-max design
+       system (ADR-0021). Plain dark UI matching the three editor siblings:
+       animation.html, units.html, map.html. Each editor loads in its own
+       iframe so it stays self-contained and its state survives tab switches. */
+    :root {
+      --bg: #1a1a1a;
+      --panel: #2a2a2a;
+      --border: #444;
+      --text: #e0e0e0;
+      --muted: #888;
+      --accent: #c8a832;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column;
+    }
+    header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-bottom: 1px solid var(--border);
+      background: var(--panel); flex: 0 0 auto;
+    }
+    header h1 { font-size: 14px; margin: 0 14px 0 0; font-weight: 600; }
+    header .tab {
+      background: transparent; color: var(--muted);
+      border: 1px solid transparent; border-radius: 3px;
+      padding: 4px 12px; cursor: pointer; font: inherit;
+    }
+    header .tab:hover { color: var(--text); border-color: var(--border); }
+    header .tab.active {
+      color: #1a1a1a; background: var(--accent); border-color: var(--accent);
+      font-weight: 600;
+    }
+    header .spacer { flex: 1; }
+    header a {
+      color: var(--muted); text-decoration: none; font-size: 12px;
+    }
+    header a:hover { color: var(--accent); }
+
+    /* Iframe host — each editor is mounted lazily on first tab click and kept
+       alive, so switching back preserves its state. Only the active one shows. */
+    main { flex: 1 1 auto; position: relative; overflow: hidden; }
+    main iframe {
+      width: 100%; height: 100%; border: none; display: none;
+      background: var(--bg);
+    }
+    main iframe.active { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Paper War — Dev Editors</h1>
+    <button class="tab active" data-tab="map">Clash Map</button>
+    <button class="tab" data-tab="units">Combat Units</button>
+    <button class="tab" data-tab="animation">Animation</button>
+    <span class="spacer"></span>
+    <a href="/">← back to game</a>
+  </header>
+  <main id="host"></main>
+
+  <script>
+    // Each editor is a self-contained page; we embed it in an iframe and keep
+    // it mounted so its state survives tab switches. Created on first open.
+    const TABS = {
+      map:       'map.html',
+      units:     'units.html',
+      animation: 'animation.html',
+    };
+    const host = document.getElementById('host');
+    const frames = {};     // tab -> HTMLIFrameElement (lazy)
+    let current = null;
+
+    function activate(tab) {
+      if (current) frames[current].classList.remove('active');
+      if (!frames[tab]) {
+        const f = document.createElement('iframe');
+        f.src = TABS[tab];
+        f.dataset.tab = tab;
+        host.appendChild(f);
+        frames[tab] = f;
+      }
+      frames[tab].classList.add('active');
+      current = tab;
+      for (const btn of document.querySelectorAll('.tab')) {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+      }
+    }
+
+    for (const btn of document.querySelectorAll('.tab')) {
+      btn.addEventListener('click', () => activate(btn.dataset.tab));
+    }
+    activate('map'); // default tab — headline tool (#53)
+  </script>
+</body>
+</html>

@@ -311,6 +311,12 @@ export class App {
         this.startGame(msg);
         break;
 
+      case 'stronghold_state':
+        // Live stronghold entities (positions/level/faction) for rendering.
+        // Sent on match start and whenever ownership/positions change (#54).
+        if (this.game) this.game.strongholds = msg.strongholds || [];
+        break;
+
       case 'reconnect_ok':
         // Server validated our token and re-bound our playerID. The map data
         // binary message follows immediately after this text message.

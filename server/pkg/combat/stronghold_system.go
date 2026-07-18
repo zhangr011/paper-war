@@ -25,6 +25,7 @@ type StrongholdSystem struct {
 	ownerPool      *ecs.ComponentPool[component.OwnerComponent]
 	posPool        *ecs.ComponentPool[component.PositionComponent]
 	boidPool       *ecs.ComponentPool[component.BoidComponent]
+	pathPool       *ecs.ComponentPool[component.PathfindingComponent]
 }
 
 func (s *StrongholdSystem) Name() string  { return "StrongholdSystem" }
@@ -40,6 +41,9 @@ func (s *StrongholdSystem) Init(w *ecs.World) {
 	s.posPool = w.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 	if p := w.Pool(component.BoidComponent{}); p != nil {
 		s.boidPool = p.(*ecs.ComponentPool[component.BoidComponent])
+	}
+	if p := w.Pool(component.PathfindingComponent{}); p != nil {
+		s.pathPool = p.(*ecs.ComponentPool[component.PathfindingComponent])
 	}
 }
 
@@ -91,9 +95,12 @@ func (s *StrongholdSystem) pruneGarrison(shE ecs.Entity, sh *component.Stronghol
 	return kept
 }
 
-// autoGarrison adds eligible units on the stronghold's tile to the garrison.
+// autoGarrison garrisons a unit only when it was deliberately moved onto the
+// stronghold — its PathfindingComponent target is on the stronghold tile.
+// Units merely passing through (path target elsewhere) are NOT garrisoned, so
+// waypoints through a stronghold don't trap them. Issue #54 1B.
 func (s *StrongholdSystem) autoGarrison(shE ecs.Entity, sh *component.StrongholdComponent) {
-	if s.boidPool == nil {
+	if s.boidPool == nil || s.pathPool == nil {
 		return
 	}
 	shPos, ok := s.posPool.Get(shE)
@@ -114,12 +121,21 @@ func (s *StrongholdSystem) autoGarrison(shE ecs.Entity, sh *component.Stronghold
 		if bc.Role == component.RoleCommander {
 			return // commanders don't garrison
 		}
-		// Same tile?
+		// Must be ON the stronghold tile.
 		up, ok := s.posPool.Get(e)
 		if !ok {
 			return
 		}
 		if int32(up.X>>12) != shTileX || int32(up.Y>>12) != shTileY {
+			return
+		}
+		// Must have been ordered to the stronghold (path target tile == here).
+		// A unit passing through has its target elsewhere → not garrisoned.
+		path, hasPath := s.pathPool.Get(e)
+		if !hasPath {
+			return
+		}
+		if int32(path.TargetX>>12) != shTileX || int32(path.TargetY>>12) != shTileY {
 			return
 		}
 		// Same faction as the stronghold (only the owner may garrison).
@@ -129,10 +145,15 @@ func (s *StrongholdSystem) autoGarrison(shE ecs.Entity, sh *component.Stronghold
 				return
 			}
 		}
-		// Garrison: snap onto the stronghold, mark garrisoned.
+		// Garrison: snap onto the stronghold, mark garrisoned, clear its move
+		// target so it stays put.
 		if pp, ok := s.posPool.GetPtr(e); ok {
 			pp.X = shPos.X
 			pp.Y = shPos.Y
+		}
+		if pp, ok := s.pathPool.GetPtr(e); ok {
+			pp.TargetX = shPos.X
+			pp.TargetY = shPos.Y
 		}
 		bc.GarrisonedIn = uint32(shE)
 		sh.Garrison = append(sh.Garrison, e)

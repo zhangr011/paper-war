@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"log"
 	"math/rand"
 	"os"
@@ -50,7 +51,8 @@ type GameSession struct {
 	AISys2       *ai.AISystem     // second AI for clash mode (player 1)
 	Lifecycle    *MatchLifecycle  // v1
 	PlayerGold   map[uint32]int32 // v1: gold per player
-	lastSentGold map[uint32]int32 // track what was last sent to client
+	lastSentGold        map[uint32]int32 // track what was last sent to client
+	lastStrongholdJSON  string           // dedupe stronghold_state broadcasts (#54 1B)
 	Store        persist.Store    // v1: persistence (nil = no persistence)
 	stats        *MatchStats      // v1: cumulative match statistics (AAR)
 
@@ -499,6 +501,58 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 
 	// Set objective
 	aiSys.SetObjective(&gs.Map.Objective)
+}
+
+// StrongholdState is a stronghold's live, client-visible state.
+type StrongholdState struct {
+	X       int32 `json:"x"`       // tile coord
+	Y       int32 `json:"y"`       // tile coord
+	Level   uint8 `json:"level"`
+	Faction uint8 `json:"faction"` // 0 player, 1 enemy, 0xFF neutral
+}
+
+// StrongholdStateIfChanged returns the current stronghold states and true when
+// they differ from the last call (positions/levels/factions), for broadcasting
+// a stronghold_state message. Dedupes via lastStrongholdJSON. (#54 1B.)
+func (gs *GameSession) StrongholdStateIfChanged() ([]StrongholdState, bool) {
+	states := gs.StrongholdStates()
+	js, _ := json.Marshal(states)
+	if string(js) == gs.lastStrongholdJSON {
+		return nil, false
+	}
+	gs.lastStrongholdJSON = string(js)
+	return states, true
+}
+
+// StrongholdStates returns the live state of every stronghold entity, for
+// client rendering. Dead/removed strongholds are omitted. (#54 1B.)
+func (gs *GameSession) StrongholdStates() []StrongholdState {
+	sp, ok := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent])
+	if !ok {
+		return nil
+	}
+	hpPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	var out []StrongholdState
+	sp.Each(func(e ecs.Entity, sc *component.StrongholdComponent) {
+		hp, ok := hpPool.Get(e)
+		if !ok || hp.HP <= 0 {
+			return
+		}
+		pos, ok := posPool.Get(e)
+		if !ok {
+			return
+		}
+		owner, _ := ownerPool.Get(e)
+		out = append(out, StrongholdState{
+			X:       int32(pos.X >> 12),
+			Y:       int32(pos.Y >> 12),
+			Level:   sc.Level,
+			Faction: owner.Faction,
+		})
+	})
+	return out
 }
 
 // spawnStrongholdEntities creates a Stronghold Building entity for each

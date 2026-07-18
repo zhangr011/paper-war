@@ -45,3 +45,51 @@ func TestStrongholdsSpawnedAsEntities(t *testing.T) {
 		t.Errorf("spawned %d stronghold entities, map recorded %d specs", count, len(gs.Map.Strongholds))
 	}
 }
+
+// TestStrongholdStateIfChanged covers the client-broadcast helper: it reports
+// the live state, dedupes identical state, and re-reports after a change (#54 1B).
+func TestStrongholdStateIfChanged(t *testing.T) {
+	gs := NewGameSession()
+	gs.Reset()
+
+	states, changed := gs.StrongholdStateIfChanged()
+	if !changed || len(states) == 0 {
+		t.Fatal("first call should report changed with the spawned strongholds")
+	}
+	for _, s := range states {
+		if s.Faction != component.FactionNeutral {
+			t.Errorf("initial state faction = %d, want neutral", s.Faction)
+		}
+	}
+
+	// Identical state → not changed (deduped).
+	if _, again := gs.StrongholdStateIfChanged(); again {
+		t.Error("unchanged state should be deduped")
+	}
+
+	// Flip one stronghold to player faction → should report changed.
+	shPool := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	var flipped bool
+	shPool.Each(func(e ecs.Entity, _ *component.StrongholdComponent) {
+		if !flipped {
+			if op, ok := ownerPool.GetPtr(e); ok {
+				op.Faction = component.FactionPlayer
+			}
+			flipped = true
+		}
+	})
+	states2, changed2 := gs.StrongholdStateIfChanged()
+	if !changed2 {
+		t.Fatal("faction change should report changed")
+	}
+	var sawPlayer bool
+	for _, s := range states2 {
+		if s.Faction == component.FactionPlayer {
+			sawPlayer = true
+		}
+	}
+	if !sawPlayer {
+		t.Error("flipped stronghold not reported as player-owned")
+	}
+}

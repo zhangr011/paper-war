@@ -527,7 +527,21 @@ func main() {
 			}
 		}
 
-		// Send MatchResult to all in-game clients when match ends
+			// Broadcast stronghold state to in-game clients when it changes
+		// (positions/ownership/levels) — for client rendering. #54 1B.
+		if states, changed := gs.StrongholdStateIfChanged(); changed {
+			payload := map[string]interface{}{
+				"type":        "stronghold_state",
+				"strongholds": states,
+			}
+			for _, cid := range hub.ClientIDs() {
+				if hub.GetClientInGame(cid) {
+					hub.SendJSON(cid, payload)
+				}
+			}
+		}
+
+	// Send MatchResult to all in-game clients when match ends
 		if gs.Lifecycle.Phase == game.PhaseEnded && !gs.Lifecycle.MatchResultSent {
 			gs.Lifecycle.MatchResultSent = true
 			registry.Clear() // revoke all reconnect tokens — match is over

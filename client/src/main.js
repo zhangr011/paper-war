@@ -261,6 +261,7 @@ export class Game {
     this.terrainData = null; // Uint8Array from server (terrain types)
     this.elevationData = null; // Uint8Array from server (hill layer 0/1/2 — see issue #49)
     this.minimapTerrainCanvas = null; // offscreen canvas for cached minimap terrain
+    this.strongholds = []; // live stronghold entities [{x,y,level,faction}] from server (#54)
 
     // Game time for timer display
     this.gameStartTime = 0;
@@ -2010,6 +2011,20 @@ export class Game {
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
     ctx.strokeRect(mapX, mapY, mapDrawW, mapDrawH);
+
+    // Draw stronghold markers (#54): faction-colored, sized by level.
+    for (const sh of (this.strongholds || [])) {
+      const [px, py] = projectToMinimap(sh.x, sh.y);
+      const color = sh.faction === 0 ? '#5aa0ff'      // player — blue
+                  : sh.faction === 1 ? '#ff7a5a'      // enemy — red
+                  : '#c8a832';                         // neutral — gold
+      const s = 2 + (sh.level || 1); // 3..7 px, scales with level
+      ctx.fillStyle = color;
+      ctx.fillRect(px - s / 2, py - s / 2, s, s);
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px - s / 2, py - s / 2, s, s);
+    }
 
     // Draw units as colored dots
     for (const unit of units) {

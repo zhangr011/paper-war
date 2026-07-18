@@ -32,6 +32,7 @@ func setupStrongholdWorld() (*ecs.EntityManager, *ecs.World, *spatial.Hash,
 	boidPool := ecs.NewComponentPool[component.BoidComponent]()
 	attackPool := ecs.NewComponentPool[component.AttackComponent]()
 	utPool := ecs.NewComponentPool[component.UnitTypeComponent]()
+	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
 
 	w.RegisterPool(component.PositionComponent{}, posPool)
 	w.RegisterPool(component.HealthComponent{}, healthPool)
@@ -40,6 +41,7 @@ func setupStrongholdWorld() (*ecs.EntityManager, *ecs.World, *spatial.Hash,
 	w.RegisterPool(component.BoidComponent{}, boidPool)
 	w.RegisterPool(component.AttackComponent{}, attackPool)
 	w.RegisterPool(component.UnitTypeComponent{}, utPool)
+	w.RegisterPool(component.PathfindingComponent{}, pathPool)
 
 	cs := &CombatSystem{Sh: shHash}
 	ss := &StrongholdSystem{}
@@ -94,17 +96,21 @@ func TestStrongholdCaptureByFlip(t *testing.T) {
 // joins the garrison up to Capacity. A unit of a different faction does not.
 func TestStrongholdAutoGarrison(t *testing.T) {
 	em, w, _, posPool, hpPool, ownerPool, strPool, boidPool, _, _, _, _ := setupStrongholdWorld()
+	pathPool := w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 7, 7, 1, component.FactionPlayer)
+	shTile := component.PositionComponent{X: fixed.FromFloat(7), Y: fixed.FromFloat(7)}
 
-	// Friendly unit on the tile → garrisons.
+	// Friendly unit ordered to the stronghold tile → garrisons.
 	friend := em.Create()
 	posPool.Add(friend, component.PositionComponent{X: fixed.FromFloat(7.4), Y: fixed.FromFloat(7.4)})
+	pathPool.Add(friend, component.PathfindingComponent{TargetX: shTile.X, TargetY: shTile.Y})
 	boidPool.Add(friend, component.BoidComponent{Role: component.RoleMelee})
 	ownerPool.Add(friend, component.OwnerComponent{Faction: component.FactionPlayer})
 
-	// Enemy unit on the tile → does NOT garrison.
+	// Enemy unit on the tile (also ordered there) → does NOT garrison.
 	foe := em.Create()
 	posPool.Add(foe, component.PositionComponent{X: fixed.FromFloat(7.4), Y: fixed.FromFloat(7.4)})
+	pathPool.Add(foe, component.PathfindingComponent{TargetX: shTile.X, TargetY: shTile.Y})
 	boidPool.Add(foe, component.BoidComponent{Role: component.RoleMelee})
 	ownerPool.Add(foe, component.OwnerComponent{Faction: component.FactionEnemy})
 
@@ -130,12 +136,14 @@ func TestStrongholdAutoGarrison(t *testing.T) {
 // TestStrongholdGarrisonCapacity: Capacity caps how many units garrison.
 func TestStrongholdGarrisonCapacity(t *testing.T) {
 	em, w, _, posPool, hpPool, ownerPool, strPool, boidPool, _, _, _, _ := setupStrongholdWorld()
+	pathPool := w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	// L1 → Capacity 3.
 	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 3, 3, 1, component.FactionPlayer)
 
 	for i := 0; i < 5; i++ {
 		u := em.Create()
 		posPool.Add(u, component.PositionComponent{X: fixed.FromFloat(3.4), Y: fixed.FromFloat(3.4)})
+		pathPool.Add(u, component.PathfindingComponent{TargetX: fixed.FromFloat(3), TargetY: fixed.FromFloat(3)})
 		boidPool.Add(u, component.BoidComponent{Role: component.RoleMelee})
 		ownerPool.Add(u, component.OwnerComponent{Faction: component.FactionPlayer})
 	}
@@ -151,10 +159,12 @@ func TestStrongholdGarrisonCapacity(t *testing.T) {
 // evicted — GarrisonedIn cleared and the units survive with remaining HP.
 func TestStrongholdEvictOnFlip(t *testing.T) {
 	em, w, _, posPool, hpPool, ownerPool, strPool, boidPool, _, _, _, _ := setupStrongholdWorld()
+	pathPool := w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	// Enemy-owned stronghold with a garrison.
 	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 9, 9, 1, component.FactionEnemy)
 	gUnit := em.Create()
 	posPool.Add(gUnit, component.PositionComponent{X: fixed.FromFloat(9.5), Y: fixed.FromFloat(9.5)})
+	pathPool.Add(gUnit, component.PathfindingComponent{TargetX: fixed.FromFloat(9), TargetY: fixed.FromFloat(9)})
 	hpPool.Add(gUnit, component.HealthComponent{HP: 100, MaxHP: 100})
 	boidPool.Add(gUnit, component.BoidComponent{Role: component.RoleMelee})
 	ownerPool.Add(gUnit, component.OwnerComponent{Faction: component.FactionEnemy})
@@ -203,9 +213,11 @@ func TestStrongholdDamageSplit(t *testing.T) {
 	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 4, 4, 1, component.FactionEnemy)
 	// Two garrisoned enemy units.
 	var gUnits []ecs.Entity
+	pathPool := w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	for i := 0; i < 2; i++ {
 		u := em.Create()
 		posPool.Add(u, component.PositionComponent{X: fixed.FromFloat(4.4), Y: fixed.FromFloat(4.4)})
+		pathPool.Add(u, component.PathfindingComponent{TargetX: fixed.FromFloat(4), TargetY: fixed.FromFloat(4)})
 		hpPool.Add(u, component.HealthComponent{HP: 1000, MaxHP: 1000})
 		boidPool.Add(u, component.BoidComponent{Role: component.RoleMelee})
 		ownerPool.Add(u, component.OwnerComponent{Faction: component.FactionEnemy})

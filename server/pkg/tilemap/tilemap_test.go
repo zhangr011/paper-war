@@ -273,25 +273,12 @@ func TestPropertyCaptureHasTarget(t *testing.T) {
 		if gm.Objective.Type != ObjectiveCapture {
 			continue
 		}
-		// Capture target must be in bounds and match a recorded stronghold spec
-		// position (strongholds are entities now — #54; the tile itself is no
-		// longer stronghold terrain).
-		if gm.Objective.TargetX < 0 || gm.Objective.TargetX >= gm.Width ||
-			gm.Objective.TargetY < 0 || gm.Objective.TargetY >= gm.Height {
-			t.Errorf("seed %d: Capture target (%d,%d) out of bounds",
-				seed, gm.Objective.TargetX, gm.Objective.TargetY)
-			continue
-		}
-		match := false
-		for _, s := range gm.Strongholds {
-			if s.X == gm.Objective.TargetX && s.Y == gm.Objective.TargetY {
-				match = true
-				break
-			}
-		}
-		if !match {
-			t.Errorf("seed %d: Capture target (%d,%d) is not a stronghold spec",
-				seed, gm.Objective.TargetX, gm.Objective.TargetY)
+		// #54 1B: Capture Target is decoupled from strongholds — it points at
+		// the map center, a neutral win point independent of stronghold entities.
+		wantX, wantY := gm.Width/2, gm.Height/2
+		if gm.Objective.TargetX != wantX || gm.Objective.TargetY != wantY {
+			t.Errorf("seed %d: Capture target (%d,%d), want map center (%d,%d)",
+				seed, gm.Objective.TargetX, gm.Objective.TargetY, wantX, wantY)
 		}
 		if gm.Objective.HoldTarget != 300 {
 			t.Errorf("seed %d: HoldTarget = %d, want 300", seed, gm.Objective.HoldTarget)

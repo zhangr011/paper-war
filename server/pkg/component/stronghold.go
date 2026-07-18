@@ -45,3 +45,17 @@ func StrongholdCapacity(level uint8) uint8 {
 	}
 	return uint8(2 + int(level)) // L1=3 .. L5=7
 }
+
+// StrongholdGarrisonShare returns the % of incoming damage the garrison
+// absorbs (the rest is taken by the stronghold itself). L1 = 50% → L5 = 30%
+// — higher-level strongholds shelter their garrison better. ADR-0023 (#54).
+func StrongholdGarrisonShare(level uint8) int32 {
+	if level < 1 {
+		level = 1
+	}
+	if level > 5 {
+		level = 5
+	}
+	// L1=50, L2=45, L3=40, L4=35, L5=30
+	return int32(50 - int(level-1)*5)
+}

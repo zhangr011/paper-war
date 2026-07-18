@@ -195,26 +195,31 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			return
 		}
 
-		// Get target's armor type
+		// Get target's armor type. Strongholds use Building armor (only
+		// Cannon/Missile damage them — enforced in findTarget, so a non-siege
+		// weapon never reaches here for a stronghold). #54 1B.
 		armor := component.ArmorLight // default
-		if s.unitTypePool != nil {
+		isStronghold := false
+		if s.strongholdPool != nil {
+			if _, ok := s.strongholdPool.Get(targetEntity); ok {
+				armor = component.ArmorBuilding
+				isStronghold = true
+			}
+		}
+		if !isStronghold && s.unitTypePool != nil {
 			if ut, ok := s.unitTypePool.Get(targetEntity); ok {
 				armor = ut.Armor
 			}
 		}
 
-		// Check if target is a building (terrain entity)
-		// For now, units are always non-building
 		dmgMultiplier := component.DamageMultiplier(weapon, armor)
 		dmg := ac.Damage * dmgMultiplier / 100
-		if dmg < 1 {
-			dmg = 1
+		if dmgMultiplier > 0 && dmg < 1 {
+			dmg = 1 // only clamp when the weapon can actually damage this armor
 		}
 
 		// Apply damage to primary target, reduced by the defender's terrain
-		// defense: stronghold bonus on a stronghold tile, otherwise terrain
-		// cover (Forest/Hill). Mutually exclusive — a tile is one terrain
-		// type. Issue #55 phase 1 generalizes the stronghold bonus to cover.
+		// cover (Forest/Hill/Rock/Brush). Issue #55.
 		effectiveDmg := dmg
 		if s.TerrainFn != nil {
 			tx := int32(fixed.ToFloat(targetPos.X))
@@ -228,8 +233,26 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			}
 		}
 
-		// Defer damage application (double-buffered)
+		// Stronghold damage split (#54 1B): the garrison absorbs a level-scaled
+		// share (divided evenly), the stronghold takes the rest. No garrison →
+		// the stronghold takes the full hit.
 		tid := uint32(targetEntity)
+		if isStronghold && s.strongholdPool != nil {
+			if sh, ok := s.strongholdPool.GetPtr(targetEntity); ok && len(sh.Garrison) > 0 {
+				share := component.StrongholdGarrisonShare(sh.Level)
+				garrisonDmg := effectiveDmg * share / 100
+				perUnit := garrisonDmg / int32(len(sh.Garrison))
+				for _, g := range sh.Garrison {
+					pg := pending[uint32(g)]
+					pg.damage += perUnit
+					pg.attacker = uint32(e)
+					pending[uint32(g)] = pg
+				}
+				effectiveDmg = effectiveDmg - garrisonDmg // stronghold absorbs the remainder
+			}
+		}
+
+		// Defer damage application (double-buffered)
 		pd := pending[tid]
 		pd.damage += effectiveDmg
 		pd.attacker = uint32(e)
@@ -277,9 +300,10 @@ func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackCo
 			return false
 		}
 	}
-	// Stronghold entities are not targetable until capture-by-flip (#54 Phase 1B).
-	if s.strongholdPool != nil {
-		if _, ok := s.strongholdPool.Get(targetEntity); ok {
+	// Garrisoned units can't be targeted directly (they're sheltered inside a
+	// stronghold — damage reaches them via the stronghold's split, #54 1B).
+	if s.boidPool != nil {
+		if bc, ok := s.boidPool.Get(targetEntity); ok && bc.GarrisonedIn != 0 {
 			return false
 		}
 	}
@@ -330,11 +354,18 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 			}
 		}
 
-		// Skip Stronghold entities — not targetable until capture-by-flip
-		// (Phase 1B, #54). Prevents wasting fire on invulnerable buildings.
+		// Strongholds are targetable (capture-by-flip, #54 1B) but only by
+		// siege weapons — they have Building armor, which only Cannon/Missile
+		// damage. Garrisoned units can't be targeted directly (shelter).
 		if s.strongholdPool != nil {
 			if _, ok := s.strongholdPool.Get(entity); ok {
-				continue
+				if weapon != component.WeaponCannon && weapon != component.WeaponMissile {
+					continue
+				}
+			} else if s.boidPool != nil {
+				if bc, ok := s.boidPool.Get(entity); ok && bc.GarrisonedIn != 0 {
+					continue
+				}
 			}
 		}
 
@@ -444,6 +475,14 @@ func (s *CombatSystem) collectSplash(targetPos component.PositionComponent, base
 			continue
 		}
 		entity := ecs.Entity(id)
+
+		// Garrisoned units are sheltered inside a stronghold — splash doesn't
+		// reach them. Their only damage source is the stronghold's split (#54 1B).
+		if s.boidPool != nil {
+			if bc, ok := s.boidPool.Get(entity); ok && bc.GarrisonedIn != 0 {
+				continue
+			}
+		}
 
 		// Skip same faction
 		if s.ownerPool != nil {

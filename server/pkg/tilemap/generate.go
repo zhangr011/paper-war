@@ -50,7 +50,8 @@ const (
 	spawnSearchDepth = 12 // max rows inward from edge
 
 	// Objective
-	survivalChance = 15 // 15% of maps roll Survival
+	survivalChance = 15  // 15% of maps roll Survival
+	captureChance  = 50  // 50% of non-Survival maps roll Capture (#54 1B: Target = map center, decoupled from strongholds)
 	survivalTicks  = 3000 // 5 minutes at ServerTicksPerSecond=10
 	captureHold    = 300  // 30 seconds at ServerTicksPerSecond=10
 )
@@ -790,26 +791,18 @@ func assignProceduralObjective(gm *GameMap, r *rand.Rand) {
 		return
 	}
 
-	// If we have a stronghold near the map center, use Capture.
-	// NOTE (#54 ADR-0023): Stronghold ≠ Target — this keeps the Capture target
-	// pointed at a stronghold's position for now; fully decoupling the Target
-	// is deferred out-of-scope.
+	// Capture objective targets a neutral map-center point that is INDEPENDENT
+	// of stronghold positions (#54 1B / ADR-0023: Stronghold ≠ Target — a
+	// stronghold is a capturable resource, the Target is the win point). The
+	// target is a designated tile; occupation-hold there wins the match.
 	centerX, centerY := gm.Width/2, gm.Height/2
-	bestStronghold := [2]int32{-1, -1}
-	bestDist := float64(99999)
-	for _, s := range gm.Strongholds {
-		d := math.Hypot(float64(s.X-centerX), float64(s.Y-centerY))
-		if d < bestDist {
-			bestDist = d
-			bestStronghold = [2]int32{s.X, s.Y}
-		}
-	}
 
-	if bestStronghold[0] >= 0 && bestDist < float64(math.Max(float64(gm.Width), float64(gm.Height))/2) {
+	// 50% Capture chance (regardless of strongholds); otherwise Elimination.
+	if r.Intn(100) < captureChance {
 		gm.Objective = Objective{
 			Type:       ObjectiveCapture,
-			TargetX:    bestStronghold[0],
-			TargetY:    bestStronghold[1],
+			TargetX:    centerX,
+			TargetY:    centerY,
 			HoldTarget: captureHold,
 		}
 		return

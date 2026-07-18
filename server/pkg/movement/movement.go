@@ -76,6 +76,10 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		if !ok {
 			return
 		}
+		// Garrisoned units don't move — they're inside a stronghold (#54 1B).
+		if bc.GarrisonedIn != 0 {
+			return
+		}
 		vel, hasVel := s.velPool.GetPtr(e)
 
 		// Check if this unit should follow the beacon

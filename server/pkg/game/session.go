@@ -196,6 +196,7 @@ func NewGameSession() *GameSession {
 	gs.World.AddSystem(gs.movementSys)
 	gs.World.AddSystem(gs.combatSys)
 	gs.World.AddSystem(&combat.ProjectileSystem{})
+	gs.World.AddSystem(&combat.StrongholdSystem{}) // capture/garrison — after Combat(80), before Death(90) (#54 1B)
 	gs.World.AddSystem(gs.deathSys)
 
 	// v1 systems

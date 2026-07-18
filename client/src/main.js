@@ -1317,6 +1317,14 @@ export class Game {
       this.renderer.drawObjects(structDescs, cameraOffset);
     }
 
+    // Pass 2.7: Stronghold entities — capturable buildings (#54). Drawn from
+    // the live stronghold_state (positions/level/faction), faction-colored and
+    // sized by level, with a dark battlement backing.
+    const shDescs = this.buildStrongholdDescriptors(visible);
+    if (shDescs.length > 0) {
+      this.renderer.drawObjects(shDescs, cameraOffset);
+    }
+
     // Pass 3: Units (already Y-sorted by buildUnitDescriptors)
     this.renderer.drawUnits(unitDescs, cameraOffset);
 
@@ -1642,7 +1650,35 @@ export class Game {
   }
 
   /**
-   * Build fog overlay tile descriptors for fogged areas.
+   * Build stronghold descriptors for the visible range. Strongholds are
+   * capturable Building entities (#54) — drawn faction-colored (blue=player,
+   * red=enemy, gold=neutral), sized by level, with a dark battlement backing.
+   * Sources from `this.strongholds` (the live stronghold_state message).
+   */
+  buildStrongholdDescriptors(visible) {
+    if (!this.strongholds || this.strongholds.length === 0) return [];
+    const { minTX, maxTX, minTY, maxTY } = visible;
+    const zoom = this.camera.zoom;
+    const objects = [];
+    const halfTile = TILE_WIDTH * zoom / 2;
+    for (const s of this.strongholds) {
+      const tx = Math.floor(s.x);
+      const ty = Math.floor(s.y);
+      if (tx < minTX - 1 || tx > maxTX + 1 || ty < minTY - 1 || ty > maxTY + 1) continue;
+      const cx = tx * TILE_WIDTH * zoom + halfTile;
+      const cy = ty * TILE_HEIGHT * zoom + halfTile;
+      const lvl = s.level || 1;
+      const base = (8 + lvl * 2) * zoom;     // 10..18 px keep, scales with level
+      const ring = base + 4 * zoom;          // battlement backing
+      const fr = s.faction === 0 ? 0.35 : s.faction === 1 ? 0.85 : 0.78;
+      const fg = s.faction === 0 ? 0.55 : s.faction === 1 ? 0.45 : 0.66;
+      const fb = s.faction === 0 ? 0.85 : s.faction === 1 ? 0.30 : 0.20;
+      // Dark backing first (drawn behind), faction keep on top.
+      objects.push({ x: cx - ring / 2, y: cy - ring / 2, w: ring, h: ring, r: 0.2, g: 0.18, b: 0.14, sortY: cy });
+      objects.push({ x: cx - base / 2, y: cy - base / 2, w: base, h: base, r: fr, g: fg, b: fb, sortY: cy });
+    }
+    return objects;
+  }
    * 3-state fog: 0=unexplored (fully black), 1=explored (dimmed), 2=visible (skip).
    * Returns dark semi-transparent quads for non-visible tiles.
    */

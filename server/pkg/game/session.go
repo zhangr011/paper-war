@@ -1784,6 +1784,7 @@ func (gs *GameSession) handleMoveSquad(squadID uint32, targetX, targetY int64) {
 	squadID = gs.resolveSquadID(squadID)
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+	strongholdPool, _ := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent])
 
 	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
 		if bc.SquadID != squadID {
@@ -1793,7 +1794,30 @@ func (gs *GameSession) handleMoveSquad(squadID uint32, targetX, targetY int64) {
 			path.TargetX = targetX
 			path.TargetY = targetY
 		}
+		// Garrison exit (#54 1B): a move order off the stronghold's tile
+		// releases the unit from the garrison so movement can path it out.
+		if bc.GarrisonedIn != 0 {
+			gs.ungarrison(strongholdPool, e, bc)
+		}
 	})
+}
+
+// ungarrison removes a unit from its stronghold's garrison and clears the
+// garrisoned flag. Called on a move order away or on flip-eviction.
+func (gs *GameSession) ungarrison(strPool *ecs.ComponentPool[component.StrongholdComponent], unit ecs.Entity, bc *component.BoidComponent) {
+	if strPool == nil || bc.GarrisonedIn == 0 {
+		return
+	}
+	shE := ecs.Entity(bc.GarrisonedIn)
+	if sh, ok := strPool.GetPtr(shE); ok {
+		for i, g := range sh.Garrison {
+			if g == unit {
+				sh.Garrison = append(sh.Garrison[:i], sh.Garrison[i+1:]...)
+				break
+			}
+		}
+	}
+	bc.GarrisonedIn = 0
 }
 
 func (gs *GameSession) handleAttackTarget(squadID uint32, targetID uint32) {

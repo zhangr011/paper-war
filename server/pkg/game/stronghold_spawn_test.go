@@ -5,6 +5,7 @@ import (
 
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
+	"github.com/user/paper-war/server/pkg/fixed"
 )
 
 // TestStrongholdsSpawnedAsEntities verifies the #54 Phase 1A migration: a
@@ -91,5 +92,45 @@ func TestStrongholdStateIfChanged(t *testing.T) {
 	}
 	if !sawPlayer {
 		t.Error("flipped stronghold not reported as player-owned")
+	}
+}
+
+// TestStrongholdGarrisonExit: a garrisoned unit issued a move order away from
+// the stronghold is released (GarrisonedIn cleared, removed from the garrison).
+// (#54 1B — garrison exit.)
+func TestStrongholdGarrisonExit(t *testing.T) {
+	gs := NewGameSession()
+	gs.Reset()
+
+	strPool := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	hpPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+
+	shE := gs.World.Entities().Create()
+	posPool.Add(shE, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(20)})
+	hpPool.Add(shE, component.HealthComponent{HP: 999, MaxHP: 999})
+	ownerPool.Add(shE, component.OwnerComponent{Faction: component.FactionPlayer})
+	strPool.Add(shE, component.StrongholdComponent{Level: 1, Capacity: 3})
+
+	unit := gs.World.Entities().Create()
+	posPool.Add(unit, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(20)})
+	hpPool.Add(unit, component.HealthComponent{HP: 50, MaxHP: 50})
+	boidPool.Add(unit, component.BoidComponent{SquadID: 7, Role: component.RoleMelee, GarrisonedIn: uint32(shE)})
+	ownerPool.Add(unit, component.OwnerComponent{Faction: component.FactionPlayer})
+	sh, _ := strPool.GetPtr(shE)
+	sh.Garrison = append(sh.Garrison, unit)
+
+	// Issue a move order far away → should release the unit from the garrison.
+	gs.handleMoveSquad(7, fixed.FromFloat(5), fixed.FromFloat(5))
+
+	bc, _ := boidPool.Get(unit)
+	if bc.GarrisonedIn != 0 {
+		t.Errorf("after move order, GarrisonedIn = %d, want 0 (released)", bc.GarrisonedIn)
+	}
+	sh2, _ := strPool.Get(shE)
+	if len(sh2.Garrison) != 0 {
+		t.Errorf("garrison = %d after move order, want 0 (unit exited)", len(sh2.Garrison))
 	}
 }

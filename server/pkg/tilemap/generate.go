@@ -29,6 +29,10 @@ const (
 	waterFraction  = 0.02 // ~2% of tiles become deep water
 	forestFraction = 0.15 // ~15% of eligible tiles become forest (design/map.png is grass-dominant with ~5% dark green patches; higher fraction still reads as grassland with scattered tree cover)
 
+	// Environmental scatter (issue #55 phase 3)
+	rockFraction  = 0.08 // fraction of hill tiles that become Rock
+	brushFraction = 0.05 // fraction of plain tiles that become Brush
+
 	// River
 	riverMaxWidth = 3 // max width at downstream end
 
@@ -129,6 +133,10 @@ func generateMapOnce(w, h int32, seed int64) *GameMap {
 
 	// Stage 5: Forest — second noise layer with adaptive threshold
 	applyForest(gm, p, w, h)
+
+	// Stage 6: Environmental scatter — rocks (heavy cover, blocks LOS) on
+	// hills and brush (light cover) on plains. Sparse. Issue #55 phase 3.
+	applyScatter(gm, r, w, h)
 
 	// Stage 7: Pass detection & stronghold placement
 	strongholds := placeStrongholds(gm, r, w, h)
@@ -421,6 +429,33 @@ func applyForest(gm *GameMap, p *perlin.Perlin, w, h int32) float64 {
 	}
 
 	return threshold
+}
+
+// applyScatter sprinkles environmental objects across the map: Rock on hill
+// tiles (heavy cover, blocks LOS) and Brush on plains (light cover, no LOS
+// block). Sparse by design — adds tactical texture without overtaking the
+// terrain. Rocks are passable-slow for Heavy so they don't cut Heavy routes
+// (connectivity is still re-validated by GenerateMap's retry loop). Issue #55
+// phase 3.
+func applyScatter(gm *GameMap, r *rand.Rand, w, h int32) {
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			tile := gm.TileAt(x, y)
+			if tile == nil {
+				continue
+			}
+			switch tile.TerrainType {
+			case component.TerrainHill:
+				if r.Float64() < rockFraction {
+					gm.SetTerrain(x, y, component.TerrainRock)
+				}
+			case component.TerrainPlain:
+				if r.Float64() < brushFraction {
+					gm.SetTerrain(x, y, component.TerrainBrush)
+				}
+			}
+		}
+	}
 }
 
 // placeStrongholds finds ridge passes and places strongholds at them.

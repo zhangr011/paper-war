@@ -19,15 +19,18 @@ const (
 	TerrainStronghold3 TerrainType = 13
 	TerrainStronghold4 TerrainType = 14
 	TerrainStronghold5 TerrainType = 15
+	TerrainRock        TerrainType = 16 // heavy cover, blocks LOS, Heavy-impassable crags
+	TerrainBrush       TerrainType = 17 // light cover, no LOS block (concealment only)
 )
 
 // BlocksLOS reports whether a tile of this terrain blocks line-of-sight
 // through it. Used by the fog system's vision raycasting (issue #55 phase 2).
 // The blocker tile itself remains visible — only sight past it is blocked,
-// so you see the wall/forest edge but not what is behind it.
+// so you see the wall/forest/rock edge but not what is behind it. Brush does
+// NOT block — it's concealment (cover) only.
 func BlocksLOS(t TerrainType) bool {
 	switch t {
-	case TerrainForest, TerrainWall:
+	case TerrainForest, TerrainWall, TerrainRock:
 		return true
 	default:
 		return false
@@ -36,7 +39,7 @@ func BlocksLOS(t TerrainType) bool {
 
 type MovementProfile struct {
 	ID           uint8
-	TerrainCosts [16]uint8
+	TerrainCosts [18]uint8
 }
 
 type MovementComponent struct {

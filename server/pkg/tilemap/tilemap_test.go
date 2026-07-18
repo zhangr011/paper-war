@@ -196,6 +196,34 @@ func TestPropertyHillCoverage(t *testing.T) {
 	}
 }
 
+// TestPropertyScatterCoverage asserts the environmental scatter pass (issue #55
+// phase 3) places both Rock (on hills) and Brush (on plains) on every fixture
+// map, and that rocks/brush stay a small minority so the map still reads as
+// grassland-with-cover rather than rubble.
+func TestPropertyScatterCoverage(t *testing.T) {
+	for seed, gm := range testMaps {
+		var rock, brush int32
+		total := int32(len(gm.Tiles))
+		for _, tile := range gm.Tiles {
+			switch tile.TerrainType {
+			case component.TerrainRock:
+				rock++
+			case component.TerrainBrush:
+				brush++
+			}
+		}
+		if rock == 0 {
+			t.Errorf("seed %d: no Rock placed by scatter pass", seed)
+		}
+		if brush == 0 {
+			t.Errorf("seed %d: no Brush placed by scatter pass", seed)
+		}
+		if float64(rock)/float64(total) > 0.10 {
+			t.Errorf("seed %d: rock coverage %.3f too high", seed, float64(rock)/float64(total))
+		}
+	}
+}
+
 func TestPropertyStrongholdCount(t *testing.T) {
 	for seed, gm := range testMaps {
 		strongholds := int32(0)

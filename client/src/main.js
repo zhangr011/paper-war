@@ -180,13 +180,15 @@ const TERRAIN_COLORS = [
   { r: 0.64, g: 0.38, b: 0.18 }, // 13 Stronghold L3
   { r: 0.69, g: 0.41, b: 0.18 }, // 14 Stronghold L4
   { r: 0.74, g: 0.44, b: 0.18 }, // 15 Stronghold L5
+  { r: 0.40, g: 0.38, b: 0.36 }, // 16 Rock — stone gray (heavy cover, blocks LOS)
+  { r: 0.34, g: 0.42, b: 0.20 }, // 17 Brush — scrubby olive-green (light cover)
 ];
 
 // Terrain types that should participate in the patchwork brightness variation.
 // Roads, bridges, walls, water, and strongholds are excluded so their shape
 // reads cleanly; natural terrain (grass, forest, hill, swamp, desert, snow)
 // gets the organic light/dark patch pattern of design/map.png.
-const PATCHWORK_TERRAINS = new Set([0, 4, 5, 6, 10]);
+const PATCHWORK_TERRAINS = new Set([0, 4, 5, 6, 10, 17]);
 
 // ---------------------------------------------------------------------------
 // Game class

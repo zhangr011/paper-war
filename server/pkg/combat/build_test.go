@@ -253,6 +253,8 @@ func TestTerrainCoverBonus(t *testing.T) {
 		{component.TerrainHill, 15},
 		{component.TerrainRoad, 0},
 		{component.TerrainWall, 0},
+		{component.TerrainRock, 40},  // heavy cover — issue #55 phase 3
+		{component.TerrainBrush, 10}, // light cover — issue #55 phase 3
 		// Stronghold terrain routes through StrongholdDefenseBonus, not cover.
 		{component.TerrainStronghold3, 0},
 	}

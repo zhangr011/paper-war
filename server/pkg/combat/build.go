@@ -159,7 +159,8 @@ func StrongholdDefenseBonus(strongholdLevel int) int32 {
 
 // TerrainCoverBonus returns the damage-reduction % (0-100) a CombatUnit gains
 // from the terrain it stands on. Forest = 25% (cover/concealment), Hill = 15%
-// (high ground); other terrains grant none. Tunable — issue #55 phase 1.
+// (high ground), Rock = 40% (heavy cover), Brush = 10% (light cover); other
+// terrains grant none. Tunable — issue #55 phases 1 & 3.
 // Walls are impassable so no unit stands on them; Building/stronghold tiles
 // route through StrongholdDefenseBonus instead.
 func TerrainCoverBonus(terrain component.TerrainType) int32 {
@@ -168,6 +169,10 @@ func TerrainCoverBonus(terrain component.TerrainType) int32 {
 		return 25
 	case component.TerrainHill:
 		return 15
+	case component.TerrainRock:
+		return 40
+	case component.TerrainBrush:
+		return 10
 	default:
 		return 0
 	}

@@ -79,3 +79,32 @@ func TestArmorTypeToProfileID(t *testing.T) {
 		}
 	}
 }
+
+// TestBlocksLOS verifies the terrains the fog raycast treats as sight blockers
+// (issue #55 phase 2/3). Forest/Wall/Rock block; Brush (concealment only) and
+// everything else do not.
+func TestBlocksLOS(t *testing.T) {
+	blocking := []TerrainType{TerrainForest, TerrainWall, TerrainRock}
+	clear := []TerrainType{TerrainPlain, TerrainRoad, TerrainHill, TerrainBrush, TerrainSwamp}
+	for _, tt := range blocking {
+		if !BlocksLOS(tt) {
+			t.Errorf("BlocksLOS(%d) = false, want true", tt)
+		}
+	}
+	for _, tt := range clear {
+		if BlocksLOS(tt) {
+			t.Errorf("BlocksLOS(%d) = true, want false", tt)
+		}
+	}
+}
+
+// TestRockPassableForBothProfiles — Rock is heavy cover but must not cut Heavy
+// routes, so it stays passable (slow) for both profiles. Issue #55 phase 3.
+func TestRockPassableForBothProfiles(t *testing.T) {
+	profiles := StandardMovementProfiles()
+	for _, p := range profiles {
+		if p.TerrainCosts[TerrainRock] == 0 {
+			t.Errorf("profile %d: Rock is impassable (cost 0) — would risk Heavy connectivity", p.ID)
+		}
+	}
+}

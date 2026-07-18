@@ -20,7 +20,7 @@ const GRID = 32;
 const TERRAIN_NAMES = [
   'Plain', 'Road', 'Shallow', 'Deep', 'Forest', 'Hill', 'Swamp', 'Bridge',
   'Wall', 'Snow', 'Desert', 'Stronghold1', 'Stronghold2', 'Stronghold3',
-  'Stronghold4', 'Stronghold5',
+  'Stronghold4', 'Stronghold5', 'Rock', 'Brush',
 ];
 // Go identifier for each terrain type, as used by clash_maps.go SetTerrain.
 const TERRAIN_GO = [
@@ -31,6 +31,7 @@ const TERRAIN_GO = [
   'component.TerrainStronghold1', 'component.TerrainStronghold2',
   'component.TerrainStronghold3', 'component.TerrainStronghold4',
   'component.TerrainStronghold5',
+  'component.TerrainRock', 'component.TerrainBrush',
 ];
 
 // Terrain type colors — copied verbatim from client/src/main.js (TERRAIN_COLORS).
@@ -52,6 +53,8 @@ const TERRAIN_COLORS = [
   [0.64, 0.38, 0.18],  // 13 Stronghold3
   [0.69, 0.41, 0.18],  // 14 Stronghold4
   [0.74, 0.44, 0.18],  // 15 Stronghold5
+  [0.40, 0.38, 0.36],  // 16 Rock — stone gray (heavier than Wall)
+  [0.34, 0.42, 0.20],  // 17 Brush — scrubby olive-green
 ];
 
 // hillShadeRGB — copied verbatim from client/src/main.js. Layer 0 = valley

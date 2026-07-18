@@ -1679,6 +1679,9 @@ export class Game {
     }
     return objects;
   }
+
+  /**
+   * Build fog overlay tile descriptors for fogged areas.
    * 3-state fog: 0=unexplored (fully black), 1=explored (dimmed), 2=visible (skip).
    * Returns dark semi-transparent quads for non-visible tiles.
    */

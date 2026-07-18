@@ -278,19 +278,12 @@ func ClashStronghold() *GameMap {
 		m.SetTerrain(cmidX+dx, cmidY+wallR, component.TerrainRoad)
 	}
 
-	// Inner stronghold tile at center
+	// Central fortress keep: strongholds are no longer terrain (ADR-0023 /
+	// issue #54 — they're entities), so the inner keep is a solid Wall block
+	// ringed by the wall above. The N-S road carves the gate below.
 	for dy := int32(-2); dy <= 2; dy++ {
 		for dx := int32(-2); dx <= 2; dx++ {
-			m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainStronghold3)
-		}
-	}
-	// Stronghold inner ring
-	for dy := int32(-4); dy <= 4; dy++ {
-		for dx := int32(-4); dx <= 4; dx++ {
-			t := m.TileAt(cmidX+dx, cmidY+dy)
-			if t != nil && t.TerrainType == component.TerrainPlain {
-				m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainStronghold1)
-			}
+			m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainWall)
 		}
 	}
 

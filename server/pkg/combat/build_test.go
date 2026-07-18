@@ -255,8 +255,7 @@ func TestTerrainCoverBonus(t *testing.T) {
 		{component.TerrainWall, 0},
 		{component.TerrainRock, 40},  // heavy cover — issue #55 phase 3
 		{component.TerrainBrush, 10}, // light cover — issue #55 phase 3
-		// Stronghold terrain routes through StrongholdDefenseBonus, not cover.
-		{component.TerrainStronghold3, 0},
+		// ids 11-15 retired (stronghold → entity, #54); no terrain constant here.
 	}
 	for _, tt := range tests {
 		got := TerrainCoverBonus(tt.terrain)
@@ -300,15 +299,16 @@ func TestCoverDamageReductionByWeapon(t *testing.T) {
 	}
 }
 
-// TestTerrainDefensePctCombines confirms the combat-path helper picks
-// stronghold bonus on stronghold tiles and cover on Forest/Hill, never both.
-func TestTerrainDefensePctCombines(t *testing.T) {
+// TestTerrainDefensePct is now cover-only — strongholds moved to entities
+// (ADR-0023 / #54), so terrainDefensePct no longer routes through
+// StrongholdDefenseBonus. It returns TerrainCoverBonus directly.
+func TestTerrainDefensePct(t *testing.T) {
 	cases := map[component.TerrainType]int32{
-		component.TerrainPlain:        0,
-		component.TerrainForest:       25,
-		component.TerrainHill:         15,
-		component.TerrainStronghold1:  StrongholdDefenseBonus(1),
-		component.TerrainStronghold5:  StrongholdDefenseBonus(5),
+		component.TerrainPlain:  0,
+		component.TerrainForest: 25,
+		component.TerrainHill:   15,
+		component.TerrainRock:   40,
+		component.TerrainBrush:  10,
 	}
 	for terrain, want := range cases {
 		if got := terrainDefensePct(terrain); got != want {

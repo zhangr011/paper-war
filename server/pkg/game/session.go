@@ -151,6 +151,7 @@ func NewGameSession() *GameSession {
 	killPointsPool := ecs.NewComponentPool[component.KillPointsComponent]()
 	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
 	structPool := ecs.NewComponentPool[component.StructureComponent]()
+	strongholdPool := ecs.NewComponentPool[component.StrongholdComponent]()
 
 	gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
@@ -167,6 +168,7 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
 	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 	gs.World.RegisterPool(component.StructureComponent{}, structPool)
+	gs.World.RegisterPool(component.StrongholdComponent{}, strongholdPool)
 
 	// Build movement profiles from the standard Light/Heavy definitions.
 	// Light (ID 0): infantry — faster terrain traversal, can ford Shallow water.
@@ -486,21 +488,60 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 		}
 	}
 
-	// Find all stronghold positions on the map
+	// Stronghold positions come from generator-recorded specs now (gm.Strongholds),
+	// not terrain — strongholds are entities (#54).
 	var strongholds [][2]int32
-	for y := int32(0); y < gs.Map.Height; y++ {
-		for x := int32(0); x < gs.Map.Width; x++ {
-			tile := gs.Map.TileAt(x, y)
-			if tile != nil && tile.TerrainType >= component.TerrainStronghold1 &&
-				tile.TerrainType <= component.TerrainStronghold5 {
-				strongholds = append(strongholds, [2]int32{x, y})
-			}
-		}
+	for _, s := range gs.Map.Strongholds {
+		strongholds = append(strongholds, [2]int32{s.X, s.Y})
 	}
 	aiSys.SetStrongholds(strongholds)
 
 	// Set objective
 	aiSys.SetObjective(&gs.Map.Objective)
+}
+
+// spawnStrongholdEntities creates a Stronghold Building entity for each
+// generator-recorded spec in gs.Map.Strongholds. Each starts Neutral
+// (FactionNeutral), with HP and garrison capacity scaled by level. Phase 1A
+// (#54): the entity carries the data model; capture-by-flip + garrison are
+// Phase 1B, so combat currently skips these as targets.
+func (gs *GameSession) spawnStrongholdEntities() {
+	if gs.Map == nil || len(gs.Map.Strongholds) == 0 {
+		return
+	}
+	// Nil-safe pool resolution: some test worlds don't register every pool.
+	posPool, ok := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+	if !ok || posPool == nil {
+		return
+	}
+	healthPool, ok := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+	if !ok || healthPool == nil {
+		return
+	}
+	ownerPool, ok := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	if !ok || ownerPool == nil {
+		return
+	}
+	strongholdPool, ok := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent])
+	if !ok || strongholdPool == nil {
+		return
+	}
+	em := gs.World.Entities()
+
+	for _, spec := range gs.Map.Strongholds {
+		e := em.Create()
+		posPool.Add(e, component.PositionComponent{
+			X: fixed.FromFloat(float64(spec.X)),
+			Y: fixed.FromFloat(float64(spec.Y)),
+		})
+		hp := component.StrongholdHP(spec.Level)
+		healthPool.Add(e, component.HealthComponent{HP: hp, MaxHP: hp, Armor: 5})
+		ownerPool.Add(e, component.OwnerComponent{PlayerID: 0, Faction: component.FactionNeutral})
+		strongholdPool.Add(e, component.StrongholdComponent{
+			Level:    spec.Level,
+			Capacity: component.StrongholdCapacity(spec.Level),
+		})
+	}
 }
 
 func (gs *GameSession) runAI() {
@@ -602,6 +643,9 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 
 	gs.objectiveSys.Reset(gs.Map)
 
+	// Spawn Stronghold entities from generator-recorded specs (#54).
+	gs.spawnStrongholdEntities()
+
 	// Reset match statistics — without this, stats accumulate across matches
 	// in the same server session (issue #34: result statistics error again).
 	gs.stats = NewMatchStats()
@@ -654,6 +698,9 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 
 	// Reset objective system (reuse existing, update map)
 	gs.objectiveSys.Reset(gs.Map)
+
+	// Spawn Stronghold entities from generator-recorded specs (#54).
+	gs.spawnStrongholdEntities()
 
 	// Reset match statistics — without this, stats accumulate across matches
 	// in the same server session (issue #34: result statistics error again).

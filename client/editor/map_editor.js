@@ -19,20 +19,24 @@
 const GRID = 32;
 const TERRAIN_NAMES = [
   'Plain', 'Road', 'Shallow', 'Deep', 'Forest', 'Hill', 'Swamp', 'Bridge',
-  'Wall', 'Snow', 'Desert', 'Stronghold1', 'Stronghold2', 'Stronghold3',
-  'Stronghold4', 'Stronghold5', 'Rock', 'Brush',
+  'Wall', 'Snow', 'Desert',
+  '(reserved)', '(reserved)', '(reserved)', '(reserved)', '(reserved)', // 11-15 retired stronghold terrain (#54)
+  'Rock', 'Brush',
 ];
 // Go identifier for each terrain type, as used by clash_maps.go SetTerrain.
+// Indices must equal terrain ids, so retired stronghold slots (11-15) are kept
+// as empty placeholders — never painted, never exported.
 const TERRAIN_GO = [
   'component.TerrainPlain', 'component.TerrainRoad', 'component.TerrainShallow',
   'component.TerrainDeep', 'component.TerrainForest', 'component.TerrainHill',
   'component.TerrainSwamp', 'component.TerrainBridge', 'component.TerrainWall',
   'component.TerrainSnow', 'component.TerrainDesert',
-  'component.TerrainStronghold1', 'component.TerrainStronghold2',
-  'component.TerrainStronghold3', 'component.TerrainStronghold4',
-  'component.TerrainStronghold5',
+  '', '', '', '', '', // 11-15 reserved (stronghold → entity, #54)
   'component.TerrainRock', 'component.TerrainBrush',
 ];
+// Terrain ids retired from the enum (stronghold moved to entity, #54). Skipped
+// in the palette and in export.
+const RESERVED_TERRAIN = new Set([11, 12, 13, 14, 15]);
 
 // Terrain type colors — copied verbatim from client/src/main.js (TERRAIN_COLORS).
 // Histogram-tuned to the dark earthy pixel-art palette of design/map.png.
@@ -306,6 +310,7 @@ function buildTerrainPalette() {
   const el = document.getElementById('terrain-palette');
   el.innerHTML = '';
   TERRAIN_NAMES.forEach((name, t) => {
+    if (RESERVED_TERRAIN.has(t)) return; // skip retired stronghold ids (#54)
     const sw = document.createElement('div');
     sw.className = 'swatch' + (t === brushTerrain ? ' active' : '');
     sw.innerHTML = `<div class="chip" style="background:${toCss(TERRAIN_COLORS[t])}"></div>` +
@@ -455,7 +460,7 @@ function generateGo() {
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
       const t = terrain[y * GRID + x];
-      if (t !== 0) {
+      if (t !== 0 && !RESERVED_TERRAIN.has(t)) {
         lines.push(`\tm.SetTerrain(${x}, ${y}, ${TERRAIN_GO[t]})`);
         wroteTerrain = true;
       }

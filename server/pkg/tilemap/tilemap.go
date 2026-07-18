@@ -30,12 +30,21 @@ type Objective struct {
 	Duration    int32 // Survival: total ticks
 }
 
+// StrongholdSpec is a generator-recorded stronghold placement: a tile position
+// plus its level. The session spawns a Stronghold entity for each spec at
+// match start (ADR-0023 / issue #54) — strongholds are no longer terrain.
+type StrongholdSpec struct {
+	X, Y  int32
+	Level uint8 // 1-5
+}
+
 type GameMap struct {
 	Width, Height int32
 	Tiles         []Tile
 	Objective     Objective
-	Spawns        [][2]int32 // generator-placed spawn positions
-	Seed          int64      // seed for debugging/reproducibility
+	Spawns        [][2]int32      // generator-placed spawn positions
+	Strongholds   []StrongholdSpec // generator-recorded stronghold placements (#54)
+	Seed          int64           // seed for debugging/reproducibility
 }
 
 func NewGameMap(w, h int32) *GameMap {

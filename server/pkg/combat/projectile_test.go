@@ -306,33 +306,8 @@ func TestIsTargetValidInRange(t *testing.T) {
 	}
 }
 
-// ===================== strongholdLevelFromTerrain =====================
-
-func TestStrongholdLevelFromTerrain(t *testing.T) {
-	tests := []struct {
-		terrain component.TerrainType
-		want    int
-	}{
-		{component.TerrainStronghold1, 1},
-		{component.TerrainStronghold2, 2},
-		{component.TerrainStronghold3, 3},
-		{component.TerrainStronghold4, 4},
-		{component.TerrainStronghold5, 5},
-		{component.TerrainPlain, 0},
-		{component.TerrainForest, 0},
-		{component.TerrainDeep, 0},
-		{component.TerrainHill, 0},
-		{component.TerrainDesert, 0},
-		{component.TerrainSnow, 0},
-		{component.TerrainWall, 0},
-	}
-	for _, tt := range tests {
-		got := strongholdLevelFromTerrain(tt.terrain)
-		if got != tt.want {
-			t.Errorf("strongholdLevelFromTerrain(%d) = %d, want %d", tt.terrain, got, tt.want)
-		}
-	}
-}
+// strongholdLevelFromTerrain + its test were removed: strongholds are entities
+// now (ADR-0023 / issue #54), no longer terrain.
 
 // ===================== ValidateRecruit =====================
 

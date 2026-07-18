@@ -226,14 +226,10 @@ func TestPropertyScatterCoverage(t *testing.T) {
 
 func TestPropertyStrongholdCount(t *testing.T) {
 	for seed, gm := range testMaps {
-		strongholds := int32(0)
-		for _, tile := range gm.Tiles {
-			if isStrongholdTerrain(tile.TerrainType) {
-				strongholds++
-			}
-		}
-		if strongholds < 1 || strongholds > 20 {
-			t.Errorf("seed %d: stronghold tiles = %d, want 1-20", seed, strongholds)
+		// Strongholds are generator-recorded specs now (entities, not terrain — #54).
+		count := len(gm.Strongholds)
+		if count < 1 || count > 3 { // strongholdMax = 3
+			t.Errorf("seed %d: stronghold specs = %d, want 1-3", seed, count)
 		}
 	}
 }
@@ -277,15 +273,25 @@ func TestPropertyCaptureHasTarget(t *testing.T) {
 		if gm.Objective.Type != ObjectiveCapture {
 			continue
 		}
-		tile := gm.TileAt(gm.Objective.TargetX, gm.Objective.TargetY)
-		if tile == nil {
-			t.Errorf("seed %d: Capture target (%d,%d) is out of bounds",
+		// Capture target must be in bounds and match a recorded stronghold spec
+		// position (strongholds are entities now — #54; the tile itself is no
+		// longer stronghold terrain).
+		if gm.Objective.TargetX < 0 || gm.Objective.TargetX >= gm.Width ||
+			gm.Objective.TargetY < 0 || gm.Objective.TargetY >= gm.Height {
+			t.Errorf("seed %d: Capture target (%d,%d) out of bounds",
 				seed, gm.Objective.TargetX, gm.Objective.TargetY)
 			continue
 		}
-		if !isStrongholdTerrain(tile.TerrainType) {
-			t.Errorf("seed %d: Capture target (%d,%d) terrain = %d, want stronghold",
-				seed, gm.Objective.TargetX, gm.Objective.TargetY, tile.TerrainType)
+		match := false
+		for _, s := range gm.Strongholds {
+			if s.X == gm.Objective.TargetX && s.Y == gm.Objective.TargetY {
+				match = true
+				break
+			}
+		}
+		if !match {
+			t.Errorf("seed %d: Capture target (%d,%d) is not a stronghold spec",
+				seed, gm.Objective.TargetX, gm.Objective.TargetY)
 		}
 		if gm.Objective.HoldTarget != 300 {
 			t.Errorf("seed %d: HoldTarget = %d, want 300", seed, gm.Objective.HoldTarget)
@@ -366,17 +372,27 @@ func TestGenerateMapHasForest(t *testing.T) {
 	}
 }
 
-func TestGenerateMapStrongholdsIndestructible(t *testing.T) {
+// TestGenerateMapStrongholdSpecsPlaced verifies each recorded stronghold spec
+// sits on passable, non-hill/non-deep ground (the generator's placement rule).
+// Replaces the old "indestructible terrain" test — strongholds are entities
+// now (ADR-0023 / #54), so there's no stronghold terrain to check.
+func TestGenerateMapStrongholdSpecsPlaced(t *testing.T) {
 	gm := GenerateMap(48, 96, 42)
-	for y := int32(0); y < gm.Height; y++ {
-		for x := int32(0); x < gm.Width; x++ {
-			tile := gm.TileAt(x, y)
-			if isStrongholdTerrain(tile.TerrainType) {
-				if tile.Health != 0 || tile.MaxHealth != 0 {
-					t.Errorf("stronghold at (%d,%d) has Health=%d MaxHealth=%d, want 0/0",
-						x, y, tile.Health, tile.MaxHealth)
-				}
-			}
+	if len(gm.Strongholds) == 0 {
+		t.Fatal("expected at least one stronghold spec")
+	}
+	for _, s := range gm.Strongholds {
+		tile := gm.TileAt(s.X, s.Y)
+		if tile == nil {
+			t.Errorf("stronghold spec (%d,%d) out of bounds", s.X, s.Y)
+			continue
+		}
+		if tile.TerrainType == component.TerrainHill || tile.TerrainType == component.TerrainDeep {
+			t.Errorf("stronghold spec (%d,%d) on impassable terrain %d",
+				s.X, s.Y, tile.TerrainType)
+		}
+		if s.Level < 1 || s.Level > 5 {
+			t.Errorf("stronghold spec (%d,%d) level = %d, want 1-5", s.X, s.Y, s.Level)
 		}
 	}
 }

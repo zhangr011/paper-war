@@ -20,7 +20,12 @@ type CombatSystem struct {
 	ownerPool    *ecs.ComponentPool[component.OwnerComponent]
 	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent]
 	pathPool     *ecs.ComponentPool[component.PathfindingComponent]
-	MapW, MapH   int32
+	// strongholdPool marks Stronghold entities. Phase 1A (#54): strongholds are
+	// spawned as entities but not yet targetable — capture-by-flip is Phase 1B.
+	// findTarget/isTargetValid skip them so units don't fire on invulnerable
+	// buildings. Nil when no strongholds are present.
+	strongholdPool *ecs.ComponentPool[component.StrongholdComponent]
+	MapW, MapH     int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
 	// StateLookup returns the AI state for a squad (0 if unknown or not
 	// AI-driven). Used to suppress auto-pursuit for squads in StateGuard
@@ -62,6 +67,9 @@ func (s *CombatSystem) Init(w *ecs.World) {
 	}
 	if p := w.Pool(component.PathfindingComponent{}); p != nil {
 		s.pathPool = p.(*ecs.ComponentPool[component.PathfindingComponent])
+	}
+	if p := w.Pool(component.StrongholdComponent{}); p != nil {
+		s.strongholdPool = p.(*ecs.ComponentPool[component.StrongholdComponent])
 	}
 }
 
@@ -269,6 +277,12 @@ func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackCo
 			return false
 		}
 	}
+	// Stronghold entities are not targetable until capture-by-flip (#54 Phase 1B).
+	if s.strongholdPool != nil {
+		if _, ok := s.strongholdPool.Get(targetEntity); ok {
+			return false
+		}
+	}
 	_ = targetPos // position existence verified above; range checked in main loop
 	return true
 }
@@ -312,6 +326,14 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 			selfOwner, ok1 := s.ownerPool.Get(attacker)
 			otherOwner, ok2 := s.ownerPool.Get(entity)
 			if ok1 && ok2 && selfOwner.Faction == otherOwner.Faction {
+				continue
+			}
+		}
+
+		// Skip Stronghold entities — not targetable until capture-by-flip
+		// (Phase 1B, #54). Prevents wasting fire on invulnerable buildings.
+		if s.strongholdPool != nil {
+			if _, ok := s.strongholdPool.Get(entity); ok {
 				continue
 			}
 		}
@@ -454,30 +476,11 @@ func (s *CombatSystem) collectSplash(targetPos component.PositionComponent, base
 	}
 }
 
-// strongholdLevelFromTerrain returns 1-5 for stronghold terrain types, 0 otherwise.
-func strongholdLevelFromTerrain(t component.TerrainType) int {
-	switch t {
-	case component.TerrainStronghold1:
-		return 1
-	case component.TerrainStronghold2:
-		return 2
-	case component.TerrainStronghold3:
-		return 3
-	case component.TerrainStronghold4:
-		return 4
-	case component.TerrainStronghold5:
-		return 5
-	}
-	return 0
-}
-
-// terrainDefensePct returns the total damage-reduction % for a defender on the
-// given terrain: the stronghold bonus on a stronghold tile, otherwise terrain
-// cover (Forest/Hill). 0 = no reduction. Stronghold and cover never combine —
-// a tile is exactly one terrain type. Issue #55 phase 1.
+// terrainDefensePct returns the terrain-based damage-reduction % for a
+// defender on the given terrain (Forest/Hill/Rock/Brush cover). 0 = none.
+// Strongholds no longer contribute here — they're entities now (ADR-0023 /
+// issue #54), and their defense bonus moves to garrisoned units in Phase 1B.
+// Issue #55 phase 1.
 func terrainDefensePct(terrain component.TerrainType) int32 {
-	if shLevel := strongholdLevelFromTerrain(terrain); shLevel > 0 {
-		return StrongholdDefenseBonus(shLevel)
-	}
 	return TerrainCoverBonus(terrain)
 }

@@ -13,14 +13,12 @@ const (
 	TerrainBridge      TerrainType = 7
 	TerrainWall        TerrainType = 8
 	TerrainSnow        TerrainType = 9
-	TerrainDesert      TerrainType = 10
-	TerrainStronghold1 TerrainType = 11
-	TerrainStronghold2 TerrainType = 12
-	TerrainStronghold3 TerrainType = 13
-	TerrainStronghold4 TerrainType = 14
-	TerrainStronghold5 TerrainType = 15
-	TerrainRock        TerrainType = 16 // heavy cover, blocks LOS, Heavy-impassable crags
-	TerrainBrush       TerrainType = 17 // light cover, no LOS block (concealment only)
+	TerrainDesert TerrainType = 10
+	// ids 11-15 are RESERVED (retired TerrainStronghold1-5 — strongholds are
+	// now Building entities, ADR-0023 / issue #54). Not reused to keep
+	// Rock/Brush (16/17) stable and TerrainCosts indices unchanged.
+	TerrainRock  TerrainType = 16 // heavy cover, blocks LOS, Heavy-impassable crags
+	TerrainBrush TerrainType = 17 // light cover, no LOS block (concealment only)
 )
 
 // BlocksLOS reports whether a tile of this terrain blocks line-of-sight

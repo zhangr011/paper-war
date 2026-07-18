@@ -138,8 +138,9 @@ func generateMapOnce(w, h int32, seed int64) *GameMap {
 	// hills and brush (light cover) on plains. Sparse. Issue #55 phase 3.
 	applyScatter(gm, r, w, h)
 
-	// Stage 7: Pass detection & stronghold placement
-	strongholds := placeStrongholds(gm, r, w, h)
+	// Stage 7: Pass detection & stronghold placement (records gm.Strongholds
+	// specs — entities are spawned by the session at match start, #54).
+	placeStrongholds(gm, r, w, h)
 
 	// Stage 8: Bridge placement on river
 	placeBridges(gm, riverTiles, r)
@@ -149,7 +150,7 @@ func generateMapOnce(w, h int32, seed int64) *GameMap {
 	spawn2 := placeSpawn(gm, w/2, h-4, w, h)       // bottom-center
 
 	// Stage 10: Objective assignment
-	assignProceduralObjective(gm, strongholds, r)
+	assignProceduralObjective(gm, r)
 
 	// Store metadata (validation handled by caller GenerateMap)
 	gm.Spawns = [][2]int32{spawn1, spawn2}
@@ -458,7 +459,10 @@ func applyScatter(gm *GameMap, r *rand.Rand, w, h int32) {
 	}
 }
 
-// placeStrongholds finds ridge passes and places strongholds at them.
+// placeStrongholds finds ridge passes and records stronghold placements on
+// gm.Strongholds (StrongholdSpec — position + level). Strongholds are no
+// longer terrain; the session spawns a Stronghold entity for each spec at
+// match start (ADR-0023 / issue #54).
 func placeStrongholds(gm *GameMap, r *rand.Rand, w, h int32) [][2]int32 {
 	// Detect passes: non-hill tiles flanked by hill tiles
 	type pass struct {
@@ -578,12 +582,16 @@ func placeStrongholds(gm *GameMap, r *rand.Rand, w, h int32) [][2]int32 {
 		selected = append(selected, [2]int32{ps.x, ps.y})
 	}
 
-	// Place strongholds
+	// Record stronghold placements as specs (no terrain — strongholds are
+	// entities spawned by the session at match start, ADR-0023 / issue #54).
+	// Skip hill/deep tiles so the stronghold sits on passable ground.
 	for _, pos := range selected {
 		tile := gm.TileAt(pos[0], pos[1])
 		if tile != nil && tile.TerrainType != component.TerrainHill &&
 			tile.TerrainType != component.TerrainDeep {
-			gm.SetTerrain(pos[0], pos[1], component.TerrainStronghold1)
+			gm.Strongholds = append(gm.Strongholds, StrongholdSpec{
+				X: pos[0], Y: pos[1], Level: 1,
+			})
 		}
 	}
 
@@ -770,8 +778,9 @@ func placeSpawn(gm *GameMap, targetX, targetY int32, w, h int32) [2]int32 {
 	return [2]int32{cx, cy}
 }
 
-// assignProceduralObjective assigns objective based on terrain.
-func assignProceduralObjective(gm *GameMap, strongholds [][2]int32, r *rand.Rand) {
+// assignProceduralObjective assigns objective based on the map's recorded
+// stronghold placements (gm.Strongholds — specs, not terrain, per #54).
+func assignProceduralObjective(gm *GameMap, r *rand.Rand) {
 	// 15% Survival chance
 	if r.Intn(100) < survivalChance {
 		gm.Objective = Objective{
@@ -781,19 +790,18 @@ func assignProceduralObjective(gm *GameMap, strongholds [][2]int32, r *rand.Rand
 		return
 	}
 
-	// If we have a stronghold near the map center, use Capture
+	// If we have a stronghold near the map center, use Capture.
+	// NOTE (#54 ADR-0023): Stronghold ≠ Target — this keeps the Capture target
+	// pointed at a stronghold's position for now; fully decoupling the Target
+	// is deferred out-of-scope.
 	centerX, centerY := gm.Width/2, gm.Height/2
 	bestStronghold := [2]int32{-1, -1}
 	bestDist := float64(99999)
-	for _, s := range strongholds {
-		tile := gm.TileAt(s[0], s[1])
-		if tile == nil || tile.TerrainType != component.TerrainStronghold1 {
-			continue
-		}
-		d := math.Hypot(float64(s[0]-centerX), float64(s[1]-centerY))
+	for _, s := range gm.Strongholds {
+		d := math.Hypot(float64(s.X-centerX), float64(s.Y-centerY))
 		if d < bestDist {
 			bestDist = d
-			bestStronghold = s
+			bestStronghold = [2]int32{s.X, s.Y}
 		}
 	}
 
@@ -811,12 +819,6 @@ func assignProceduralObjective(gm *GameMap, strongholds [][2]int32, r *rand.Rand
 	gm.Objective = Objective{
 		Type: ObjectiveElimination,
 	}
-}
-
-// isStrongholdTerrain checks if a terrain type is any stronghold level.
-// Shared with clash maps and tests.
-func isStrongholdTerrain(tt component.TerrainType) bool {
-	return tt >= component.TerrainStronghold1 && tt <= component.TerrainStronghold5
 }
 
 // abs32 returns the absolute value of an int32.

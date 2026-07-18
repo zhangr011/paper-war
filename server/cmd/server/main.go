@@ -421,6 +421,26 @@ func main() {
 				}
 			})
 
+			// March orders: point each army at the enemy spawn so a clash match
+			// plays out as an advancing battle, not a static close-range shootout.
+			// MoveDisabled (set by EnableClashMode) only blocks AI-ISSUED moves;
+			// direct path targets still drive movement — same technique as
+			// runRealisticMatchup. Team 1 (player) → cy2, team 2 (enemy) → cy1.
+			pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+			ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+			boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+				path, ok := pathPool.GetPtr(e)
+				if !ok {
+					return
+				}
+				path.TargetX = cx
+				if owner, hasOwner := ownerPool.Get(e); hasOwner && owner.Faction == component.FactionEnemy {
+					path.TargetY = cy1 // enemy marches up toward team 1
+				} else {
+					path.TargetY = cy2 // team 1 marches down toward team 2
+				}
+			})
+
 		hub.SendJSON(clientID, map[string]interface{}{
 			"type":      "match_found",
 			"player_id": uint32(0), // spectator

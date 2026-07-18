@@ -207,8 +207,10 @@ test('all map tiles have valid terrain types', async ({ page }) => {
   // No empty/zero-length terrain
   expect(map.terrain.length).toBeGreaterThan(0);
 
-  // All terrain values must be in range 0-15 (TerrainType enum)
-  const validTypes = new Set(Array.from({ length: 16 }, (_, i) => i));
+  // All terrain values must be in the TerrainType enum (0-17: Plain..Brush).
+  // ids 11-15 are retired stronghold terrain (strongholds are entities now,
+  // #54) — no longer produced, but harmless if present.
+  const validTypes = new Set(Array.from({ length: 18 }, (_, i) => i));
   for (let i = 0; i < map.terrain.length; i++) {
     expect(validTypes.has(map.terrain[i])).toBe(true);
   }

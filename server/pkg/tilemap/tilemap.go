@@ -75,7 +75,12 @@ func (m *GameMap) SetTerrain(x, y int32, tt component.TerrainType) {
 	if !m.inBounds(x, y) {
 		return
 	}
-	m.Tiles[m.index(x, y)].TerrainType = tt
+	t := &m.Tiles[m.index(x, y)]
+	t.TerrainType = tt
+	// Keep BlockLOS in sync with terrain so every placement (generator, clash
+	// maps, editor-pasted maps) is correct without each site re-deriving it.
+	// Issue #55 phase 2 — retires BlockLOS as a dead field.
+	t.BlockLOS = component.BlocksLOS(tt)
 }
 
 func (m *GameMap) CostAt(x, y int32, profile *component.MovementProfile) uint8 {

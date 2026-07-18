@@ -419,12 +419,22 @@ func (gs *GameSession) updateFog() {
 		})
 	})
 
-	// Single-pass: clear all grids, then reveal from every source
+	// Single-pass: clear all grids, then reveal from every source.
+	// Vision is gated by terrain line-of-sight (BlockLOS) when a map is
+	// present — forests and walls block sight past them. Issue #55 phase 2.
+	var blocksLOS func(x, y int32) bool
+	if gs.Map != nil {
+		blocksLOS = func(x, y int32) bool {
+			t := gs.Map.TileAt(x, y)
+			return t != nil && t.BlockLOS
+		}
+	}
 	for pid := range gs.FogSys.Grids {
 		gs.FogSys.Grids[pid].Clear()
 	}
 	for _, s := range sources {
 		grid := gs.FogSys.GetOrCreateGrid(s.pid)
+		grid.BlocksLOS = blocksLOS
 		grid.RevealRadius(s.tileX, s.tileY, s.radius)
 	}
 }

@@ -202,3 +202,77 @@ func TestFogSystemGetOrCreateGrid(t *testing.T) {
 		t.Error("different players should get different grids")
 	}
 }
+
+// TestRevealRadiusLOSBlocks verifies terrain line-of-sight (issue #55 phase 2):
+// a wall between the viewer and a distant tile hides that tile, while the
+// wall tile itself and tiles on the near side remain visible.
+func TestRevealRadiusLOSBlocks(t *testing.T) {
+	fg := NewFogGrid(24, 24)
+	// Wall column at x=10, rows 2..10 — sits between viewer (5,7) and the
+	// far-right tiles.
+	wall := func(x, y int32) bool { return x == 10 && y >= 2 && y <= 12 }
+	fg.BlocksLOS = wall
+	fg.RevealRadius(5, 7, 10)
+
+	// Near side and the wall itself: visible.
+	if !fg.IsCurrentlyVisible(8, 7) {
+		t.Error("near-side tile (8,7) should be visible")
+	}
+	if !fg.IsCurrentlyVisible(10, 7) {
+		t.Error("wall tile (10,7) itself should be visible (blocker is seen)")
+	}
+	// Tile directly beyond the wall on the same row: blocked.
+	if fg.IsCurrentlyVisible(13, 7) {
+		t.Error("tile (13,7) beyond wall should be hidden by LOS")
+	}
+	// Tile reachable by a path that skirts the wall (above/below) is fine —
+	// pick one whose Bresenham line from (5,7) clears x==10 outside rows 2..12.
+	if !fg.IsCurrentlyVisible(7, 1) {
+		t.Error("tile (7,1) with clear LOS should be visible")
+	}
+}
+
+// TestRevealRadiusNoBlockerWhenNil confirms the legacy path (BlocksLOS nil)
+// still reveals by radius only — no behavior regression for callers that
+// don't opt into LOS.
+func TestRevealRadiusNoBlockerWhenNil(t *testing.T) {
+	fg := NewFogGrid(24, 24)
+	fg.RevealRadius(5, 7, 6)
+	if !fg.IsCurrentlyVisible(11, 7) {
+		t.Error("radius-only reveal should reach (11,7)")
+	}
+}
+
+// TestHasLOSCorners sanity-checks the raycast on a small blocker pattern.
+func TestHasLOSCorners(t *testing.T) {
+	fg := NewFogGrid(16, 16)
+	fg.BlocksLOS = func(x, y int32) bool { return x == 8 && y == 8 } // single blocker
+	// Adjacent to viewer: always LOS (no intermediate tile).
+	if !fg.hasLOS(5, 5, 6, 5) {
+		t.Error("adjacent tile should always have LOS")
+	}
+	// Line passing through (8,8): blocked.
+	if fg.hasLOS(4, 4, 12, 12) {
+		t.Error("line through blocker (8,8) should be blocked")
+	}
+	// The blocker tile itself: visible (end tile not checked).
+	if !fg.hasLOS(7, 7, 8, 8) {
+		t.Error("blocker tile as target should be visible")
+	}
+	// Line clearing the blocker: open.
+	if !fg.hasLOS(4, 5, 12, 5) {
+		t.Error("horizontal line clearing the blocker should have LOS")
+	}
+}
+
+// BenchmarkRevealRadiusLOS is a perf sanity check for the 10 Hz tick budget
+// (issue #55 acceptance). Run with: go test -bench=. ./pkg/fog/
+func BenchmarkRevealRadiusLOS(b *testing.B) {
+	fg := NewFogGrid(30, 48)
+	// Sparse forest blocker pattern, like a real map.
+	fg.BlocksLOS = func(x, y int32) bool { return (x+y)%7 == 0 }
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		fg.RevealRadius(15, 24, 12) // one commander's vision
+	}
+}

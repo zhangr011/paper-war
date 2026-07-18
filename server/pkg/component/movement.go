@@ -21,6 +21,19 @@ const (
 	TerrainStronghold5 TerrainType = 15
 )
 
+// BlocksLOS reports whether a tile of this terrain blocks line-of-sight
+// through it. Used by the fog system's vision raycasting (issue #55 phase 2).
+// The blocker tile itself remains visible — only sight past it is blocked,
+// so you see the wall/forest edge but not what is behind it.
+func BlocksLOS(t TerrainType) bool {
+	switch t {
+	case TerrainForest, TerrainWall:
+		return true
+	default:
+		return false
+	}
+}
+
 type MovementProfile struct {
 	ID           uint8
 	TerrainCosts [16]uint8

@@ -1,4 +1,4 @@
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 
@@ -69,6 +69,24 @@ function waitForPortFree(port, timeout) {
   });
 }
 
+// buildServer compiles the server binary from current source BEFORE launching
+// it. Without this, global-setup ran whatever stale `server/server` binary was
+// on disk — the e2e suite silently tested old code, masking real regressions
+// (e.g. the clash-movement bug and the stale map-generation terrain set).
+// Fails loudly with the compiler output if the build breaks.
+function buildServer(serverDir) {
+  try {
+    execSync('go build -o server ./cmd/server', {
+      cwd: serverDir,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 120000,
+    });
+  } catch (e) {
+    const stderr = e.stderr ? e.stderr.toString() : e.message;
+    throw new Error(`global-setup: server build failed — e2e cannot run.\n${stderr}`);
+  }
+}
+
 async function globalSetup() {
   const serverDir = path.join(__dirname, '../../server');
   const serverBin = path.join(serverDir, 'server');
@@ -76,6 +94,9 @@ async function globalSetup() {
   // Wait for any stale server from a previous run to release the port.
   // Issue #47 follow-up: prevents EADDRINUSE on the new spawn.
   await waitForPortFree(SERVER_PORT, 3000);
+
+  // Build from current source so e2e tests the code that's actually on disk.
+  buildServer(serverDir);
 
   // Issue #47 Fix A: pass PAPER_WAR_TEST_SEED to the server process so
   // map generation + global RNG are deterministic — but ONLY when the

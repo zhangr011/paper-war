@@ -2,6 +2,11 @@ package component
 
 import "github.com/user/paper-war/server/pkg/ecs"
 
+// StrongholdRegenRate is the HP a garrisoned unit recovers per tick while
+// inside a stronghold (#56 phase 1). Tunable — the "sustain" half of the
+// garrison benefit. Does not revive dead units.
+const StrongholdRegenRate int32 = 1 // HP/tick → 10 HP/sec at ServerTicksPerSecond=10
+
 // StrongholdComponent marks an entity as a Stronghold — a capturable,
 // garrisonable Building (ADR-0023 / issue #54). A stronghold starts Neutral
 // (OwnerComponent.Faction == FactionNeutral) and is claimed by being damaged

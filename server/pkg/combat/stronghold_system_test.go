@@ -247,8 +247,12 @@ func TestStrongholdDamageSplit(t *testing.T) {
 	}
 	for _, u := range gUnits {
 		uhp, _ := hpPool.Get(u)
-		if uhp.HP != 1000-2 {
-			t.Errorf("garrison unit HP = %d, want 998 (5 split ÷2)", uhp.HP)
+		// dmg=10, L1 split 50% → garrisonDmg=5, ÷2 = 2 per unit. StrongholdSystem
+		// then regens each garrisoned unit by StrongholdRegenRate (1), so net
+		// garrison loss = 2 - 1 = 1 → HP 999.
+		wantHP := int32(1000) - 2 + component.StrongholdRegenRate
+		if uhp.HP != wantHP {
+			t.Errorf("garrison unit HP = %d, want %d (5 split ÷2 − regen)", uhp.HP, wantHP)
 		}
 	}
 }
@@ -260,5 +264,49 @@ func TestStrongholdGarrisonShareTable(t *testing.T) {
 		if got := component.StrongholdGarrisonShare(lvl); got != w {
 			t.Errorf("StrongholdGarrisonShare(%d) = %d, want %d", lvl, got, w)
 		}
+	}
+}
+
+// TestStrongholdGarrisonRegen: a garrisoned unit below MaxHP recovers HP each
+// tick up to MaxHP; a unit already at full stays full. (#56 phase 1.)
+func TestStrongholdGarrisonRegen(t *testing.T) {
+	em, w, _, posPool, hpPool, ownerPool, strPool, boidPool, _, _, _, _ := setupStrongholdWorld()
+	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 6, 6, 1, component.FactionPlayer)
+
+	// Wounded unit → garrison it.
+	wounded := em.Create()
+	posPool.Add(wounded, component.PositionComponent{X: fixed.FromFloat(6.5), Y: fixed.FromFloat(6.5)})
+	hpPool.Add(wounded, component.HealthComponent{HP: 10, MaxHP: 100})
+	boidPool.Add(wounded, component.BoidComponent{Role: component.RoleMelee, GarrisonedIn: uint32(shE)})
+	ownerPool.Add(wounded, component.OwnerComponent{Faction: component.FactionPlayer})
+	sh, _ := strPool.GetPtr(shE)
+	sh.Garrison = append(sh.Garrison, wounded)
+
+	// Full-HP unit → garrison it.
+	full := em.Create()
+	posPool.Add(full, component.PositionComponent{X: fixed.FromFloat(6.5), Y: fixed.FromFloat(6.5)})
+	hpPool.Add(full, component.HealthComponent{HP: 100, MaxHP: 100})
+	boidPool.Add(full, component.BoidComponent{Role: component.RoleMelee, GarrisonedIn: uint32(shE)})
+	ownerPool.Add(full, component.OwnerComponent{Faction: component.FactionPlayer})
+	sh.Garrison = append(sh.Garrison, full)
+
+	w.Tick(1) // one regen tick
+
+	whp, _ := hpPool.Get(wounded)
+	if whp.HP != 10+component.StrongholdRegenRate {
+		t.Errorf("wounded HP after 1 tick = %d, want %d", whp.HP, 10+component.StrongholdRegenRate)
+	}
+	fhp, _ := hpPool.Get(full)
+	if fhp.HP != 100 {
+		t.Errorf("full-HP unit changed to %d, want 100 (no overheal)", fhp.HP)
+	}
+
+	// Tick many times — wounded reaches MaxHP and caps (no overshoot).
+	for i := 0; i < 1000; i++ {
+		w.Tick(1)
+	}
+	whp2, _ := hpPool.Get(wounded)
+	if whp2.HP != 100 {
+		t.Errorf("wounded HP after many ticks = %d, want 100 (capped at MaxHP)", whp2.HP)
 	}
 }

@@ -67,12 +67,37 @@ func (s *StrongholdSystem) Tick(w *ecs.World, tick uint32) {
 		// 1. Prune dead/missing garrison members.
 		sh.Garrison = s.pruneGarrison(shE, sh)
 
-		// 2. Auto-garrison units standing on the stronghold tile (capacity permitting).
+		// 2. Garrison HP recovery: each garrisoned unit regenerates HP up to
+		// MaxHP (#56 phase 1). The "sustain" half of the garrison benefit —
+		// the shelter/split half is in combat.go.
+		s.regenGarrison(sh)
+
+		// 3. Auto-garrison units standing on the stronghold tile (capacity permitting).
 		s.autoGarrison(shE, sh)
 
-		// 3. Capture-by-flip when HP hits 0.
+		// 4. Capture-by-flip when HP hits 0.
 		if hp.HP <= 0 {
 			s.tryCapture(shE, sh, hp)
+		}
+	}
+}
+
+// regenGarrison heals each living garrisoned unit by StrongholdRegenRate,
+// capped at MaxHP. Does not revive dead units (those are pruned).
+func (s *StrongholdSystem) regenGarrison(sh *component.StrongholdComponent) {
+	if len(sh.Garrison) == 0 {
+		return
+	}
+	for _, g := range sh.Garrison {
+		gh, ok := s.healthPool.GetPtr(g)
+		if !ok || gh.HP <= 0 || gh.MaxHP <= 0 {
+			continue
+		}
+		if gh.HP < gh.MaxHP {
+			gh.HP += component.StrongholdRegenRate
+			if gh.HP > gh.MaxHP {
+				gh.HP = gh.MaxHP
+			}
 		}
 	}
 }

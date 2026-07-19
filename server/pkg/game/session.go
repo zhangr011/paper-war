@@ -37,30 +37,30 @@ type GameSession struct {
 	Culler  *network.Culler
 
 	// Systems (kept as references for command handling)
-	terrainSys   *terrain.TerrainSystem
-	commanderSys *commander.CommanderSystem
-	movementSys  *movement.MovementSystem
-	combatSys    *combat.CombatSystem
-	deathSys     *combat.DeathSystem
-	levelingSys  *combat.LevelingSystem // v1
-	buildSys     *combat.BuildSystem
-	objectiveSys *objective.ObjectiveSystem // v1
-	recruitSys   *combat.RecruitmentSystem  // v1
-	FogSys       *fog.FogSystem
-	AISys        *ai.AISystem
-	AISys2       *ai.AISystem     // second AI for clash mode (player 1)
-	Lifecycle    *MatchLifecycle  // v1
-	PlayerGold   map[uint32]int32 // v1: gold per player
-	lastSentGold        map[uint32]int32 // track what was last sent to client
-	lastStrongholdJSON  string           // dedupe stronghold_state broadcasts (#54 1B)
-	Store        persist.Store    // v1: persistence (nil = no persistence)
-	stats        *MatchStats      // v1: cumulative match statistics (AAR)
+	terrainSys         *terrain.TerrainSystem
+	commanderSys       *commander.CommanderSystem
+	movementSys        *movement.MovementSystem
+	combatSys          *combat.CombatSystem
+	deathSys           *combat.DeathSystem
+	levelingSys        *combat.LevelingSystem // v1
+	buildSys           *combat.BuildSystem
+	objectiveSys       *objective.ObjectiveSystem // v1
+	recruitSys         *combat.RecruitmentSystem  // v1
+	FogSys             *fog.FogSystem
+	AISys              *ai.AISystem
+	AISys2             *ai.AISystem     // second AI for clash mode (player 1)
+	Lifecycle          *MatchLifecycle  // v1
+	PlayerGold         map[uint32]int32 // v1: gold per player
+	lastSentGold       map[uint32]int32 // track what was last sent to client
+	lastStrongholdJSON string           // dedupe stronghold_state broadcasts (#54 1B)
+	Store              persist.Store    // v1: persistence (nil = no persistence)
+	stats              *MatchStats      // v1: cumulative match statistics (AAR)
 
 	tickCount uint32
 }
 
 const (
-	ServerTicksPerSecond      = 10
+	ServerTicksPerSecond = 10
 	// DefaultMapWidth/Height are shrunk from the original 48×96 (issue #45).
 	// The 30×48 portrait map with axis-aware speed tuning hits all four
 	// pacing invariants: cross-map ≤ 240 s, PvP first-contact ≤ 120 s,
@@ -505,8 +505,8 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 
 // StrongholdState is a stronghold's live, client-visible state.
 type StrongholdState struct {
-	X       int32 `json:"x"`       // tile coord
-	Y       int32 `json:"y"`       // tile coord
+	X       int32 `json:"x"` // tile coord
+	Y       int32 `json:"y"` // tile coord
 	Level   uint8 `json:"level"`
 	Faction uint8 `json:"faction"` // 0 player, 1 enemy, 0xFF neutral
 }
@@ -607,10 +607,39 @@ func (gs *GameSession) runAI() {
 	unitTypePool := gs.World.Pool(component.UnitTypeComponent{}).(*ecs.ComponentPool[component.UnitTypeComponent])
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 
+	// Build a tile→faction map of live strongholds so each AI can target only
+	// capturable (not self-owned) strongholds (#56 phase 2).
+	factionByPos := map[[2]int32]uint8{}
+	if shPool, ok := gs.World.Pool(component.StrongholdComponent{}).(*ecs.ComponentPool[component.StrongholdComponent]); ok {
+		shPool.Each(func(e ecs.Entity, _ *component.StrongholdComponent) {
+			pos, ok := posPool.Get(e)
+			if !ok {
+				return
+			}
+			fac := component.FactionNeutral
+			if owner, hasOwner := ownerPool.Get(e); hasOwner {
+				fac = owner.Faction
+			}
+			factionByPos[[2]int32{int32(pos.X >> 12), int32(pos.Y >> 12)}] = fac
+		})
+	}
+
 	runAISys := func(aiSys *ai.AISystem) {
 		if aiSys == nil {
 			return
 		}
+		// Refresh stronghold factions + this AI's own faction.
+		factions := make([]uint8, len(aiSys.Strongholds))
+		for i, sh := range aiSys.Strongholds {
+			factions[i] = factionByPos[sh]
+		}
+		aiSys.SetStrongholdFactions(factions)
+		if aiSys.AIPlayerID == 2 {
+			aiSys.SetAIFaction(component.FactionEnemy)
+		} else {
+			aiSys.SetAIFaction(component.FactionPlayer)
+		}
+
 		aiCmds := aiSys.Update(gs.tickCount, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
 		for _, cmd := range aiCmds {
 			switch cmd.Type {

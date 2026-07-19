@@ -50,9 +50,9 @@ const (
 	RoleHeavy     = 2
 
 	// Strategic constants
-	ExploreDuration   uint32 = 150 // ~30s at 5Hz tick
-	BaseDefenseRadius        = 12.0
-	BaseDefenseThreshold     = 2 // enemies near base to trigger defense (scaled response)
+	ExploreDuration      uint32 = 150 // ~30s at 5Hz tick
+	BaseDefenseRadius           = 12.0
+	BaseDefenseThreshold        = 2 // enemies near base to trigger defense (scaled response)
 
 	// v2 constants
 	IntelDecayInterval  uint32 = 100 // decay enemy intel every 100 ticks (~20s)
@@ -145,12 +145,19 @@ type AISystem struct {
 	PlayerGold map[uint32]int32   // reference to session gold pool
 
 	// Base positions (fixed-point)
-	BaseX       int64 // AI home base
-	BaseY       int64
-	EnemyBaseX  int64 // enemy spawn for offensive pressure
-	EnemyBaseY  int64
+	BaseX      int64 // AI home base
+	BaseY      int64
+	EnemyBaseX int64 // enemy spawn for offensive pressure
+	EnemyBaseY int64
 
 	Strongholds [][2]int32 // stronghold tile positions on map
+	// StrongholdFactions is parallel to Strongholds — the live owning faction
+	// of each (0=player, 1=enemy, 0xFF=neutral). Refreshed each tick by the
+	// session so the AI targets only capturable strongholds (#56 phase 2).
+	StrongholdFactions []uint8
+	// AIFaction is the faction this AI plays as; strongholdCommand skips
+	// strongholds already owned by AIFaction.
+	AIFaction uint8
 
 	// Enemy composition intel — persistent across ticks (decays periodically)
 	EnemyUnits map[component.CombatUnitType]int
@@ -195,6 +202,18 @@ func (as *AISystem) SetEnemyBasePosition(x, y int64) {
 // SetStrongholds provides the list of stronghold positions for capture logic.
 func (as *AISystem) SetStrongholds(positions [][2]int32) {
 	as.Strongholds = positions
+}
+
+// SetStrongholdFactions sets the live owner faction of each stronghold
+// (parallel to Strongholds). Fed each tick by the session (#56 phase 2).
+func (as *AISystem) SetStrongholdFactions(factions []uint8) {
+	as.StrongholdFactions = factions
+}
+
+// SetAIFaction sets the faction this AI plays as, so strongholdCommand can
+// skip strongholds it already owns.
+func (as *AISystem) SetAIFaction(f uint8) {
+	as.AIFaction = f
 }
 
 func (as *AISystem) RegisterSquad(squadID, commanderID uint32) {
@@ -739,6 +758,11 @@ func (as *AISystem) strongholdCommand(squadID uint32, state *AIState, pos compon
 
 	for i, sh := range as.Strongholds {
 		if as.visitedSH[i] {
+			continue
+		}
+		// Skip strongholds this AI already owns — only target capturable
+		// (neutral or enemy) ones. (#56 phase 2.)
+		if i < len(as.StrongholdFactions) && as.StrongholdFactions[i] == as.AIFaction {
 			continue
 		}
 		shX := fixed.FromFloat(float64(sh[0]))

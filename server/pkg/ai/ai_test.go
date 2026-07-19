@@ -318,6 +318,37 @@ func TestAIStrongholdCapture(t *testing.T) {
 	}
 }
 
+// TestAIStrongholdCaptureSkipsOwned (#56 phase 2): with two strongholds — one
+// owned by the AI, one neutral — the AI must target the neutral (capturable)
+// one, even though the owned one is closer.
+func TestAIStrongholdCaptureSkipsOwned(t *testing.T) {
+	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
+
+	aiCmd := em.Create()
+	posPool.Add(aiCmd, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(30)})
+	cmdPool.Add(aiCmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
+	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
+	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
+
+	sys := NewAISystem(2, nil, 64, 64)
+	sys.RegisterSquad(1, uint32(aiCmd))
+	// [0] owned by this AI (enemy) and very close; [1] neutral and farther.
+	sys.SetStrongholds([][2]int32{{22, 30}, {40, 30}})
+	sys.SetStrongholdFactions([]uint8{component.FactionEnemy, component.FactionNeutral})
+	sys.SetAIFaction(component.FactionEnemy)
+
+	cmds := sys.Update(100, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+	moveCmds := filterCmds(cmds, CmdMove)
+	if len(moveCmds) == 0 {
+		t.Fatal("expected a move toward the capturable (neutral) stronghold")
+	}
+	tx := fixed.ToFloat(moveCmds[0].TargetX)
+	ty := fixed.ToFloat(moveCmds[0].TargetY)
+	if int(tx) != 40 || int(ty) != 30 {
+		t.Errorf("targeted (%.0f,%.0f), want neutral (40,30); owned (22,30) should be skipped", tx, ty)
+	}
+}
+
 func TestAIExploration(t *testing.T) {
 	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
 
@@ -639,7 +670,7 @@ func TestAIRecruitWaveTiming(t *testing.T) {
 	}
 
 	// Second call shortly after — should be in cooldown (30 < 30*3=90 gold)
-	sys.PlayerGold[2] = 30 // reset gold
+	sys.PlayerGold[2] = 30            // reset gold
 	cmds2 := sys.recruitDecisions(10) // only 9 ticks later (< 60 interval)
 	if len(cmds2) != 0 {
 		t.Errorf("expected 0 recruits during wave cooldown, got %d", len(cmds2))

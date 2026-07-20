@@ -257,6 +257,39 @@ func TestStrongholdDamageSplit(t *testing.T) {
 	}
 }
 
+// TestStrongholdCommanderGarrison: a commander ordered to a stronghold tile
+// garrisons like any other unit (the commander exclusion was removed).
+func TestStrongholdCommanderGarrison(t *testing.T) {
+	em, w, _, posPool, hpPool, ownerPool, strPool, boidPool, _, _, _, _ := setupStrongholdWorld()
+	pathPool := w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+	shE := makeStronghold(em, posPool, hpPool, ownerPool, strPool, 5, 5, 1, component.FactionPlayer)
+
+	cmd := em.Create()
+	posPool.Add(cmd, component.PositionComponent{X: fixed.FromFloat(5.5), Y: fixed.FromFloat(5.5)})
+	pathPool.Add(cmd, component.PathfindingComponent{TargetX: fixed.FromFloat(5), TargetY: fixed.FromFloat(5)})
+	hpPool.Add(cmd, component.HealthComponent{HP: 300, MaxHP: 300})
+	boidPool.Add(cmd, component.BoidComponent{Role: component.RoleCommander})
+	ownerPool.Add(cmd, component.OwnerComponent{Faction: component.FactionPlayer})
+
+	w.Tick(1)
+
+	bc, _ := boidPool.Get(cmd)
+	if bc.GarrisonedIn != uint32(shE) {
+		t.Errorf("commander GarrisonedIn = %d, want %d (commander should garrison)", bc.GarrisonedIn, shE)
+	}
+	sh, _ := strPool.Get(shE)
+	found := false
+	for _, g := range sh.Garrison {
+		if g == cmd {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("commander not in stronghold garrison list")
+	}
+}
+
 // TestStrongholdGarrisonShareTable locks the level→share curve (L1=50 … L5=30).
 func TestStrongholdGarrisonShareTable(t *testing.T) {
 	want := map[uint8]int32{1: 50, 2: 45, 3: 40, 4: 35, 5: 30}

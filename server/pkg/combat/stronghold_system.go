@@ -143,9 +143,6 @@ func (s *StrongholdSystem) autoGarrison(shE ecs.Entity, sh *component.Stronghold
 		if bc.GarrisonedIn != 0 {
 			return
 		}
-		if bc.Role == component.RoleCommander {
-			return // commanders don't garrison
-		}
 		// Must be ON the stronghold tile.
 		up, ok := s.posPool.Get(e)
 		if !ok {

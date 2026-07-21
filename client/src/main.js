@@ -1695,23 +1695,15 @@ export class Game {
   buildCommanderMarkers() {
     const units = this.state.getRenderUnits();
     const zoom = this.camera.zoom;
-    const timeMs = performance.now();
     const objects = [];
     for (const u of units) {
       if (!u.isCommander || !u.alive) continue;
       const sx = u.renderX * TILE_WIDTH * zoom;
       const sy = u.renderY * TILE_HEIGHT * zoom;
-      // Animated gold chevron: bobs up/down + brightness pulses (~3Hz).
-      // Per-entity phase via entityID prevents lockstep. (#54)
-      const phase = u.entityID * 0.5;
-      const bob = Math.sin(timeMs / 300 + phase) * 2 * zoom;
-      const glow = 0.85 + 0.15 * Math.sin(timeMs / 350 + phase);
-      const y1 = sy - 19 * zoom + bob;
-      const y2 = sy - 23 * zoom + bob;
-      const gr = 0.92 * glow, gg = 0.75 * glow, gb = 0.2 * glow;
-      objects.push({ x: sx - 6 * zoom, y: y1, w: 6 * zoom, h: 2.5 * zoom, r: gr, g: gg, b: gb, sortY: y1 });
-      objects.push({ x: sx, y: y1, w: 6 * zoom, h: 2.5 * zoom, r: gr, g: gg, b: gb, sortY: y1 });
-      objects.push({ x: sx - 3.5 * zoom, y: y2, w: 7 * zoom, h: 2.5 * zoom, r: gr * 1.06, g: gg * 1.09, b: gb * 1.4, sortY: y2 });
+      // Static gold chevron above the head.
+      objects.push({ x: sx - 6 * zoom, y: sy - 19 * zoom, w: 6 * zoom, h: 2.5 * zoom, r: 0.92, g: 0.75, b: 0.2, sortY: sy - 19 });
+      objects.push({ x: sx, y: sy - 19 * zoom, w: 6 * zoom, h: 2.5 * zoom, r: 0.92, g: 0.75, b: 0.2, sortY: sy - 19 });
+      objects.push({ x: sx - 3.5 * zoom, y: sy - 23 * zoom, w: 7 * zoom, h: 2.5 * zoom, r: 0.98, g: 0.82, b: 0.28, sortY: sy - 23 });
     }
     return objects;
   }
@@ -1866,7 +1858,12 @@ export class Game {
         frame = currentFrame(state, eid, timeMs);
       }
 
-      const cell = atlasCell(unitType, state, dir, frame);
+      // Commanders render as a HEAVIER atlas type — a totally different sprite
+      // cycle (idle/move/attack/die all use different frames + silhouette).
+      // Each type maps one tier up so the commander reads as bigger/imposing.
+      const CMD_ATLAS_TYPE = [1, 4, 5, 6, 5, 6, 6];
+      const atlasType = unit.isCommander ? (CMD_ATLAS_TYPE[unitType] || unitType) : unitType;
+      const cell = atlasCell(atlasType, state, dir, frame);
 
       // Color: base type color, tinted by team
       const baseColor = UNIT_TYPE_COLORS[sizeIdx] || UNIT_TYPE_COLORS[0];
@@ -1905,13 +1902,10 @@ export class Game {
         b = b * (1 - dmg * 0.3);
       }
 
-      // Commander: pulsing gold "aura" tint — a special animation sequence
-      // that makes commanders breathe/glow, distinct from the static tint of
-      // regular units. Per-entity phase (eid) prevents lockstep. (#54)
+      // Commander: static gold tint on the heavier sprite (#54).
       if (unit.isCommander) {
-        const pulse = 0.85 + 0.15 * Math.sin(timeMs / 350 + eid * 0.5);
-        r = Math.min(1.0, r * 1.10 * pulse + 0.14);
-        g = Math.min(1.0, g * 0.95 * pulse + 0.10);
+        r = Math.min(1.0, r * 1.10 + 0.14);
+        g = Math.min(1.0, g * 1.00 + 0.10);
         b = Math.min(1.0, b * 0.70);
       }
 

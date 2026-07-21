@@ -1513,7 +1513,6 @@ func (gs *GameSession) handlePlayerRecruit(clientID uint32, unitType component.C
 
 // GenerateSnapshot produces a binary snapshot for a specific player.
 func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []byte {
-
 	var fogGrid *fog.FogGrid
 	if gs.FogSys != nil {
 		fogGrid = gs.FogSys.GetGrid(playerID)
@@ -1529,7 +1528,6 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
-
 	// Track own commander entities for always-include
 	ownCommanders := make(map[uint32]bool)
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])

@@ -1700,10 +1700,10 @@ export class Game {
       if (!u.isCommander || !u.alive) continue;
       const sx = u.renderX * TILE_WIDTH * zoom;
       const sy = u.renderY * TILE_HEIGHT * zoom;
-      // Gold chevron (^): two short bars above the head.
-      objects.push({ x: sx - 5 * zoom, y: sy - 16 * zoom, w: 5 * zoom, h: 2 * zoom, r: 0.9, g: 0.74, b: 0.2, sortY: sy - 16 });
-      objects.push({ x: sx, y: sy - 16 * zoom, w: 5 * zoom, h: 2 * zoom, r: 0.9, g: 0.74, b: 0.2, sortY: sy - 16 });
-      objects.push({ x: sx - 3 * zoom, y: sy - 19 * zoom, w: 6 * zoom, h: 2 * zoom, r: 0.95, g: 0.8, b: 0.25, sortY: sy - 19 });
+      // Gold chevron (^): two short bars above the head (~20% larger).
+      objects.push({ x: sx - 6 * zoom, y: sy - 19 * zoom, w: 6 * zoom, h: 2.5 * zoom, r: 0.92, g: 0.75, b: 0.2, sortY: sy - 19 });
+      objects.push({ x: sx, y: sy - 19 * zoom, w: 6 * zoom, h: 2.5 * zoom, r: 0.92, g: 0.75, b: 0.2, sortY: sy - 19 });
+      objects.push({ x: sx - 3.5 * zoom, y: sy - 23 * zoom, w: 7 * zoom, h: 2.5 * zoom, r: 0.98, g: 0.82, b: 0.28, sortY: sy - 23 });
     }
     return objects;
   }
@@ -1895,6 +1895,14 @@ export class Game {
         r = r + (1.0 - r) * dmg * 0.5;
         g = g * (1 - dmg * 0.3);
         b = b * (1 - dmg * 0.3);
+      }
+
+      // Commander: gold/warm "upgraded" tint — reads as elite/strong vs the
+      // same unit type without command. Layered last so it overrides state/HP.
+      if (unit.isCommander) {
+        r = Math.min(1.0, r * 1.10 + 0.14);
+        g = Math.min(1.0, g * 1.00 + 0.10);
+        b = Math.min(1.0, b * 0.70);
       }
 
       const d = this._pooledPush(descs);

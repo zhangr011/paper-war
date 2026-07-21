@@ -1331,6 +1331,13 @@ export class Game {
     // Pass 3.5: HP bars above units (uses effects batch)
     this.renderer.drawHPBars(unitDescs, cameraOffset);
 
+    // Pass 3.6: Commander rank markers — gold chevron above each commander's
+    // head so they read as distinct from regular combat units (#54).
+    const cmdMarkers = this.buildCommanderMarkers();
+    if (cmdMarkers.length > 0) {
+      this.renderer.drawObjects(cmdMarkers, cameraOffset);
+    }
+
     // Pass 4: Selection highlights (drawn as effects)
     if (selectionHighlights.length > 0) {
       this.renderer.drawEffects(selectionHighlights, cameraOffset);
@@ -1676,6 +1683,27 @@ export class Game {
       // Dark backing first (drawn behind), faction keep on top.
       objects.push({ x: cx - ring / 2, y: cy - ring / 2, w: ring, h: ring, r: 0.2, g: 0.18, b: 0.14, sortY: cy });
       objects.push({ x: cx - base / 2, y: cy - base / 2, w: base, h: base, r: fr, g: fg, b: fb, sortY: cy });
+    }
+    return objects;
+  }
+
+  /**
+   * Build commander rank markers — a gold chevron above each commander's head
+   * so commanders read as distinct from regular combat units (#54). Sources
+   * from unit.isCommander (bit-7 flag in the snapshot UnitType byte).
+   */
+  buildCommanderMarkers() {
+    const units = this.state.getRenderUnits();
+    const zoom = this.camera.zoom;
+    const objects = [];
+    for (const u of units) {
+      if (!u.isCommander || !u.alive) continue;
+      const sx = u.renderX * TILE_WIDTH * zoom;
+      const sy = u.renderY * TILE_HEIGHT * zoom;
+      // Gold chevron (^): two short bars above the head.
+      objects.push({ x: sx - 5 * zoom, y: sy - 16 * zoom, w: 5 * zoom, h: 2 * zoom, r: 0.9, g: 0.74, b: 0.2, sortY: sy - 16 });
+      objects.push({ x: sx, y: sy - 16 * zoom, w: 5 * zoom, h: 2 * zoom, r: 0.9, g: 0.74, b: 0.2, sortY: sy - 16 });
+      objects.push({ x: sx - 3 * zoom, y: sy - 19 * zoom, w: 6 * zoom, h: 2 * zoom, r: 0.95, g: 0.8, b: 0.25, sortY: sy - 19 });
     }
     return objects;
   }

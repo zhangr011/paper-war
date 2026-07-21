@@ -1587,6 +1587,11 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		if ut, ok := utPool.Get(e); ok {
 			state.UnitType = uint8(ut.Type)
 		}
+		// Flag commanders (bit 7 of UnitType) so the client can render a rank
+		// marker — the low 7 bits stay the CombatUnitType for the atlas.
+		if _, isCmd := cmdPool.Get(e); isCmd {
+			state.UnitType |= 0x80
+		}
 		if owner, hasOwner := ownerPool.Get(e); hasOwner {
 			state.Team = uint8(owner.PlayerID)
 			unitOwner = uint8(owner.PlayerID)

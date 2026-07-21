@@ -222,6 +222,7 @@ class UnitState {
     // Unit classification (sent once at creation, never changes)
     this.unitType = 0; // CombatUnitType: 0=LI, 1=HI, 2=Sniper, 3=AAI, 4=MG, 5=MA, 6=MM
     this.team = 0;     // player/faction ID
+    this.isCommander = false; // bit-7 flag from server (#54): render a rank marker
 
     // Lifecycle
     this.alive = true;
@@ -432,7 +433,10 @@ export class StateManager {
           unit.squadID = u.squadID;
         }
         if (u.unitType !== undefined) {
-          unit.unitType = u.unitType;
+          // Bit 7 flags commanders (set by the server); low 7 bits are the
+          // CombatUnitType for the sprite atlas.
+          unit.unitType = u.unitType & 0x7f;
+          unit.isCommander = (u.unitType & 0x80) !== 0;
         }
         if (u.team !== undefined) {
           unit.team = u.team;

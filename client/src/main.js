@@ -53,8 +53,9 @@ const GRASS_A = { r: 0.18, g: 0.38, b: 0.14 };
 const GRASS_B = { r: 0.20, g: 0.42, b: 0.16 };
 
 // Max HP per CombatUnitType (must match server CombatUnitTypeTable)
-// Commanders get 3x these values
-const UNIT_MAX_HP = [80, 60, 40, 60, 120, 150, 130];
+// Base HP per CombatUnitType — mirrors server/pkg/component/unit_type.go
+// CombatUnitTypeTable. Commanders get 6× these values.
+const UNIT_MAX_HP = [100, 60, 30, 60, 120, 150, 130];
 
 // Default unit sprite sizes per CombatUnitType (0-6)
 // LI=small, HI=medium, Sniper=small, AAI=small, MG=medium, MA=large, MM=large
@@ -1901,6 +1902,7 @@ export class Game {
       d.b = b;
       d.sortY = sy; // for Y-sorting
       d.hpRatio = hpRatio;
+      d.isCommander = !!unit.isCommander;
     }
 
     // Y-sort: draw far units first (painter's algorithm)

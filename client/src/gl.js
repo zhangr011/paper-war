@@ -833,13 +833,16 @@ export class Renderer {
    */
   drawHPBars(units, camera) {
     const batch = this.effectsBatch;
-    const barH = 2;         // bar height in pixels
+    const barH = 3;         // bar height in pixels (was 2 — too thin)
     const barPad = 1;       // gap above unit sprite
     const barMargin = 2;    // inset from unit edges
 
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
-      if (u.hpRatio === undefined || u.hpRatio >= 1.0) continue; // skip full HP
+      if (u.hpRatio === undefined) continue;
+      // Skip full-HP regular units; always show for commanders (their large
+      // HP pool means the player needs to track health at all times).
+      if (u.hpRatio >= 1.0 && !u.isCommander) continue;
 
       const ux = u.x - camera.x;
       const uy = u.y - camera.y;
@@ -847,25 +850,25 @@ export class Renderer {
       const bx = ux + barMargin;
       const by = uy - barH - barPad;
 
-      // Background (dark)
-      batch.pushColorQuad(bx, by, bw, barH, 0.15, 0.15, 0.15, 0.7);
+      // Border (thin dark outline for contrast against any terrain).
+      batch.pushColorQuad(bx - 1, by - 1, bw + 2, barH + 2, 0.05, 0.05, 0.05, 0.8);
 
-      // Foreground: green → yellow → red based on hpRatio
+      // Background (dark track).
+      batch.pushColorQuad(bx, by, bw, barH, 0.12, 0.12, 0.12, 0.85);
+
+      // Foreground fill: green → yellow → red based on hpRatio.
       let fr, fg, fb;
       if (u.hpRatio > 0.6) {
-        // green to yellow
         const t = (u.hpRatio - 0.6) / 0.4;
         fr = 1.0 - t * 0.8;
         fg = 0.85;
         fb = 0.1;
       } else if (u.hpRatio > 0.3) {
-        // yellow to orange
         const t = (u.hpRatio - 0.3) / 0.3;
         fr = 1.0;
         fg = 0.4 + t * 0.45;
         fb = 0.05;
       } else {
-        // orange to red
         const t = u.hpRatio / 0.3;
         fr = 0.8 + t * 0.2;
         fg = 0.1 + t * 0.3;
@@ -873,7 +876,13 @@ export class Renderer {
       }
 
       const fillW = Math.max(1, bw * u.hpRatio);
-      batch.pushColorQuad(bx, by, fillW, barH, fr, fg, fb, 0.85);
+      batch.pushColorQuad(bx, by, fillW, barH, fr, fg, fb, 0.9);
+
+      // Commander accent: thin gold edge on the right end of the fill — a
+      // subtle "elite" indicator that the bar belongs to a commander.
+      if (u.isCommander && fillW > 2) {
+        batch.pushColorQuad(bx + fillW - 1, by, 1, barH, 0.95, 0.78, 0.2, 0.95);
+      }
     }
   }
 

@@ -581,8 +581,21 @@ export class StateManager {
         unit.attackTriggeredAt > 0 &&
         now - unit.attackTriggeredAt < ATTACK_FREEZE_MS;
       if (freezeForAttack) {
+        unit._wasFrozen = true;
         unit.renderAngle = lerpAngle(unit.prevAngle, unit.currAngle, t);
         continue;
+      }
+
+      // Just unfroze from an attack — snap prev to the frozen render
+      // position so the base lerp(prev, curr, t) starts from where the
+      // unit was visually held, not from the stale snapshot prev that
+      // accumulated during the freeze. Eliminates the teleport on
+      // attack→move transition.
+      if (unit._wasFrozen) {
+        unit.prevX = unit.renderX;
+        unit.prevY = unit.renderY;
+        unit.prevAngle = unit.renderAngle;
+        unit._wasFrozen = false;
       }
 
       // Base interpolation

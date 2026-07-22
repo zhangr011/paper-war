@@ -22,4 +22,9 @@ type BoidComponent struct {
 	// fire from the stronghold's position, can't be targeted directly, and
 	// absorb their share of damage dealt to the stronghold. Issue #54 phase 1B.
 	GarrisonedIn uint32
+	// FreezeUntilTick: the unit's movement is suppressed until this tick
+	// (exclusive). Set by CombatSystem when a unit fires to "plant" it
+	// during the attack swing — server-authoritative, so the client's
+	// interpolation never accumulates a delta during the freeze.
+	FreezeUntilTick uint32
 }

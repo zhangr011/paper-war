@@ -76,6 +76,12 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		if !ok {
 			return
 		}
+		// Attack freeze (#52, server-side): the unit is planted during its
+		// attack swing — skip movement so the position doesn't advance and
+		// the client never accumulates a teleport-inducing delta.
+		if tick < bc.FreezeUntilTick {
+			return
+		}
 		// Garrisoned units don't move — they're inside a stronghold (#54 1B).
 		if bc.GarrisonedIn != 0 {
 			return

@@ -51,6 +51,11 @@ type AttackRecord struct {
 	Tick     uint32
 }
 
+// AttackFreezeTicks is how many ticks a unit's movement is suppressed after
+// firing (#52, moved server-side). 5 ticks = 500ms at 10Hz — matches the
+// median attack cooldown so the unit "plants to fire" between shots.
+const AttackFreezeTicks uint32 = 5
+
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
 func (s *CombatSystem) Priority() int { return 80 }
 
@@ -147,6 +152,11 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 							EntityID: uint32(e),
 							Tick:     tick,
 						})
+						if s.boidPool != nil {
+							if bc, ok := s.boidPool.GetPtr(e); ok {
+								bc.FreezeUntilTick = tick + AttackFreezeTicks
+							}
+						}
 					}
 				}
 			}
@@ -268,6 +278,15 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			EntityID: uint32(e),
 			Tick:     tick,
 		})
+		// Server-side attack freeze (#52): plant the unit for 5 ticks
+		// (500ms at 10Hz) so it doesn't slide during the swing. This is
+		// server-authoritative — the client sees no position change during
+		// the freeze, eliminating the teleport on attack→move transitions.
+		if s.boidPool != nil {
+			if bc, ok := s.boidPool.GetPtr(e); ok {
+				bc.FreezeUntilTick = tick + AttackFreezeTicks
+			}
+		}
 	})
 
 	// Apply all pending damage simultaneously — no entity gets first-strike

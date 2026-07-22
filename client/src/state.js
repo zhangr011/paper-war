@@ -577,26 +577,10 @@ export class StateManager {
       // large the accumulated delta is. The die state has its own
       // anchored-position handling and never reaches here (units in the
       // fade window are skipped by the alive check).
-      const freezeForAttack =
-        unit.attackTriggeredAt > 0 &&
-        now - unit.attackTriggeredAt < ATTACK_FREEZE_MS;
-      if (freezeForAttack) {
-        unit._wasFrozen = true;
-        unit.renderAngle = lerpAngle(unit.prevAngle, unit.currAngle, t);
-        continue;
-      }
-
-      // Just unfroze from an attack — snap prev to the frozen render
-      // position so the base lerp(prev, curr, t) starts from where the
-      // unit was visually held, not from the stale snapshot prev that
-      // accumulated during the freeze. Eliminates the teleport on
-      // attack→move transition.
-      if (unit._wasFrozen) {
-        unit.prevX = unit.renderX;
-        unit.prevY = unit.renderY;
-        unit.prevAngle = unit.renderAngle;
-        unit._wasFrozen = false;
-      }
+      // Note: attack-freeze is now SERVER-SIDE (#52) — the server suppresses
+      // movement during the swing (BoidComponent.FreezeUntilTick), so the
+      // client's snapshots naturally show no position change during the freeze.
+      // No client-side freeze/catch-up needed — eliminates the teleport.
 
       // Base interpolation
       let rx = lerp(unit.prevX, unit.currX, t);

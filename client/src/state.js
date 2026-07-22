@@ -227,6 +227,8 @@ class UnitState {
     // Smooth HP bar animation — lerps toward actual hpRatio each frame
     // so the bar glides instead of snapping between snapshots.
     this.displayedHpRatio = 1.0;
+    this._lastRawHpRatio = 1.0;  // for damage-flash detection
+    this._damageFlash = 0;       // decays each frame; spikes on damage taken
 
     // Lifecycle
     this.alive = true;

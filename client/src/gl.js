@@ -833,14 +833,14 @@ export class Renderer {
    */
   drawHPBars(units, camera) {
     const batch = this.effectsBatch;
-    const barH = 3;         // bar height in pixels (was 2 — too thin)
-    const barPad = 1;       // gap above unit sprite
-    const barMargin = 2;    // inset from unit edges
+    const barH = 3;
+    const barPad = 1;
+    const barMargin = 2;
+    const now = performance.now();
 
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
       if (u.hpRatio === undefined) continue;
-      // Skip full-HP regular units; always show for commanders.
       if (u.hpRatio >= 0.99 && !u.isCommander) continue;
 
       const ux = u.x - camera.x;
@@ -853,39 +853,51 @@ export class Renderer {
       let fr, fg, fb;
       if (u.hpRatio > 0.6) {
         const t = (u.hpRatio - 0.6) / 0.4;
-        fr = 1.0 - t * 0.8;
-        fg = 0.85;
-        fb = 0.1;
+        fr = 1.0 - t * 0.8; fg = 0.85; fb = 0.1;
       } else if (u.hpRatio > 0.3) {
         const t = (u.hpRatio - 0.3) / 0.3;
-        fr = 1.0;
-        fg = 0.4 + t * 0.45;
-        fb = 0.05;
+        fr = 1.0; fg = 0.4 + t * 0.45; fb = 0.05;
       } else {
         const t = u.hpRatio / 0.3;
-        fr = 0.8 + t * 0.2;
-        fg = 0.1 + t * 0.3;
-        fb = 0.05;
+        fr = 0.8 + t * 0.2; fg = 0.1 + t * 0.3; fb = 0.05;
       }
 
-      // Glow: a faint colored halo around the bar — softens the edges and
-      // makes the bar pop against terrain.
+      // Low-HP urgency pulse: alpha modulates when hpRatio < 0.3 so
+      // critically damaged units' bars blink for attention.
+      let fillAlpha = 0.92;
+      if (u.hpRatio < 0.3) {
+        fillAlpha = 0.55 + 0.37 * Math.sin(now / 180 + i * 0.7);
+      }
+
+      // Glow halo.
       batch.pushColorQuad(bx - 2, by - 1, bw + 4, barH + 2, fr * 0.3, fg * 0.3, fb * 0.3, 0.25);
 
-      // Border (dark outline for contrast).
+      // Border.
       batch.pushColorQuad(bx - 1, by - 1, bw + 2, barH + 2, 0.05, 0.05, 0.05, 0.85);
 
-      // Background (dark track).
+      // Background track.
       batch.pushColorQuad(bx, by, bw, barH, 0.10, 0.10, 0.10, 0.9);
 
-      // Fill — two-tone bevel: brighter top half, slightly darker bottom
-      // for a 3D "raised" effect.
+      // Fill — two-tone bevel.
       const fillW = Math.max(1, bw * u.hpRatio);
       const halfH = Math.floor(barH / 2);
-      batch.pushColorQuad(bx, by, fillW, halfH, Math.min(1, fr * 1.15), Math.min(1, fg * 1.15), Math.min(1, fb * 1.15), 0.92);
-      batch.pushColorQuad(bx, by + halfH, fillW, barH - halfH, fr * 0.82, fg * 0.82, fb * 0.82, 0.92);
+      batch.pushColorQuad(bx, by, fillW, halfH, Math.min(1, fr * 1.15), Math.min(1, fg * 1.15), Math.min(1, fb * 1.15), fillAlpha);
+      batch.pushColorQuad(bx, by + halfH, fillW, barH - halfH, fr * 0.82, fg * 0.82, fb * 0.82, fillAlpha);
 
-      // Commander accent: gold pip on the right edge.
+      // Segmented pips: thin dark dividers every 25% of bar width —
+      // gives a tactical "health segment" look.
+      for (let p = 1; p <= 3; p++) {
+        const px = bx + bw * p / 4;
+        batch.pushColorQuad(px - 0.5, by, 1, barH, 0, 0, 0, 0.4);
+      }
+
+      // Damage flash: white overlay on the fill when the unit was recently
+      // hit — decays over ~5 frames.
+      if (u.damageFlash > 0.05) {
+        batch.pushColorQuad(bx, by, fillW, barH, 1, 1, 1, u.damageFlash * 0.6);
+      }
+
+      // Commander gold pip.
       if (u.isCommander && fillW > 2) {
         batch.pushColorQuad(bx + fillW - 1, by, 1, barH, 0.95, 0.78, 0.2, 0.95);
       }

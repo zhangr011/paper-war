@@ -1901,6 +1901,13 @@ export class Game {
       d.g = g;
       d.b = b;
       d.sortY = sy; // for Y-sorting
+      // Damage flash: detect raw HP drop → spike the flash value.
+      if (hpRatio < unit._lastRawHpRatio - 0.01) {
+        unit._damageFlash = 1.0;
+      }
+      unit._lastRawHpRatio = hpRatio;
+      unit._damageFlash *= 0.82; // decay ~5 frames
+      d.damageFlash = unit._damageFlash;
       // Smooth HP bar: lerp the displayed ratio toward the actual ratio so
       // the bar glides instead of snapping between 10Hz snapshots.
       unit.displayedHpRatio = unit.displayedHpRatio + (hpRatio - unit.displayedHpRatio) * 0.18;

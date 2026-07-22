@@ -1863,8 +1863,11 @@ export class Game {
         b = Math.min(1.0, b + 0.3);
       }
 
-      // HP ratio for tinting damaged units
-      const maxHP = UNIT_MAX_HP[sizeIdx] || 80;
+      // HP ratio for tinting damaged units + HP bars. Commanders have 6×
+      // base HP (server-side scaling in SpawnSquadWithType) — the client's
+      // UNIT_MAX_HP is the base value, so multiply for commanders or the bar
+      // is stuck full until the commander is nearly dead.
+      const maxHP = (UNIT_MAX_HP[sizeIdx] || 80) * (unit.isCommander ? 6 : 1);
       const hpRatio = Math.max(0, Math.min(1, unit.currHP / maxHP));
       if (hpRatio < 0.5) {
         // Blend toward red as HP decreases

@@ -1901,7 +1901,10 @@ export class Game {
       d.g = g;
       d.b = b;
       d.sortY = sy; // for Y-sorting
-      d.hpRatio = hpRatio;
+      // Smooth HP bar: lerp the displayed ratio toward the actual ratio so
+      // the bar glides instead of snapping between 10Hz snapshots.
+      unit.displayedHpRatio = unit.displayedHpRatio + (hpRatio - unit.displayedHpRatio) * 0.18;
+      d.hpRatio = unit.displayedHpRatio;
       d.isCommander = !!unit.isCommander;
     }
 

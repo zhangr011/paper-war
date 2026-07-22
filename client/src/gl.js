@@ -840,9 +840,8 @@ export class Renderer {
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
       if (u.hpRatio === undefined) continue;
-      // Skip full-HP regular units; always show for commanders (their large
-      // HP pool means the player needs to track health at all times).
-      if (u.hpRatio >= 1.0 && !u.isCommander) continue;
+      // Skip full-HP regular units; always show for commanders.
+      if (u.hpRatio >= 0.99 && !u.isCommander) continue;
 
       const ux = u.x - camera.x;
       const uy = u.y - camera.y;
@@ -850,13 +849,7 @@ export class Renderer {
       const bx = ux + barMargin;
       const by = uy - barH - barPad;
 
-      // Border (thin dark outline for contrast against any terrain).
-      batch.pushColorQuad(bx - 1, by - 1, bw + 2, barH + 2, 0.05, 0.05, 0.05, 0.8);
-
-      // Background (dark track).
-      batch.pushColorQuad(bx, by, bw, barH, 0.12, 0.12, 0.12, 0.85);
-
-      // Foreground fill: green → yellow → red based on hpRatio.
+      // Foreground color: green → yellow → red based on hpRatio.
       let fr, fg, fb;
       if (u.hpRatio > 0.6) {
         const t = (u.hpRatio - 0.6) / 0.4;
@@ -875,11 +868,24 @@ export class Renderer {
         fb = 0.05;
       }
 
-      const fillW = Math.max(1, bw * u.hpRatio);
-      batch.pushColorQuad(bx, by, fillW, barH, fr, fg, fb, 0.9);
+      // Glow: a faint colored halo around the bar — softens the edges and
+      // makes the bar pop against terrain.
+      batch.pushColorQuad(bx - 2, by - 1, bw + 4, barH + 2, fr * 0.3, fg * 0.3, fb * 0.3, 0.25);
 
-      // Commander accent: thin gold edge on the right end of the fill — a
-      // subtle "elite" indicator that the bar belongs to a commander.
+      // Border (dark outline for contrast).
+      batch.pushColorQuad(bx - 1, by - 1, bw + 2, barH + 2, 0.05, 0.05, 0.05, 0.85);
+
+      // Background (dark track).
+      batch.pushColorQuad(bx, by, bw, barH, 0.10, 0.10, 0.10, 0.9);
+
+      // Fill — two-tone bevel: brighter top half, slightly darker bottom
+      // for a 3D "raised" effect.
+      const fillW = Math.max(1, bw * u.hpRatio);
+      const halfH = Math.floor(barH / 2);
+      batch.pushColorQuad(bx, by, fillW, halfH, Math.min(1, fr * 1.15), Math.min(1, fg * 1.15), Math.min(1, fb * 1.15), 0.92);
+      batch.pushColorQuad(bx, by + halfH, fillW, barH - halfH, fr * 0.82, fg * 0.82, fb * 0.82, 0.92);
+
+      // Commander accent: gold pip on the right edge.
       if (u.isCommander && fillW > 2) {
         batch.pushColorQuad(bx + fillW - 1, by, 1, barH, 0.95, 0.78, 0.2, 0.95);
       }

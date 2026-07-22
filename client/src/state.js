@@ -224,6 +224,10 @@ class UnitState {
     this.team = 0;     // player/faction ID
     this.isCommander = false; // bit-7 flag from server (#54): render a rank marker
 
+    // Smooth HP bar animation — lerps toward actual hpRatio each frame
+    // so the bar glides instead of snapping between snapshots.
+    this.displayedHpRatio = 1.0;
+
     // Lifecycle
     this.alive = true;
   }

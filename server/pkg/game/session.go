@@ -879,7 +879,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 
 	// Commander stats from type table, scaled up (3x HP, 2x dmg)
 	cmdStats := component.CombatUnitTypeTable[cmdType]
-	cmdHP := cmdStats.HP * 3
+	cmdHP := cmdStats.HP * 6 // commander: 6× base HP (doubled from 3× per user request)
 	cmdDmg := cmdStats.Damage * 2
 	cmdRange := fixed.FromFloat(float64(cmdStats.Range))
 
@@ -974,7 +974,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	})
 
 	// Commander stats: HP and Damage scale with level
-	cmdHP := cmdStats.HP * 3 // base 3x HP for commanders
+	cmdHP := cmdStats.HP * 6 // base 6x HP for commanders (doubled from 3×)
 	if cmd.Level > 1 {
 		cmdHP = cmdHP + cmdHP*int32(cmd.Level-1)/4 // +25% per level above 1
 	}

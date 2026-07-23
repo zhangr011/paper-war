@@ -833,7 +833,8 @@ export class Renderer {
    */
   drawHPBars(units, camera) {
     const batch = this.effectsBatch;
-    const barH = 3;
+    const CMD_BAR_H = 6;      // commander bar height (doubled from 3)
+    const REG_BAR_H = 4;      // regular bar = 2/3 of commander (no segments)
     const barPad = 1;
     const barMargin = 2;
     const now = performance.now();
@@ -843,6 +844,7 @@ export class Renderer {
       if (u.hpRatio === undefined) continue;
       if (u.hpRatio >= 0.99 && !u.isCommander) continue;
 
+      const barH = u.isCommander ? CMD_BAR_H : REG_BAR_H;
       const ux = u.x - camera.x;
       const uy = u.y - camera.y;
       const bw = u.w - barMargin * 2;
@@ -862,8 +864,7 @@ export class Renderer {
         fr = 0.8 + t * 0.2; fg = 0.1 + t * 0.3; fb = 0.05;
       }
 
-      // Low-HP urgency pulse: alpha modulates when hpRatio < 0.3 so
-      // critically damaged units' bars blink for attention.
+      // Low-HP urgency pulse.
       let fillAlpha = 0.92;
       if (u.hpRatio < 0.3) {
         fillAlpha = 0.55 + 0.37 * Math.sin(now / 180 + i * 0.7);
@@ -884,15 +885,15 @@ export class Renderer {
       batch.pushColorQuad(bx, by, fillW, halfH, Math.min(1, fr * 1.15), Math.min(1, fg * 1.15), Math.min(1, fb * 1.15), fillAlpha);
       batch.pushColorQuad(bx, by + halfH, fillW, barH - halfH, fr * 0.82, fg * 0.82, fb * 0.82, fillAlpha);
 
-      // Segmented pips: thin dark dividers every 25% of bar width —
-      // gives a tactical "health segment" look.
-      for (let p = 1; p <= 3; p++) {
-        const px = bx + bw * p / 4;
-        batch.pushColorQuad(px - 0.5, by, 1, barH, 0, 0, 0, 0.4);
+      // Segmented pips — commanders only: 5 segments (dividers at 20/40/60/80%).
+      if (u.isCommander) {
+        for (let p = 1; p <= 4; p++) {
+          const px = bx + bw * p / 5;
+          batch.pushColorQuad(px - 0.5, by, 1, barH, 0, 0, 0, 0.45);
+        }
       }
 
-      // Damage flash: white overlay on the fill when the unit was recently
-      // hit — decays over ~5 frames.
+      // Damage flash.
       if (u.damageFlash > 0.05) {
         batch.pushColorQuad(bx, by, fillW, barH, 1, 1, 1, u.damageFlash * 0.6);
       }

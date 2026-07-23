@@ -847,8 +847,11 @@ export class Renderer {
       const barH = u.isCommander ? CMD_BAR_H : REG_BAR_H;
       const ux = u.x - camera.x;
       const uy = u.y - camera.y;
-      const bw = u.w - barMargin * 2;
-      const bx = ux + barMargin;
+      // Commander bar = full sprite width; regular units = 2/3 width,
+      // centered on the sprite.
+      const fullW = u.w - barMargin * 2;
+      const bw = u.isCommander ? fullW : Math.floor(fullW * 2 / 3);
+      const bx = u.isCommander ? ux + barMargin : ux + (u.w - bw) / 2;
       const by = uy - barH - barPad;
 
       // Foreground color: green → yellow → red based on hpRatio.

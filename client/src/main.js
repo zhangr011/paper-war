@@ -1505,9 +1505,14 @@ export class Game {
   _pushTree(objects, x, y, hash, zoom) {
     // Hashed size multiplier in [0.85, 1.20] — small band so a tile never
     // grows a tree larger than its footprint.
+    // Sized to ~2× a combat unit. A unit renders at ATLAS_CELL * UNIT_SCALE
+    // = 32 * 1.5 = 48 px at zoom 1 (see buildUnitDescriptors); tree height
+    // ≈ 2× that, width keeps the taller-than-wide tree aspect (~7:11). At
+    // zoom 1 → ~96×61 px (about 3 tiles tall); dense forest will canopy
+    // over. ±20 % per-tree variation so adjacent trees differ.
     const sizeMul = 0.85 + ((hash >> 20 & 0xFF) / 255) * 0.35;
-    const treeW = 5 * zoom * sizeMul;
-    const treeH = 8 * zoom * sizeMul;
+    const treeH = 2 * ATLAS_CELL * UNIT_SCALE * zoom * sizeMul;
+    const treeW = treeH * (7 / 11);
     const isPine = ((hash >> 28) & 1) === 0;
 
     // Canopy tint — two-band dark-green variation so adjacent trees differ.

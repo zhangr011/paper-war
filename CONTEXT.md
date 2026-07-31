@@ -13,7 +13,7 @@ A group of units led by one Commander plus N CombatUnits. The basic unit of play
 _Avoid_: team, group, party
 
 **Commander**:
-The lead entity in a Squad. A special CombatUnit with a Damage Type and Armor Type. Has a Formation Template that defines the mix of CombatUnit types the Squad can recruit (e.g., all Gun/Light, or 50% Gun + 50% Cannon). Acts as formation center point, provides morale aura, and anchors vision (fog of war). Player orders route through the Commander. Can be attacked and killed like any CombatUnit. Persistent across matches with career-long Leading Skill progression.
+The lead entity in a Squad. A special CombatUnit with a Damage Type and Armor Type. Has a Formation Template that defines the mix of CombatUnit types the Squad can recruit (e.g., all Gun/Light, or 50% Gun + 50% Cannon). Acts as formation center point, provides morale aura, and anchors vision (fog of war). Player orders route through the Commander. Can be attacked and killed like any CombatUnit. Persistent across matches with career-long Leading Skill progression. Auto-recenters within its Squad: when the Commander drifts >0.5 tile from the Squad centroid, CombatUnit flow is suppressed until it returns within 0.2 tile (ADR-0025).
 _Avoid_: leader, hero, officer
 
 **Formation Template**:

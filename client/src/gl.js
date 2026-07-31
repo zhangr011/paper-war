@@ -17,16 +17,24 @@ in vec4 a_color;
 in float a_tileType;
 in float a_seed;
 uniform mat4 u_projection;
+// World-pixel camera offset + tile size in screen px (ADR-0026 coastline).
+// Used to recover the fragment's integer tile coordinate in the FS so it
+// can texelFetch neighbors from the terrain-type texture. Only consulted
+// on the Deep-tile coastline path; non-terrain batches early-out first.
+uniform vec2 u_camera;
+uniform float u_tileSize;
 out vec2 v_texcoord;
 out vec4 v_color;
 out float v_tileType;
 out float v_seed;
+out vec2 v_worldPos;
 void main() {
   gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
   v_texcoord = a_texcoord;
   v_color = a_color;
   v_tileType = a_tileType;
   v_seed = a_seed;
+  v_worldPos = a_position + u_camera;
 }
 `;
 
@@ -40,12 +48,27 @@ void main() {
 // giving the pixel-art look of design/map.png instead of smooth gradients.
 const SPRITE_FS = `#version 300 es
 precision mediump float;
+precision highp int;
 in vec2 v_texcoord;
 in vec4 v_color;
 in float v_tileType;
 in float v_seed;
+in vec2 v_worldPos;
 uniform sampler2D u_texture;
 uniform float u_time;
+// --- ADR-0026 coastline blend ---
+// Terrain-type grid uploaded once per match (one R8UI texel per tile).
+// The FS samples neighbors with texelFetch to feather Deep↔land seams.
+uniform highp usampler2D u_terrainTex;
+uniform int u_terrainTexValid;   // 0 = no terrain texture (render flat, no blend)
+// Curated blend table — which land types feather against Deep. Data-shaped:
+// adding a pair is a JS-array edit, no GLSL change. Bridge (7) deliberately
+// absent so Deep↔Bridge stays a hard seam.
+uniform int u_blendableLandCount;
+uniform int u_blendableLandTypes[8];
+uniform vec3 u_deepBlendTarget;  // teal Shallow tint (TERRAIN_COLORS[2])
+uniform vec2 u_camera;
+uniform float u_tileSize;
 out vec4 fragColor;
 
 // Dave-Hoskins-style 2D hash, returns [0,1].
@@ -55,6 +78,15 @@ float hash21(vec2 p) {
   return fract(p.x * p.y);
 }
 
+// Returns true if the neighbor terrain type feathers against a Deep tile.
+// Data-driven: the list lives in u_blendableLandTypes (set CPU-side).
+bool isBlendableLand(int n) {
+  for (int i = 0; i < u_blendableLandCount; i++) {
+    if (u_blendableLandTypes[i] == n) return true;
+  }
+  return false;
+}
+
 void main() {
   vec4 base = texture(u_texture, v_texcoord) * v_color;
   int t = int(v_tileType + 0.5);
@@ -62,6 +94,54 @@ void main() {
   if (t == 0) {
     fragColor = base;
     return;
+  }
+
+  // --- Coastline feathering (ADR-0026) ---
+  // Deep tiles only. Non-Deep tiles early-out BEFORE any neighbor fetch, so
+  // the common case (plains, forest, hills, roads, walls...) pays nothing.
+  // For each of the 4 edges, texelFetch the neighbor; if (Deep, neighbor) is
+  // a blendable pair, fade this fragment from deep-blue toward the teal
+  // Shallow tint by per-pixel distance-to-edge. Bounds-checked because
+  // texelFetch on out-of-range integer textures returns 0 (= Plain), which
+  // would otherwise paint a false coastline around the map border.
+  if (t == 3 && u_terrainTexValid == 1) {
+    vec2 tilePos = v_worldPos / u_tileSize;
+    vec2 frac = fract(tilePos);             // per-axis distance from top-left edge, 0..1
+    ivec2 tc = ivec2(floor(tilePos));       // this fragment's integer tile coord
+    ivec2 dim = textureSize(u_terrainTex, 0);
+
+    // Teal band width as a fraction of one tile (~0.4 of the half-tile).
+    const float COAST = 0.2;
+    // Per-edge distance, normalized to [0, 1] over COAST width, then clamped.
+    float dL = frac.x;          // distance to left edge
+    float dR = 1.0 - frac.x;    // distance to right edge
+    float dT = frac.y;          // distance to top edge
+    float dB = 1.0 - frac.y;    // distance to bottom edge
+    float coast = 0.0;
+
+    ivec2 np = tc + ivec2(-1, 0);
+    if (np.x >= 0 && np.y >= 0 && np.x < dim.x && np.y < dim.y &&
+        isBlendableLand(int(texelFetch(u_terrainTex, np, 0).x))) {
+      coast = max(coast, 1.0 - dL / COAST);
+    }
+    np = tc + ivec2(1, 0);
+    if (np.x >= 0 && np.y >= 0 && np.x < dim.x && np.y < dim.y &&
+        isBlendableLand(int(texelFetch(u_terrainTex, np, 0).x))) {
+      coast = max(coast, 1.0 - dR / COAST);
+    }
+    np = tc + ivec2(0, -1);
+    if (np.x >= 0 && np.y >= 0 && np.x < dim.x && np.y < dim.y &&
+        isBlendableLand(int(texelFetch(u_terrainTex, np, 0).x))) {
+      coast = max(coast, 1.0 - dT / COAST);
+    }
+    np = tc + ivec2(0, 1);
+    if (np.x >= 0 && np.y >= 0 && np.x < dim.x && np.y < dim.y &&
+        isBlendableLand(int(texelFetch(u_terrainTex, np, 0).x))) {
+      coast = max(coast, 1.0 - dB / COAST);
+    }
+
+    coast = clamp(coast, 0.0, 1.0);
+    base.rgb = mix(base.rgb, u_deepBlendTarget, coast);
   }
 
   // Sample at the tile's pixel grid (TILE_WIDTH = 32 game units per tile).
@@ -244,6 +324,19 @@ const VERTEX_BYTES = VERTEX_FLOATS * 4;
 const MAX_BATCH_VERTICES = 60000; // ~15000 quads before flush
 const QUAD_VERTICES = 6; // two triangles
 
+// Curated Deep↔land blend table (ADR-0026). Adding a pair = push to this
+// array; no shader edit needed. Bridge (7) intentionally excluded so
+// Deep↔Bridge keeps a hard seam (bridges read as structures, not shores).
+const BLENDABLE_LAND_TYPES = [
+  0,   // Plain
+  4,   // Forest
+  5,   // Hill
+  17,  // Brush
+];
+
+// Teal Shallow tint used as the coastline fade target (TERRAIN_COLORS[2]).
+const DEEP_BLEND_TARGET = [0.22, 0.40, 0.55];
+
 class SpriteBatch {
   /**
    * @param {WebGL2RenderingContext} gl
@@ -268,6 +361,31 @@ class SpriteBatch {
     this.uProjection = gl.getUniformLocation(program, 'u_projection');
     this.uTexture = gl.getUniformLocation(program, 'u_texture');
     this.uTime = gl.getUniformLocation(program, 'u_time');
+    // ADR-0026 coastline uniforms. Shared program — set once at construction.
+    // Non-terrain batches early-out before any of these are consulted.
+    this.uCamera = gl.getUniformLocation(program, 'u_camera');
+    this.uTileSize = gl.getUniformLocation(program, 'u_tileSize');
+    this.uTerrainTex = gl.getUniformLocation(program, 'u_terrainTex');
+    this.uTerrainTexValid = gl.getUniformLocation(program, 'u_terrainTexValid');
+    this.uBlendableLandCount = gl.getUniformLocation(program, 'u_blendableLandCount');
+    this.uBlendableLandTypes = gl.getUniformLocation(program, 'u_blendableLandTypes[0]');
+    this.uDeepBlendTarget = gl.getUniformLocation(program, 'u_deepBlendTarget');
+
+    // One-time upload of the curated blend table + target tint. The terrain
+    // texture itself (and its validity flag) is set by Renderer.setMapTerrainTexture.
+    gl.useProgram(program);
+    if (this.uTerrainTex) gl.uniform1i(this.uTerrainTex, 1); // bind to unit 1
+    if (this.uBlendableLandCount) {
+      gl.uniform1i(this.uBlendableLandCount, BLENDABLE_LAND_TYPES.length);
+    }
+    if (this.uBlendableLandTypes) {
+      gl.uniform1iv(this.uBlendableLandTypes, BLENDABLE_LAND_TYPES);
+    }
+    if (this.uDeepBlendTarget) {
+      gl.uniform3fv(this.uDeepBlendTarget, DEEP_BLEND_TARGET);
+    }
+    if (this.uTerrainTexValid) gl.uniform1i(this.uTerrainTexValid, 0);
+    gl.useProgram(null);
 
     // VAO + VBO
     this.vao = gl.createVertexArray();
@@ -391,8 +509,11 @@ class SpriteBatch {
    * @param {Float32Array} projectionMatrix
    * @param {WebGLTexture} texture
    * @param {number} [time]  current time in seconds (drives water animation)
+   * @param {{cameraX:number, cameraY:number, tileSize:number}|null} [terrainUniforms]
+   *        Optional world-camera + tile-size for the ADR-0026 coastline path.
+   *        Only meaningful for the terrain batch; non-terrain batches ignore it.
    */
-  flush(projectionMatrix, texture, time = 0) {
+  flush(projectionMatrix, texture, time = 0, terrainUniforms = null) {
     if (this.vertexCount === 0) return;
 
     const gl = this.gl;
@@ -402,6 +523,13 @@ class SpriteBatch {
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(this.uTexture, 0);
     if (this.uTime) gl.uniform1f(this.uTime, time);
+    // Coastline path inputs. The uniforms persist (program state) so setting
+    // them only on the terrain flush is enough — other batches early-out
+    // before consulting them.
+    if (terrainUniforms) {
+      if (this.uCamera) gl.uniform2f(this.uCamera, terrainUniforms.cameraX, terrainUniforms.cameraY);
+      if (this.uTileSize) gl.uniform1f(this.uTileSize, terrainUniforms.tileSize);
+    }
 
     const byteLen = this.vertexCount * VERTEX_BYTES;
     gl.bindVertexArray(this.vao);
@@ -681,6 +809,81 @@ export class Renderer {
     this.unitTexture = tex;
     this.unitAtlasWidth = atlasW;
     this.unitAtlasHeight = atlasH;
+  }
+
+  /**
+   * Upload the terrain-type grid as a single-channel R8UI texture
+   * (ADR-0026). One texel per tile; the FS samples neighbors with
+   * texelFetch to feather Deep↔land coastlines. Terrain is static for a
+   * match, so upload once and leave bound to texture unit 1.
+   *
+   * WebGL2 guarantees integer textures; R8UI + usampler2D is the clean
+   * choice (no packed encoding/decode needed). Degrade gracefully: if this
+   * is never called, u_terrainTexValid stays 0 and the shader renders flat
+   * tiles exactly as before.
+   *
+   * @param {Uint8Array} terrainData  flat [ty*mw+tx] terrain-type grid
+   * @param {number} mapW
+   * @param {number} mapH
+   */
+  setMapTerrainTexture(terrainData, mapW, mapH) {
+    const gl = this.gl;
+    if (this.terrainTypeTexture) gl.deleteTexture(this.terrainTypeTexture);
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R8UI,
+      mapW,
+      mapH,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_BYTE,
+      terrainData,
+    );
+    // Integer textures require NEAREST filtering; CLAMP_TO_EDGE for wrap.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.terrainTypeTexture = tex;
+    this.terrainMapW = mapW;
+    this.terrainMapH = mapH;
+
+    // Flip the valid flag on the shared sprite program. Setting it through
+    // any one SpriteBatch's uniform location is sufficient — they share
+    // the program and thus the uniform state.
+    const loc = this.terrainBatch.uTerrainTexValid;
+    if (loc) {
+      gl.useProgram(this.terrainBatch.program);
+      gl.uniform1i(loc, 1);
+      gl.useProgram(null);
+    }
+    // Restore active texture to unit 0 so subsequent white-pixel binds land
+    // on the right unit (SpriteBatch.flush binds to TEXTURE0 explicitly,
+    // but be defensive).
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /**
+   * Mark the terrain-type texture as absent (e.g. on disconnect / map
+   * unload). Shader falls back to flat-tile rendering, no coastline.
+   */
+  clearMapTerrainTexture() {
+    const gl = this.gl;
+    if (this.terrainTypeTexture) {
+      gl.deleteTexture(this.terrainTypeTexture);
+      this.terrainTypeTexture = null;
+    }
+    const loc = this.terrainBatch.uTerrainTexValid;
+    if (loc) {
+      gl.useProgram(this.terrainBatch.program);
+      gl.uniform1i(loc, 0);
+      gl.useProgram(null);
+    }
   }
 
   /** Clear screen and reset all batch state. Call once per frame. */
@@ -980,8 +1183,13 @@ export class Renderer {
     }
   }
 
-  /** Flush all batches in the correct render order. */
-  endFrame() {
+  /**
+   * Flush all batches in the correct render order.
+   * @param {{cameraX:number, cameraY:number, tileSize:number}|null} [terrainUniforms]
+   *        World-camera offset + tile size in screen px. Forwarded only to
+   *        the terrain batch for the ADR-0026 coastline path.
+   */
+  endFrame(terrainUniforms = null) {
     // Use CSS pixel dimensions so all game coords are in CSS pixels
     const cssW = this.canvas.width / (this.dpr || 1);
     const cssH = this.canvas.height / (this.dpr || 1);
@@ -993,8 +1201,8 @@ export class Renderer {
     // effects in the textured fragment shader.
     const time = performance.now() / 1000;
 
-    // Pass 1: terrain tiles
-    this.terrainBatch.flush(proj, tex, time);
+    // Pass 1: terrain tiles (coastline uniforms forwarded only here)
+    this.terrainBatch.flush(proj, tex, time, terrainUniforms);
 
     // Pass 2: terrain objects (already Y-sorted)
     this.objectBatch.flush(proj, tex, time);

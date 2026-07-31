@@ -16,4 +16,5 @@ type CommanderComponent struct {
 	TacticalState   TacticalState
 	IsAlive         bool
 	Promoted        bool // true if promoted from combat unit (not original commander)
+	Suppressing     bool // true when commander is >0.5 tile from squad centroid
 }

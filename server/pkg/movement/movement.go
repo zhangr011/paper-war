@@ -60,6 +60,7 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 
 	// Build map of squadID -> commander position
 	commanderPos := make(map[uint32][2]int64)
+	suppressing := make(map[uint32]bool) // squad is suppressing its surge
 	if s.cmdPool != nil {
 		s.cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
 			if !cmd.IsAlive {
@@ -67,6 +68,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			}
 			if pos, ok := s.posPool.Get(e); ok {
 				commanderPos[cmd.SquadID] = [2]int64{pos.X, pos.Y}
+				if cmd.Suppressing {
+					suppressing[cmd.SquadID] = true
+				}
 			}
 		})
 	}
@@ -131,6 +135,11 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 				}
 				flowFX = fixed.Mul(dir.DX, flowW)
 				flowFY = fixed.Mul(dir.DY, flowW)
+
+				// Drift centering: zero flow for non-commander units of suppressing squads
+				if bc.Role != component.RoleCommander && suppressing[bc.SquadID] {
+					flowFX, flowFY = 0, 0
+				}
 			}
 		}
 

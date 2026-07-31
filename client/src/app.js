@@ -312,8 +312,10 @@ export class App {
         break;
 
       case 'stronghold_state':
-        // Live stronghold entities (positions/level/faction) for rendering.
-        // Sent on match start and whenever ownership/positions change (#54).
+        // Live stronghold entities (positions/level/faction/HP/garrison) for
+        // rendering. Sent on match start and whenever state changes (#54).
+        // New fields (hp/max_hp/garrison) default to 0 for older senders;
+        // the client falls back to its strongholdCapacity helper.
         if (this.game) this.game.strongholds = msg.strongholds || [];
         break;
 

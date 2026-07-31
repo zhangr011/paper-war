@@ -78,6 +78,29 @@ const UNIT_SIZES = [
 // this constant too so they track the visual size.
 const UNIT_SCALE = 1.5;
 
+// Stronghold garrison capacity per level — mirrors server
+// component.StrongholdCapacity(level) in server/pkg/component/stronghold.go
+// (L1=3 .. L5=7). Used client-side to render the garrison-pip row without
+// the server having to broadcast Capacity (which is fully determined by
+// Level). strongholdMaxHP(level) mirrors component.StrongholdHP(level) for
+// the HP-bar fallback when an older state message omits max_hp.
+function strongholdCapacity(level) {
+  if (level < 1) level = 1;
+  if (level > 5) level = 5;
+  return 2 + level; // L1=3 .. L5=7
+}
+function strongholdMaxHP(level) {
+  if (level < 1) level = 1;
+  if (level > 5) level = 5;
+  return 200 + 150 * level; // L1=350 .. L5=950
+}
+
+// Fraction of Hill slope (elevation-layer-1) tiles that get a decoration
+// tree in Pass 2. Cosmetic only — does not alter cover/LOS/cost. Tuning
+// knob flagged in the terrain-polish plan; 0.15 keeps slopes sparse enough
+// that they never read as Forest from play zoom.
+const HILL_TREE_FRACTION = 0.15;
+
 // Unit type colors (team-tinted): each type has a base hue
 const UNIT_TYPE_COLORS = [
   { r: 0.3, g: 0.6, b: 0.9 }, // 0 LI  — blue
@@ -262,7 +285,7 @@ export class Game {
     this.terrainData = null; // Uint8Array from server (terrain types)
     this.elevationData = null; // Uint8Array from server (hill layer 0/1/2 — see issue #49)
     this.minimapTerrainCanvas = null; // offscreen canvas for cached minimap terrain
-    this.strongholds = []; // live stronghold entities [{x,y,level,faction}] from server (#54)
+    this.strongholds = []; // live stronghold entities [{x,y,level,faction,hp,max_hp,garrison}] from server (#54)
 
     // Game time for timer display
     this.gameStartTime = 0;
@@ -359,6 +382,15 @@ export class Game {
     }
     this.camera.mapWidth = this.mapWidth;
     this.camera.mapHeight = this.mapHeight;
+
+    // Upload the terrain-type grid once per match as an R8UI texture so the
+    // terrain FS can texelFetch neighbors for ADR-0026 coastline feathering.
+    // Terrain is static for a match, so this is a one-time upload. If the
+    // renderer isn't ready yet (no WebGL context), the call is skipped and
+    // the shader falls back to flat tiles via u_terrainTexValid=0.
+    if (this.renderer && this.renderer.setMapTerrainTexture) {
+      this.renderer.setMapTerrainTexture(this.terrainData, this.mapWidth, this.mapHeight);
+    }
 
     // Compute spawn positions.  Prefer the server-provided spawns from
     // the match_found message (authoritative — they match the map
@@ -1343,7 +1375,11 @@ export class Game {
       this.renderer.drawParticles(this.particles, this.camera.zoom, cameraOffset);
     }
 
-    this.renderer.endFrame();
+    this.renderer.endFrame({
+      cameraX: cameraOffset.x,
+      cameraY: cameraOffset.y,
+      tileSize: TILE_WIDTH * this.camera.zoom,
+    });
 
     // Selection box overlay (drawn on a 2D context or via CSS)
     this.drawSelectionBox();
@@ -1455,9 +1491,90 @@ export class Game {
   }
 
   /**
-   * Build terrain object descriptors (trees, stronghold icons) for the visible range.
+   * Push a single decoration-tree descriptor group into `objects` at world
+   * pixel (x, y). `hash` is a deterministic per-tile/per-tree uint32 used to
+   * pick species (pine vs broadleaf), size variation, and canopy tint so the
+   * forest flickers-free across frames. Trunk is a small brown quad; canopy
+   * is a shaped stack of quads — pine = 3 shrinking tiers (triangle
+   * silhouette), broadleaf = 2 stacked blobs (rounded crown). Renderer is
+   * quad-only, so shapes are approximated by stacked color quads.
+   *
+   * Used by both the Forest terrain branch (1-3 trees/tile) and the Hill
+   * decoration-tree branch (sparse slopes). Pure Pass-2 sprites.
+   */
+  _pushTree(objects, x, y, hash, zoom) {
+    // Hashed size multiplier in [0.85, 1.20] — small band so a tile never
+    // grows a tree larger than its footprint.
+    const sizeMul = 0.85 + ((hash >> 20 & 0xFF) / 255) * 0.35;
+    const treeW = 5 * zoom * sizeMul;
+    const treeH = 8 * zoom * sizeMul;
+    const isPine = ((hash >> 28) & 1) === 0;
+
+    // Canopy tint — two-band dark-green variation so adjacent trees differ.
+    const tint = (hash >> 16 & 0xFF) / 255;
+    const cr = 0.04 + tint * 0.04;
+    const cg = 0.12 + tint * 0.06;
+    const cb = 0.02;
+
+    // Trunk (small brown quad under the canopy).
+    {
+      const o = this._pooledPush(objects);
+      o.x = x + treeW / 2 - zoom;
+      o.y = y + treeH;
+      o.w = 2 * zoom;
+      o.h = 3 * zoom;
+      o.r = 0.25; o.g = 0.15; o.b = 0.08;
+      o.sortY = y + treeH;
+    }
+
+    if (isPine) {
+      // Pine: 3 stacked, shrinking tiers give a triangle silhouette.
+      const tiers = 3;
+      const tierH = treeH / tiers;
+      for (let i = 0; i < tiers; i++) {
+        const w = treeW * (1 - i * 0.22);
+        const o = this._pooledPush(objects);
+        o.x = x + (treeW - w) / 2;
+        o.y = y + i * tierH * 0.8;
+        o.w = w;
+        o.h = tierH + zoom; // slight overlap so seams disappear
+        o.r = cr; o.g = cg; o.b = cb;
+        o.sortY = y + i * tierH * 0.8;
+      }
+    } else {
+      // Broadleaf: lower blob (wide) + upper crown (narrower) stacked.
+      const lowerW = treeW;
+      const lowerH = treeH * 0.6;
+      const upperW = treeW * 0.75;
+      const upperH = treeH * 0.5;
+      {
+        const o = this._pooledPush(objects);
+        o.x = x;
+        o.y = y + treeH - lowerH;
+        o.w = lowerW;
+        o.h = lowerH;
+        o.r = cr; o.g = cg; o.b = cb;
+        o.sortY = y + treeH - lowerH;
+      }
+      {
+        const o = this._pooledPush(objects);
+        o.x = x + (treeW - upperW) / 2;
+        o.y = y;
+        o.w = upperW;
+        o.h = upperH;
+        o.r = cr * 0.9; o.g = cg + 0.02; o.b = cb; // top slightly brighter
+        o.sortY = y;
+      }
+    }
+  }
+
+  /**
+   * Build terrain object descriptors (trees, bridges) for the visible range.
    * These are drawn in Pass 2 (object batch) on top of terrain tiles.
    * Uses deterministic hash from tile coordinates for consistent placement.
+   * Stronghold icons are drawn separately in buildStrongholdDescriptors
+   * (Pass 2.7) from the live stronghold_state — terrain ids 11-15 are
+   * retired (ADR-0023), so they have no branch here.
    */
   buildTerrainObjects(visible) {
     const objects = this._terrainObjectPool;
@@ -1481,70 +1598,35 @@ export class Game {
         const sy = ty * TILE_HEIGHT * zoom;
 
         if (terrainType === 4) {
-          // Forest: draw 1-3 small triangular "tree" shapes
+          // Forest: 1-3 trees per tile, each a shaped canopy (pine triangle
+          // or broadleaf rounded stack), hash-selected so it is deterministic
+          // and flicker-free. applyForest density / cover / LOS / cost are
+          // untouched — this is a pure render change (ADR-0024).
           const hash1 = ((tx * 374761393 + ty * 668265263) >>> 0) % 100;
           const treeCount = (hash1 % 3) + 1; // 1-3 trees per tile
           for (let t = 0; t < treeCount; t++) {
-            // Deterministic offset within tile using hash
             const h = ((tx * 73856093 ^ ty * 19349663 ^ t * 83492791) >>> 0);
             const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - 8) * zoom + 2 * zoom;
             const oy = ((h >> 8 & 0xFF) / 255) * (TILE_HEIGHT - 12) * zoom + 2 * zoom;
-
-            const treeW = 5 * zoom;
-            const treeH = 8 * zoom;
-
-            // Tree trunk (small brown rect)
-            {
-              const o = this._pooledPush(objects);
-              o.x = sx + ox + treeW / 2 - zoom;
-              o.y = sy + oy + treeH;
-              o.w = 2 * zoom;
-              o.h = 3 * zoom;
-              o.r = 0.25; o.g = 0.15; o.b = 0.08;
-              o.sortY = sy + oy + treeH;
-            }
-
-            // Tree canopy (dark green rect)
-            {
-              const o = this._pooledPush(objects);
-              o.x = sx + ox;
-              o.y = sy + oy;
-              o.w = treeW;
-              o.h = treeH;
-              o.r = 0.04 + ((h >> 16 & 0xFF) / 255) * 0.04;
-              o.g = 0.12 + ((h >> 16 & 0xFF) / 255) * 0.06;
-              o.b = 0.02;
-              o.sortY = sy + oy;
-            }
+            this._pushTree(objects, sx + ox, sy + oy, h, zoom);
           }
-        } else if (terrainType >= 11 && terrainType <= 15) {
-          // Stronghold: draw stone keep icon
-          const level = terrainType - 10; // 1-5
-          const keepW = (8 + level * 2) * zoom;
-          const keepH = (6 + level * 2) * zoom;
-
-          // Stone base
-          {
-            const o = this._pooledPush(objects);
-            o.x = sx + (TILE_WIDTH * zoom - keepW) / 2;
-            o.y = sy + (TILE_HEIGHT * zoom - keepH) / 2;
-            o.w = keepW;
-            o.h = keepH;
-            o.r = 0.45; o.g = 0.42; o.b = 0.38;
-            o.sortY = sy + (TILE_HEIGHT * zoom + keepH) / 2;
-          }
-
-          // Roof triangle (small darker rect above)
-          const roofW = keepW * 0.6;
-          const roofH = 4 * zoom;
-          {
-            const o = this._pooledPush(objects);
-            o.x = sx + (TILE_WIDTH * zoom - roofW) / 2;
-            o.y = sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH;
-            o.w = roofW;
-            o.h = roofH;
-            o.r = 0.35; o.g = 0.22; o.b = 0.12;
-            o.sortY = sy + (TILE_HEIGHT * zoom - keepH) / 2 - roofH;
+        } else if (terrainType === 5) {
+          // Hill: sparse decoration tree on slopes only. Favor elevation
+          // layer 1 (slope); peaks (layer 2) stay bare so they read as
+          // high ground. Pure Pass-2 sprites — does not touch BlockLOS,
+          // cover, or TerrainCosts (ADR-0024: terrain is the source of
+          // truth, this only draws on top).
+          if (this.elevationData) {
+            const layer = this.elevationData[idx];
+            if (layer === 1) {
+              const h = ((tx * 974761393 ^ ty * 28349661) >>> 0);
+              // Layer-1 slope tiles get a tree at hillTreeFraction rate.
+              if ((h % 1000) / 1000 < HILL_TREE_FRACTION) {
+                const ox = ((h >> 4 & 0xFF) / 255) * (TILE_WIDTH - 8) * zoom + 2 * zoom;
+                const oy = ((h >> 12 & 0xFF) / 255) * (TILE_HEIGHT - 12) * zoom + 2 * zoom;
+                this._pushTree(objects, sx + ox, sy + oy, h, zoom);
+              }
+            }
           }
         } else if (terrainType === 7) {
           // Bridge: draw horizontal plank lines
@@ -1653,8 +1735,13 @@ export class Game {
   /**
    * Build stronghold descriptors for the visible range. Strongholds are
    * capturable Building entities (#54) — drawn faction-colored (blue=player,
-   * red=enemy, gold=neutral), sized by level, with a dark battlement backing.
-   * Sources from `this.strongholds` (the live stronghold_state message).
+   * red=enemy, gold=neutral), sized by level, with a dark battlement backing,
+   * an HP bar above the keep, and a garrison-pip row below. Sources from
+   * `this.strongholds` (the live stronghold_state message).
+   *
+   * Graceful degradation: older state messages without hp/max_hp/garrison
+   * default to 0 — the HP bar falls back to strongholdMaxHP(level) for its
+   * denominator, and neutral strongholds (garrison 0) just show empty pips.
    */
   buildStrongholdDescriptors(visible) {
     if (!this.strongholds || this.strongholds.length === 0) return [];
@@ -1677,6 +1764,42 @@ export class Game {
       // Dark backing first (drawn behind), faction keep on top.
       objects.push({ x: cx - ring / 2, y: cy - ring / 2, w: ring, h: ring, r: 0.2, g: 0.18, b: 0.14, sortY: cy });
       objects.push({ x: cx - base / 2, y: cy - base / 2, w: base, h: base, r: fr, g: fg, b: fb, sortY: cy });
+
+      // HP bar above the keep — dark track + faction-tinted fill. Mirrors
+      // the unit HP-bar convention (commits 9c10f30, 14c439b). MaxHP falls
+      // back to the client formula when the field is absent/0 (older state).
+      const maxHP = s.max_hp > 0 ? s.max_hp : strongholdMaxHP(lvl);
+      const hpRatio = maxHP > 0 ? Math.max(0, Math.min(1, (s.hp || 0) / maxHP)) : 0;
+      const barW = ring;
+      const barH = Math.max(2, 2 * zoom);
+      const barX = cx - barW / 2;
+      const barY = cy - ring / 2 - barH - zoom;
+      // Track (dark) — sortY above the keep so it paints with the backing.
+      objects.push({ x: barX, y: barY, w: barW, h: barH, r: 0.12, g: 0.10, b: 0.08, sortY: barY });
+      // Fill — faction color, width = hpRatio * barW.
+      if (hpRatio > 0) {
+        objects.push({ x: barX, y: barY, w: barW * hpRatio, h: barH, r: fr, g: fg, b: fb, sortY: barY - 0.1 });
+      }
+
+      // Garrison pips below the keep — filled = occupied (faction color),
+      // empty = dark. Total = strongholdCapacity(level); filled = Garrison.
+      const cap = strongholdCapacity(lvl);
+      const filled = Math.max(0, Math.min(cap, s.garrison || 0));
+      const pipW = zoom;
+      const pipGap = zoom;
+      const pipRowW = cap * pipW + (cap - 1) * pipGap;
+      const pipY = cy + ring / 2 + zoom;
+      for (let i = 0; i < cap; i++) {
+        const px = cx - pipRowW / 2 + i * (pipW + pipGap);
+        const isFilled = i < filled;
+        objects.push({
+          x: px, y: pipY, w: pipW, h: pipW,
+          r: isFilled ? fr : 0.12,
+          g: isFilled ? fg : 0.10,
+          b: isFilled ? fb : 0.08,
+          sortY: pipY,
+        });
+      }
     }
     return objects;
   }

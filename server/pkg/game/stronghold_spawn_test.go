@@ -95,6 +95,31 @@ func TestStrongholdStateIfChanged(t *testing.T) {
 	}
 }
 
+// TestStrongholdStateFields covers the terrain-polish widening: every
+// reported state carries HP/MaxHP/Garrison sourced from the live pools.
+// MaxHP must equal component.StrongholdHP(level); Garrison is 0 at spawn
+// (no units have entered yet); HP equals MaxHP at spawn.
+func TestStrongholdStateFields(t *testing.T) {
+	gs := NewGameSession()
+	gs.Reset()
+
+	states, changed := gs.StrongholdStateIfChanged()
+	if !changed || len(states) == 0 {
+		t.Fatal("expected stronghold states on first call")
+	}
+	for _, s := range states {
+		if s.MaxHP != component.StrongholdHP(s.Level) {
+			t.Errorf("level %d MaxHP=%d, want %d", s.Level, s.MaxHP, component.StrongholdHP(s.Level))
+		}
+		if s.HP != s.MaxHP {
+			t.Errorf("level %d HP=%d, want %d (full at spawn)", s.Level, s.HP, s.MaxHP)
+		}
+		if s.Garrison != 0 {
+			t.Errorf("level %d Garrison=%d, want 0 at spawn", s.Level, s.Garrison)
+		}
+	}
+}
+
 // TestStrongholdGarrisonExit: a garrisoned unit issued a move order away from
 // the stronghold is released (GarrisonedIn cleared, removed from the garrison).
 // (#54 1B — garrison exit.)

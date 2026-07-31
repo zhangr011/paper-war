@@ -228,3 +228,56 @@ describe('Heartbeat', () => {
     });
   });
 });
+
+// Stronghold state message shape — the stronghold_state JSON message was
+// widened (terrain-polish plan) to carry hp, max_hp, and garrison alongside
+// the existing x/y/level/faction. The Connection layer is pass-through for
+// JSON messages (the handler lives in app.js), so this test pins the wire
+// shape: a server sending the widened payload round-trips through JSON.parse
+// unchanged and the new fields survive with the expected types/values.
+describe('Stronghold state wire shape', () => {
+  test('stronghold_state payload carries hp / max_hp / garrison alongside x/y/level/faction', () => {
+    const payload = {
+      type: 'stronghold_state',
+      strongholds: [
+        { x: 12, y: 20, level: 3, faction: 0, hp: 410, max_hp: 650, garrison: 2 },
+        { x: 40, y: 8,  level: 5, faction: 0xFF, hp: 950, max_hp: 950, garrison: 0 },
+      ],
+    };
+    // Simulate the wire: JSON.stringify on the server, JSON.parse on the client.
+    const round = JSON.parse(JSON.stringify(payload));
+    assert.equal(round.type, 'stronghold_state');
+    assert.equal(round.strongholds.length, 2);
+    const s = round.strongholds[0];
+    assert.equal(s.x, 12);
+    assert.equal(s.y, 20);
+    assert.equal(s.level, 3);
+    assert.equal(s.faction, 0);
+    assert.equal(s.hp, 410, 'hp field present');
+    assert.equal(s.max_hp, 650, 'max_hp field present');
+    assert.equal(s.garrison, 2, 'garrison field present');
+    // Neutral stronghold (pre-siege) — garrison 0 is a valid state and must
+    // survive the round-trip so client-side pip rendering can degrade to
+    // "empty pips" rather than NaN/undefined.
+    const neutral = round.strongholds[1];
+    assert.equal(neutral.faction, 0xFF);
+    assert.equal(neutral.garrison, 0);
+    assert.equal(neutral.hp, neutral.max_hp, 'full HP at neutral spawn');
+  });
+
+  test('older stronghold_state payloads (no hp/max_hp/garrison) still parse', () => {
+    // Backward compat: an older server that only emits x/y/level/faction
+    // must keep parsing. The client falls back to strongholdMaxHP(level)
+    // for the HP-bar denominator and treats missing garrison as 0.
+    const legacy = {
+      type: 'stronghold_state',
+      strongholds: [{ x: 5, y: 6, level: 1, faction: 0 }],
+    };
+    const round = JSON.parse(JSON.stringify(legacy));
+    const s = round.strongholds[0];
+    assert.equal(s.hp, undefined);
+    assert.equal(s.max_hp, undefined);
+    assert.equal(s.garrison, undefined);
+    assert.equal(s.level, 1);
+  });
+});

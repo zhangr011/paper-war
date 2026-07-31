@@ -505,10 +505,13 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 
 // StrongholdState is a stronghold's live, client-visible state.
 type StrongholdState struct {
-	X       int32 `json:"x"` // tile coord
-	Y       int32 `json:"y"` // tile coord
-	Level   uint8 `json:"level"`
-	Faction uint8 `json:"faction"` // 0 player, 1 enemy, 0xFF neutral
+	X        int32 `json:"x"` // tile coord
+	Y        int32 `json:"y"` // tile coord
+	Level    uint8 `json:"level"`
+	Faction  uint8 `json:"faction"`  // 0 player, 1 enemy, 0xFF neutral
+	HP       int32 `json:"hp"`       // current HP (from HealthComponent)
+	MaxHP    int32 `json:"max_hp"`   // component.StrongholdHP(level); sent so the client needn't replicate the formula
+	Garrison int32 `json:"garrison"` // current occupied garrison slots (len(StrongholdComponent.Garrison))
 }
 
 // StrongholdStateIfChanged returns the current stronghold states and true when
@@ -546,10 +549,13 @@ func (gs *GameSession) StrongholdStates() []StrongholdState {
 		}
 		owner, _ := ownerPool.Get(e)
 		out = append(out, StrongholdState{
-			X:       int32(pos.X >> 12),
-			Y:       int32(pos.Y >> 12),
-			Level:   sc.Level,
-			Faction: owner.Faction,
+			X:        int32(pos.X >> 12),
+			Y:        int32(pos.Y >> 12),
+			Level:    sc.Level,
+			Faction:  owner.Faction,
+			HP:       hp.HP,
+			MaxHP:    component.StrongholdHP(sc.Level),
+			Garrison: int32(len(sc.Garrison)),
 		})
 	})
 	return out

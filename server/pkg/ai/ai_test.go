@@ -1116,3 +1116,157 @@ func TestAIRetreatBeatsApproach(t *testing.T) {
 		t.Error("expected a retreat CmdMove")
 	}
 }
+
+// ============================================================================
+// HUNT/SEEK — last-known position (LKP) tests. Plan: ai-hunt-seek.
+// ============================================================================
+
+// TestAI_HuntsLastKnownPosition: an enemy is in AI vision for a few ticks
+// (LKP recorded), then is removed (out of vision). On the next eval the AI
+// must issue a CmdMove toward the LKP within EvalInterval, NOT fall through
+// to push/patrol. aiFog is nil in these tests, so scanEnemiesScored treats
+// any alive enemy as visible; removing the enemy entity simulates losing
+// contact.
+func TestAI_HuntsLastKnownPosition(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 20, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 35, 30)
+
+	// Tick once with the enemy visible → LKP should be recorded at (35,30).
+	sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+	if sys.lastEnemySightingX != fixed.FromFloat(35) ||
+		sys.lastEnemySightingY != fixed.FromFloat(30) {
+		t.Fatalf("LKP = (%.1f,%.1f), want (35,30) after sighting",
+			fixed.ToFloat(sys.lastEnemySightingX), fixed.ToFloat(sys.lastEnemySightingY))
+	}
+	if sys.lastEnemySightingTick == 0 {
+		t.Fatal("lastEnemySightingTick should be set after a sighting")
+	}
+
+	// Enemy slips out of vision: kill it and drop HP to 0 so scanEnemiesScored
+	// skips it (healthPool.Each returns early on hp.HP <= 0).
+	ehp, _ := healthPool.GetPtr(enemy)
+	ehp.HP = 0
+
+	// Force a fresh eval at a tick within HuntMemoryTicks of the sighting.
+	st := sys.States[1]
+	st.NextEvalTick = 50
+
+	cmds := sys.Update(50, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	// Squad should be hunting: StateScout, CmdMove targeting the LKP.
+	if st.State != StateScout {
+		t.Fatalf("expected StateScout (hunting LKP), got %d", st.State)
+	}
+	moveCmds := filterCmds(cmds, CmdMove)
+	if len(moveCmds) == 0 {
+		t.Fatal("expected a CmdMove toward the LKP")
+	}
+	tx := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetX)
+	ty := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetY)
+	if math.Abs(tx-35) > 0.5 || math.Abs(ty-30) > 0.5 {
+		t.Errorf("hunt target = (%.1f,%.1f), want LKP (35,30)", tx, ty)
+	}
+}
+
+// TestAI_LKPStaleFallsThrough: when the LKP is older than HuntMemoryTicks,
+// huntCommand returns nil and the squad falls through to push/patrol (NOT
+// StateScout toward the LKP).
+func TestAI_LKPStaleFallsThrough(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 20, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 35, 30)
+
+	// Record a sighting at tick 10.
+	sys.Update(10, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	ehp, _ := healthPool.GetPtr(enemy)
+	ehp.HP = 0
+
+	// Eval at tick 10 + HuntMemoryTicks + 1 → stale.
+	staleTick := uint32(11 + HuntMemoryTicks)
+	st := sys.States[1]
+	st.NextEvalTick = staleTick
+
+	cmds := sys.Update(staleTick, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	// Must NOT have hunted: state must not be StateScout, and no CmdMove may
+	// target the stale LKP.
+	if st.State == StateScout {
+		t.Fatalf("LKP stale (%d ticks old) should not trigger hunt (StateScout)",
+			staleTick-10)
+	}
+	for _, c := range cmds {
+		if c.Type == CmdMove {
+			tx := fixed.ToFloat(c.TargetX)
+			ty := fixed.ToFloat(c.TargetY)
+			if math.Abs(tx-35) < 1.0 && math.Abs(ty-30) < 1.0 {
+				t.Errorf("stale LKP hunt: CmdMove to (%.1f,%.1f) (the stale LKP); should fall through", tx, ty)
+			}
+		}
+	}
+}
+
+// TestAI_LKPRefreshesOnReSight: after losing contact and hunting to the LKP,
+// a fresh sighting at a new position must update the LKP to that new spot.
+func TestAI_LKPRefreshesOnReSight(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 20, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 35, 30)
+
+	// First sighting at (35,30).
+	sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+	if sys.lastEnemySightingX != fixed.FromFloat(35) {
+		t.Fatalf("initial LKP X = %.1f, want 35", fixed.ToFloat(sys.lastEnemySightingX))
+	}
+
+	// Lose contact briefly.
+	ehp, _ := healthPool.GetPtr(enemy)
+	ehp.HP = 0
+	st := sys.States[1]
+	st.NextEvalTick = 50
+	sys.Update(50, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	// Re-sight at a new position: revive + move the enemy.
+	ehp.HP = 200
+	posPool.Add(ecs.Entity(enemy), component.PositionComponent{X: fixed.FromFloat(25), Y: fixed.FromFloat(40)})
+
+	st.NextEvalTick = 100
+	sys.Update(100, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.lastEnemySightingX != fixed.FromFloat(25) ||
+		sys.lastEnemySightingY != fixed.FromFloat(40) {
+		t.Errorf("LKP = (%.1f,%.1f) after re-sight, want (25,40)",
+			fixed.ToFloat(sys.lastEnemySightingX), fixed.ToFloat(sys.lastEnemySightingY))
+	}
+	if sys.lastEnemySightingTick != 100 {
+		t.Errorf("lastEnemySightingTick = %d, want 100 (refreshed)", sys.lastEnemySightingTick)
+	}
+}
+
+// TestAI_NoSightingNoHunt: a squad that has never seen an enemy must not hunt
+// (huntCommand returns nil, falls through to other behaviors).
+func TestAI_NoSightingNoHunt(t *testing.T) {
+	_, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 20, 30)
+
+	st := sys.States[1]
+	st.NextEvalTick = 100
+
+	// No enemy in the world — no sighting should ever be recorded.
+	cmds := sys.Update(100, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.lastEnemySightingTick != 0 {
+		t.Errorf("lastEnemySightingTick = %d, want 0 (never sighted)", sys.lastEnemySightingTick)
+	}
+	if st.State == StateScout {
+		t.Errorf("State = StateScout, want non-hunt; no LKP should ever hunt")
+	}
+	// Should still produce some strategic command (patrol/etc).
+	if len(cmds) == 0 {
+		t.Error("expected a non-hunt strategic command, got none")
+	}
+}

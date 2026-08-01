@@ -61,6 +61,13 @@ const (
 	IntelDecayFactor           = 0.7 // 30% reduction per decay cycle
 	RecruitWaveInterval uint32 = 60  // ~12s between recruitment waves
 	RecruitWaveMinGold  int32  = 30  // minimum gold to trigger a wave
+
+	// HuntMemoryTicks is how long a last-known position (LKP) stays "worth
+	// hunting". An enemy seen within the last ~30s (300 ticks at 10Hz) is
+	// recent enough that the AI should seek that point on losing contact;
+	// older sightings are presumed stale and fall through to push/patrol.
+	// Tunable. See plan docs/plans/ai-hunt-seek.md.
+	HuntMemoryTicks uint32 = 300
 	DefaultEngageRange         = 5.0 // fallback when squad composition unknown
 
 	// ADR-0027 — bounded engagement anti-kite guards.
@@ -191,6 +198,14 @@ type AISystem struct {
 	// v2 internal state
 	lastIntelDecay  uint32
 	lastRecruitWave uint32
+
+	// lastEnemySighting is the most recent position an enemy was seen, with
+	// the tick it was seen. Single AI-wide LKP (intel is shared across the
+	// AI's squads). Drives hunt/seek when no enemy is currently visible.
+	// Updated in the combat branch whenever scanEnemiesScored returns a
+	// target. See plan docs/plans/ai-hunt-seek.md.
+	lastEnemySightingX, lastEnemySightingY int64
+	lastEnemySightingTick                 uint32
 }
 
 func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32, rnd *rand.Rand) *AISystem {
@@ -375,6 +390,13 @@ func (as *AISystem) Update(
 		// MaxPursuitDist from the engagement anchor, avoid that target
 		// for AvoidCooldownTicks after a break-off.
 		if bestEnemyID != 0 {
+			// LKP refresh: a visible enemy is the freshest intel we can
+			// have — record its position + tick so the hunt/seek behavior
+			// in the no-enemy branch has a real target to converge on
+			// when contact is later lost. (Plan: ai-hunt-seek.)
+			as.lastEnemySightingX = bestEnemyX
+			as.lastEnemySightingY = bestEnemyY
+			as.lastEnemySightingTick = tick
 			// Force-ratio check: retreat if badly outnumbered and not at full strength.
 			squadStrength := assessment.Strength
 			if squadStrength > 0 && enemyStrength > 0 &&
@@ -495,6 +517,16 @@ func (as *AISystem) Update(
 			}
 		}
 
+		// Hunt: if we have a recent last-known enemy position, converge on
+		// it. LKP is *where enemies actually are*; the push below goes to
+		// the enemy base (where they may not be). Hunt takes priority so
+		// survivors that slipped out of vision are re-acquired instead of
+		// the AI oscillating back to the base. (Plan: ai-hunt-seek.)
+		if huntCmd := as.huntCommand(squadID, state, pos, tick); huntCmd != nil {
+			cmds = append(cmds, *huntCmd)
+			continue
+		}
+
 		// v2: Offensive push for elimination objective — advance toward enemy base.
 		if as.Objective != nil && as.Objective.Type == tilemap.ObjectiveElimination &&
 			as.hasEnemyBase() {
@@ -510,6 +542,18 @@ func (as *AISystem) Update(
 		if shCmd != nil {
 			cmds = append(cmds, *shCmd)
 			continue
+		}
+
+		// Sweep fallback: no recent LKP and already at/without an enemy base —
+		// bias the patrol toward the enemy half and fogged tiles rather than
+		// a fully random point, so the AI keeps looking for enemies. (Plan:
+		// ai-hunt-seek.) Only fires when there is a real fog grid, so ad-hoc
+		// unit tests without fog fall through to plain patrol as before.
+		if aiFog != nil && state.State != StateDefend && state.State != StateRetreat {
+			if sweepCmd := as.sweepCommand(squadID, state, pos, aiFog); sweepCmd != nil {
+				cmds = append(cmds, *sweepCmd)
+				continue
+			}
 		}
 
 		// Default: patrol
@@ -849,6 +893,99 @@ func (as *AISystem) exploreCommand(squadID uint32, state *AIState, pos component
 		}
 
 		if !aiFog.IsVisible(tx, ty) {
+			state.State = StateScout
+			return &AICommand{
+				Type:    CmdMove,
+				SquadID: squadID,
+				TargetX: fixed.FromFloat(float64(tx)),
+				TargetY: fixed.FromFloat(float64(ty)),
+			}
+		}
+	}
+
+	return nil
+}
+
+// huntCommand moves a squad toward the most recent last-known enemy position
+// (LKP). Returns nil if no sighting has ever been recorded, or if the LKP is
+// older than HuntMemoryTicks (the enemy is presumed long-gone). On a fresh LKP
+// the squad re-enters StateScout; on arrival it re-scans from closer range and
+// either re-detects (→ combat branch, LKP refreshes) or finds nothing (LKP
+// eventually goes stale → falls through to push/sweep). Mirrors the style of
+// exploreCommand/offensivePushCommand. (Plan: ai-hunt-seek.)
+func (as *AISystem) huntCommand(squadID uint32, state *AIState, pos component.PositionComponent, tick uint32) *AICommand {
+	// No sighting ever recorded.
+	if as.lastEnemySightingTick == 0 {
+		return nil
+	}
+	// Stale — enemy seen too long ago to be worth chasing.
+	if tick-as.lastEnemySightingTick > HuntMemoryTicks {
+		return nil
+	}
+
+	// Already at the LKP — nothing more to hunt here; let other behaviors run.
+	dx := as.lastEnemySightingX - pos.X
+	dy := as.lastEnemySightingY - pos.Y
+	arriveThreshold := fixed.FromFloat(3.0) * fixed.FromFloat(3.0)
+	if dx*dx+dy*dy < arriveThreshold {
+		return nil
+	}
+
+	state.State = StateScout
+	return &AICommand{
+		Type:    CmdMove,
+		SquadID: squadID,
+		TargetX: as.lastEnemySightingX,
+		TargetY: as.lastEnemySightingY,
+	}
+}
+
+// sweepCommand is the no-LKP fallback: send the squad on a rotating sweep
+// across the enemy half of the map, preferring currently-fogged tiles so the
+// AI keeps uncovering enemies rather than milling around its own base. Runs
+// only when hunt returns nil (no recent LKP) and offensivePushCommand also
+// returned nil (already at/without an enemy base). Lightweight: a single
+// deterministic sector point per call, reusing the exploreCommand fog check.
+// (Plan: ai-hunt-seek.)
+func (as *AISystem) sweepCommand(squadID uint32, state *AIState, pos component.PositionComponent, aiFog *fog.FogGrid) *AICommand {
+	if as.MapW == 0 || as.MapH == 0 {
+		return nil
+	}
+
+	// Center the sweep on the enemy half of the map. The AI spawns at the
+	// bottom for player 2; the enemy half is the top. Generalize by flipping
+	// relative to the AI's own base when known, else by map quadrants.
+	centerX := float64(as.MapW) / 2
+	centerY := float64(as.MapH) / 2
+	if as.BaseY != 0 {
+		// Enemy half is the half of the map the AI does NOT spawn on.
+		if fixed.ToFloat(as.BaseY) > centerY {
+			// AI spawns low → enemy half is the top half.
+			centerY = float64(as.MapH) * 0.25
+		} else {
+			centerY = float64(as.MapH) * 0.75
+		}
+	}
+
+	// Try a few fog-biased points; accept the first fogged one. If fog is
+	// unavailable, accept the first deterministic point.
+	for attempts := 0; attempts < 4; attempts++ {
+		tx := int32(centerX + (as.rnd.Float64()*2 - 1) * float64(as.MapW) * 0.3)
+		ty := int32(centerY + (as.rnd.Float64()*2 - 1) * float64(as.MapH) * 0.25)
+		if tx < 1 {
+			tx = 1
+		}
+		if tx >= as.MapW-1 {
+			tx = as.MapW - 2
+		}
+		if ty < 1 {
+			ty = 1
+		}
+		if ty >= as.MapH-1 {
+			ty = as.MapH - 2
+		}
+
+		if aiFog == nil || !aiFog.IsVisible(tx, ty) {
 			state.State = StateScout
 			return &AICommand{
 				Type:    CmdMove,

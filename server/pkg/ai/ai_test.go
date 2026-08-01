@@ -12,14 +12,14 @@ import (
 )
 
 func TestNewAISystem(t *testing.T) {
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	if sys.AIPlayerID != 2 {
 		t.Error("expected AI player ID 2")
 	}
 }
 
 func TestRegisterSquad(t *testing.T) {
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, 100)
 	state, ok := sys.States[1]
 	if !ok {
@@ -37,7 +37,7 @@ func TestRegisterSquad(t *testing.T) {
 }
 
 func TestPickPatrolTarget(t *testing.T) {
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	state := &AIState{}
 	sys.pickPatrolTarget(state)
 	px := fixed.ToFloat(state.PatrolX)
@@ -87,7 +87,7 @@ func TestAIPatrolNoEnemy(t *testing.T) {
 	ownerPool.Add(cmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(cmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(cmd))
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -110,7 +110,7 @@ func TestAIRetreat(t *testing.T) {
 	ownerPool.Add(cmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(cmd, component.HealthComponent{HP: 1, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(cmd))
 	sys.States[1].State = StateApproach
 
@@ -136,7 +136,7 @@ func TestAICaptureDefense(t *testing.T) {
 	ownerPool.Add(cmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(cmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(cmd))
 	sys.SetObjective(&tilemap.Objective{Type: tilemap.ObjectiveCapture, TargetX: 40, TargetY: 40})
 
@@ -157,7 +157,7 @@ func TestAIRecruit(t *testing.T) {
 	ownerPool.Add(cmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(cmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.RegisterSquad(1, uint32(cmd))
 	sys.PlayerGold = map[uint32]int32{2: 50}
 
@@ -175,7 +175,7 @@ func TestAIRecruit(t *testing.T) {
 }
 
 func TestAIRecruitNoGold(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 10}
 	cmds := sys.recruitDecisions(1)
 	if len(cmds) != 0 {
@@ -184,7 +184,7 @@ func TestAIRecruitNoGold(t *testing.T) {
 }
 
 func TestAIRecruitRoleBalance(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 200}
 
 	cmds := sys.recruitDecisions(1)
@@ -204,7 +204,7 @@ func TestAIRecruitRoleBalance(t *testing.T) {
 }
 
 func TestAIRecruitMaxThreePerTick(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 1000}
 	cmds := sys.recruitDecisions(1)
 	if len(cmds) > 3 {
@@ -213,7 +213,7 @@ func TestAIRecruitMaxThreePerTick(t *testing.T) {
 }
 
 func TestAIRecruitNoGoldMap(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	cmds := sys.recruitDecisions(1)
 	if len(cmds) != 0 {
 		t.Errorf("expected 0 recruits with nil PlayerGold, got %d", len(cmds))
@@ -221,7 +221,7 @@ func TestAIRecruitNoGoldMap(t *testing.T) {
 }
 
 func TestAICheapestAffordableUnit(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 
 	ut := sys.cheapestAffordableUnit(15)
 	if ut == nil {
@@ -261,7 +261,7 @@ func TestAIBaseDefense(t *testing.T) {
 	ownerPool.Add(enemy2, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy2, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	sys.SetBasePosition(fixed.FromFloat(40), fixed.FromFloat(40))
 
@@ -295,7 +295,7 @@ func TestAIStrongholdCapture(t *testing.T) {
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	sys.SetStrongholds([][2]int32{{50, 30}, {10, 50}})
 
@@ -331,7 +331,7 @@ func TestAIStrongholdCaptureSkipsOwned(t *testing.T) {
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	// [0] owned by this AI (enemy) and very close; [1] neutral and farther.
 	sys.SetStrongholds([][2]int32{{22, 30}, {40, 30}})
@@ -363,7 +363,7 @@ func TestAIExploration(t *testing.T) {
 	// Create fog system — all tiles unexplored for AI player
 	fogSys := fog.NewFogSystem(64, 64)
 
-	sys := NewAISystem(2, fogSys, 64, 64)
+	sys := NewAISystem(2, fogSys, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -376,7 +376,7 @@ func TestAIExploration(t *testing.T) {
 }
 
 func TestAIAdaptiveRecruitment(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 200}
 
 	// Simulate seeing lots of enemy Snipers (ranged)
@@ -417,7 +417,7 @@ func TestAIAdaptiveRecruitment(t *testing.T) {
 }
 
 func TestAIAdaptiveRatioClamps(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 200}
 
 	// Extreme enemy composition — all ranged
@@ -444,7 +444,7 @@ func TestAIAdaptiveRatioClamps(t *testing.T) {
 }
 
 func TestAISetBasePosition(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.SetBasePosition(fixed.FromFloat(30), fixed.FromFloat(40))
 	if fixed.ToFloat(sys.BaseX) != 30 {
 		t.Errorf("BaseX = %.1f, want 30", fixed.ToFloat(sys.BaseX))
@@ -455,7 +455,7 @@ func TestAISetBasePosition(t *testing.T) {
 }
 
 func TestAISetStrongholds(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.SetStrongholds([][2]int32{{10, 20}, {30, 40}})
 	if len(sys.Strongholds) != 2 {
 		t.Fatalf("expected 2 strongholds, got %d", len(sys.Strongholds))
@@ -483,7 +483,7 @@ func TestAIEnemyCompositionTracking(t *testing.T) {
 	healthPool.Add(enemyCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 	unitTypePool.Add(enemyCmd, component.UnitTypeComponent{Type: component.UnitSniper})
 
-	sys := NewAISystem(2, nil, 64, 64) // no fog — can see everything
+	sys := NewAISystem(2, nil, 64, 64, nil) // no fog — can see everything
 	sys.RegisterSquad(1, uint32(aiCmd))
 
 	sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -535,7 +535,7 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy, component.HealthComponent{HP: 100, MaxHP: 100})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -574,7 +574,7 @@ func TestAITargetPrioritization(t *testing.T) {
 	ownerPool.Add(enemyCmd, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemyCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 
 	// Test the scoring function directly
@@ -612,7 +612,7 @@ func TestAIForceRatioRetreat(t *testing.T) {
 		healthPool.Add(enemy, component.HealthComponent{HP: 100, MaxHP: 100})
 	}
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	sys.SetBasePosition(fixed.FromFloat(2), fixed.FromFloat(30))
 
@@ -647,7 +647,7 @@ func TestAIOffensivePush(t *testing.T) {
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	sys.SetObjective(&tilemap.Objective{Type: tilemap.ObjectiveElimination})
 	sys.SetEnemyBasePosition(fixed.FromFloat(43), fixed.FromFloat(48)) // enemy spawn at other end
@@ -671,7 +671,7 @@ func TestAIOffensivePush(t *testing.T) {
 
 // Test wave-based recruitment: doesn't recruit during cooldown.
 func TestAIRecruitWaveTiming(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 30}
 
 	// First wave (tick 1, lastRecruitWave=0) should recruit immediately
@@ -697,7 +697,7 @@ func TestAIRecruitWaveTiming(t *testing.T) {
 
 // Test wave recruitment: excessive gold bypasses cooldown.
 func TestAIRecruitWaveBypass(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.PlayerGold = map[uint32]int32{2: 30}
 
 	// First wave
@@ -713,7 +713,7 @@ func TestAIRecruitWaveBypass(t *testing.T) {
 
 // Test enemy intel persistence: intel survives beyond the sighting tick.
 func TestAIIntelPersistence(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 
 	// Simulate enemy sightings
 	sys.EnemyUnits[component.UnitSniper] = 10
@@ -772,7 +772,7 @@ func TestAISquadAssessment(t *testing.T) {
 	})
 	boidPool.Add(arty, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	cmdHealth, _ := healthPool.Get(cmd)
 	a := sys.assessSquad(1, boidPool, healthPool, unitTypePool, cmd, &cmdHealth)
 
@@ -803,7 +803,7 @@ func TestAISquadAssessment(t *testing.T) {
 
 // Test that SetEnemyBasePosition stores the values correctly.
 func TestAISetEnemyBasePosition(t *testing.T) {
-	sys := NewAISystem(2, nil, 48, 96)
+	sys := NewAISystem(2, nil, 48, 96, nil)
 	sys.SetEnemyBasePosition(fixed.FromFloat(43), fixed.FromFloat(48))
 	if fixed.ToFloat(sys.EnemyBaseX) != 43 {
 		t.Errorf("EnemyBaseX = %.1f, want 43", fixed.ToFloat(sys.EnemyBaseX))
@@ -846,7 +846,7 @@ func TestAIGuardOnEnemyDetected(t *testing.T) {
 	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -877,7 +877,7 @@ func TestAIGuardExitsWhenNoEnemies(t *testing.T) {
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	sys := NewAISystem(2, nil, 64, 64)
+	sys := NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmd))
 	// Force the squad into Guard to start; no enemies in the world.
 	sys.States[1].State = StateGuard
@@ -917,7 +917,7 @@ func setupSquadWithCommander(t *testing.T, x, y float64) (
 	cmdPool.Add(aiCmdEntity, component.CommanderComponent{SquadID: 1, IsAlive: true})
 	ownerPool.Add(aiCmdEntity, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmdEntity, component.HealthComponent{HP: 200, MaxHP: 200})
-	sys = NewAISystem(2, nil, 64, 64)
+	sys = NewAISystem(2, nil, 64, 64, nil)
 	sys.RegisterSquad(1, uint32(aiCmdEntity))
 	return
 }

@@ -3,6 +3,8 @@ package ai
 import (
 	"math"
 	"math/rand"
+	"sort"
+	"time"
 
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
@@ -180,12 +182,21 @@ type AISystem struct {
 	RecruitDisabled bool         // true → AI never issues recruit commands (clash/spectator mode)
 	MoveDisabled    bool         // true → AI never issues move commands (clash mirror mode)
 
+	// rnd is the AI's own RNG source. Plumbing it through (instead of using
+	// the process-global math/rand) makes AI decisions deterministic given
+	// the map seed — see ADR-0028. Defaults to a time-seeded source when nil
+	// so ad-hoc callers preserve prior behavior.
+	rnd *rand.Rand
+
 	// v2 internal state
 	lastIntelDecay  uint32
 	lastRecruitWave uint32
 }
 
-func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AISystem {
+func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32, rnd *rand.Rand) *AISystem {
+	if rnd == nil {
+		rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
 	return &AISystem{
 		States:     make(map[uint32]*AIState),
 		AIPlayerID: aiPlayerID,
@@ -194,7 +205,18 @@ func NewAISystem(aiPlayerID uint32, fogSys *fog.FogSystem, mapW, mapH int32) *AI
 		MapH:       mapH,
 		EnemyUnits: make(map[component.CombatUnitType]int),
 		visitedSH:  make(map[int]bool),
+		rnd:        rnd,
 	}
+}
+
+// SetRNG replaces the AI's RNG source. Tests use this to force a deterministic
+// seed after construction; production wires it from the map seed so AI
+// decisions track terrain determinism (ADR-0028).
+func (as *AISystem) SetRNG(rnd *rand.Rand) {
+	if rnd == nil {
+		rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	as.rnd = rnd
 }
 
 func (as *AISystem) SetObjective(obj *tilemap.Objective) {
@@ -271,7 +293,16 @@ func (as *AISystem) Update(
 		cmds = append(cmds, as.recruitDecisions(tick)...)
 	}
 
-	for squadID, state := range as.States {
+	// Iterate squads in sorted-ID order so the run is reproducible: Go
+	// randomizes map iteration order, and per-squad command issue can
+	// interact (e.g. two squads contesting a target) (ADR-0028).
+	squadIDs := make([]uint32, 0, len(as.States))
+	for id := range as.States {
+		squadIDs = append(squadIDs, id)
+	}
+	sort.Slice(squadIDs, func(i, j int) bool { return squadIDs[i] < squadIDs[j] })
+	for _, squadID := range squadIDs {
+		state := as.States[squadID]
 		cmdEntity := ecs.Entity(state.CommanderID)
 		pos, hasPos := posPool.Get(cmdEntity)
 		health, hasHealth := healthPool.Get(cmdEntity)
@@ -802,8 +833,8 @@ func (as *AISystem) exploreCommand(squadID uint32, state *AIState, pos component
 		if fixed.ToFloat(pos.X) > float64(as.MapW)/2 {
 			enemySide = float64(as.MapW) * 0.75
 		}
-		tx := int32(enemySide + rand.Float64()*10 - 5)
-		ty := int32(rand.Float64() * float64(as.MapH))
+		tx := int32(enemySide + as.rnd.Float64()*10 - 5)
+		ty := int32(as.rnd.Float64() * float64(as.MapH))
 		if tx < 1 {
 			tx = 1
 		}
@@ -877,12 +908,20 @@ func (as *AISystem) strongholdCommand(squadID uint32, state *AIState, pos compon
 	}
 }
 
-// firstSquadID returns the first registered squad ID (used for scouting).
+// firstSquadID returns the smallest registered squad ID (used for scouting).
+// Deterministic — Go randomizes map iteration order, so picking "the first
+// key range gives us" would make the scout (and thus the whole early game)
+// non-reproducible run-to-run (ADR-0028).
 func (as *AISystem) firstSquadID() uint32 {
+	min := uint32(0)
+	first := true
 	for id := range as.States {
-		return id
+		if first || id < min {
+			min = id
+			first = false
+		}
 	}
-	return 0
+	return min
 }
 
 // captureDefense returns commands to move AI squad to the capture target.
@@ -950,7 +989,7 @@ func (as *AISystem) recruitDecisions(tick uint32) []AICommand {
 		}
 
 		// Pick the most underrepresented role using adaptive ratios
-		role := pickRoleWithRatio(roleCount, adaptiveRatio)
+		role := as.pickRoleWithRatio(roleCount, adaptiveRatio)
 		if role < 0 {
 			role = RoleFrontline // fallback
 		}
@@ -1052,7 +1091,7 @@ func (as *AISystem) decayIntel() {
 }
 
 // pickRoleWithRatio returns the role index most underrepresented relative to given ratios.
-func pickRoleWithRatio(roleCount [3]int, ratio [3]float64) int {
+func (as *AISystem) pickRoleWithRatio(roleCount [3]int, ratio [3]float64) int {
 	total := roleCount[0] + roleCount[1] + roleCount[2]
 	if total == 0 {
 		return RoleFrontline
@@ -1069,7 +1108,7 @@ func pickRoleWithRatio(roleCount [3]int, ratio [3]float64) int {
 		}
 	}
 	if worstRole < 0 {
-		worstRole = rand.Intn(3)
+		worstRole = as.rnd.Intn(3)
 	}
 	return worstRole
 }
@@ -1077,7 +1116,7 @@ func pickRoleWithRatio(roleCount [3]int, ratio [3]float64) int {
 // pickAffordableUnit returns a random affordable unit from the given role.
 func (as *AISystem) pickAffordableUnit(role int, gold int32) *component.CombatUnitType {
 	candidates := roleUnits[role]
-	idx := rand.Intn(len(candidates))
+	idx := as.rnd.Intn(len(candidates))
 	for i := 0; i < len(candidates); i++ {
 		ut := candidates[(idx+i)%len(candidates)]
 		if component.CombatUnitTypeTable[ut].RecruitCost <= gold {
@@ -1106,6 +1145,6 @@ func (as *AISystem) cheapestAffordableUnit(gold int32) *component.CombatUnitType
 
 func (as *AISystem) pickPatrolTarget(state *AIState) {
 	margin := 5.0
-	state.PatrolX = fixed.FromFloat(margin + rand.Float64()*(float64(as.MapW)-margin*2))
-	state.PatrolY = fixed.FromFloat(margin + rand.Float64()*(float64(as.MapH)-margin*2))
+	state.PatrolX = fixed.FromFloat(margin + as.rnd.Float64()*(float64(as.MapW)-margin*2))
+	state.PatrolY = fixed.FromFloat(margin + as.rnd.Float64()*(float64(as.MapH)-margin*2))
 }

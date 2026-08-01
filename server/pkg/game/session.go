@@ -57,6 +57,11 @@ type GameSession struct {
 	stats              *MatchStats      // v1: cumulative match statistics (AAR)
 
 	tickCount uint32
+
+	// rnd is the session's own RNG for gameplay-affecting randomness that
+	// isn't owned by a subsystem (e.g. spawn jitter). Seeded from the map
+	// seed so the whole sim is reproducible given the seed (ADR-0028).
+	rnd *rand.Rand
 }
 
 const (
@@ -234,7 +239,11 @@ func NewGameSession() *GameSession {
 	// Fog system (per-player visibility)
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
 
-	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	// Session RNG: distinct sub-seed from the AISys/AISys2 sources so the
+	// spawn jitter doesn't correlate with AI decisions.
+	gs.rnd = gs.aiRNG(0x6a09e667)
+
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight, gs.aiRNG(0))
 	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.configureAIStrategy(gs.AISys)
 
@@ -442,6 +451,37 @@ func (gs *GameSession) updateFog() {
 		grid.BlocksLOS = blocksLOS
 		grid.RevealRadius(s.tileX, s.tileY, s.radius)
 	}
+}
+
+// sessionRand returns the session RNG, lazily initializing it from the map
+// seed (or wall-clock time when the seed is zero) if NewGameSession hasn't
+// already done so. Defensive against callers that build a GameSession by
+// hand without going through the constructor.
+func (gs *GameSession) sessionRand() *rand.Rand {
+	if gs.rnd == nil {
+		gs.rnd = gs.aiRNG(0x6a09e667)
+	}
+	return gs.rnd
+}
+
+// SetSessionRNG replaces the session RNG — tests use this to pin spawn jitter
+// and other session-level randomness for reproducibility (ADR-0028).
+func (gs *GameSession) SetSessionRNG(rnd *rand.Rand) {
+	gs.rnd = rnd
+}
+
+// aiRNG derives the AISystem's RNG from the map seed so AI decisions track
+// terrain determinism (ADR-0028). When the map has no seed (Seed == 0, used
+// by some test maps), it falls back to wall-clock time so production stays
+// randomized. `sub` mixes the seed so AISys and AISys2 differ — passing the
+// same seed to both would make the two AIs produce identical patrol/recruit
+// decisions.
+func (gs *GameSession) aiRNG(sub int64) *rand.Rand {
+	seed := gs.Map.Seed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	return rand.New(rand.NewSource(seed ^ sub))
 }
 
 // configureAIStrategy sets up the AI with map-specific strategic data:
@@ -726,7 +766,8 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 	gs.SnapGen = network.NewSnapshotGenerator()
 
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
-	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.rnd = gs.aiRNG(0x6a09e667)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight, gs.aiRNG(0))
 	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.configureAIStrategy(gs.AISys)
 	gs.AISys2 = nil
@@ -781,7 +822,8 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 
 	// Reset fog and AI
 	gs.FogSys = fog.NewFogSystem(DefaultMapWidth, DefaultMapHeight)
-	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight)
+	gs.rnd = gs.aiRNG(0x6a09e667)
+	gs.AISys = ai.NewAISystem(2, gs.FogSys, DefaultMapWidth, DefaultMapHeight, gs.aiRNG(0))
 	gs.AISys.PlayerGold = gs.PlayerGold
 	gs.configureAIStrategy(gs.AISys)
 	gs.AISys2 = nil // reset clash AI
@@ -815,7 +857,7 @@ func (gs *GameSession) EnableClashMode() {
 	gs.AISys.FogSystem = nil
 	gs.AISys.RecruitDisabled = true
 	gs.AISys.MoveDisabled = true
-	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight)
+	gs.AISys2 = ai.NewAISystem(1, nil, DefaultMapWidth, DefaultMapHeight, gs.aiRNG(0x9e3779b9))
 	gs.AISys2.PlayerGold = gs.PlayerGold
 	gs.AISys2.RecruitDisabled = true
 	gs.AISys2.MoveDisabled = true
@@ -1347,8 +1389,8 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		// processed each tick has a tiny first-mover advantage that
 		// compounds over hundreds of ticks, giving one faction a
 		// systematic win in AI-vs-AI clash mode.
-		jx := fixed.FromFloat((rand.Float64() - 0.5) * 0.6)
-		jy := fixed.FromFloat((rand.Float64() - 0.5) * 0.6)
+		jx := fixed.FromFloat((gs.sessionRand().Float64() - 0.5) * 0.6)
+		jy := fixed.FromFloat((gs.sessionRand().Float64() - 0.5) * 0.6)
 
 		gs.addComponent(unitEntity, component.PositionComponent{
 			X: cx + ox + jx,

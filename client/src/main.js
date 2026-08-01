@@ -1650,6 +1650,45 @@ export class Game {
             o.r = 0.40; o.g = 0.30; o.b = 0.15;
             o.sortY = py;
           }
+        } else if (terrainType === 16) {
+          // Rock: 1-2 gray boulders (heavy cover, blocks LOS — ADR-0024).
+          // Ground-level, ~1× a unit. Deterministic per-tile placement.
+          const cnt = (((tx * 3) ^ (ty * 7)) >>> 0) % 2 + 1;
+          for (let r = 0; r < cnt; r++) {
+            const h = ((tx * 61231 ^ ty * 49297 ^ r * 88069) >>> 0);
+            const sz = (12 + ((h >> 8) & 0x0F)) * zoom;        // ~12-27 px
+            const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - sz / zoom) * zoom;
+            const oy = ((h >> 16 & 0xFF) / 255) * (TILE_HEIGHT - sz / zoom) * zoom;
+            // Boulder body (mid gray) + lighter top facet for volume.
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox; o.y = sy + oy;
+              o.w = sz; o.h = sz * 0.8;
+              o.r = 0.42; o.g = 0.40; o.b = 0.38;
+              o.sortY = sy + oy + sz * 0.8;
+            }
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox + sz * 0.15; o.y = sy + oy;
+              o.w = sz * 0.55; o.h = sz * 0.3;
+              o.r = 0.52; o.g = 0.50; o.b = 0.47;
+              o.sortY = sy + oy + 1;
+            }
+          }
+        } else if (terrainType === 17) {
+          // Brush: 2-3 scrubby olive tufts (light cover — ADR-0024).
+          const cnt = (((tx * 5) ^ (ty * 11)) >>> 0) % 2 + 2;
+          for (let r = 0; r < cnt; r++) {
+            const h = ((tx * 22468 ^ ty * 32664 ^ r * 12289) >>> 0);
+            const sz = (6 + ((h >> 8) & 0x07)) * zoom;          // ~6-13 px
+            const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - sz / zoom) * zoom;
+            const oy = ((h >> 16 & 0xFF) / 255) * (TILE_HEIGHT - sz / zoom) * zoom;
+            const o = this._pooledPush(objects);
+            o.x = sx + ox; o.y = sy + oy;
+            o.w = sz; o.h = sz * 0.7;
+            o.r = 0.22; o.g = 0.32; o.b = 0.12;
+            o.sortY = sy + oy + sz * 0.7;
+          }
         }
       }
     }

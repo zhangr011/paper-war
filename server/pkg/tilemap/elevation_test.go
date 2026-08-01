@@ -119,3 +119,28 @@ func TestLoadClashMap_Elevation(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadClashMap_ElevationHillOnly asserts the "elevation is hill-only"
+// invariant of DeriveElevation: no tile has Elevation != 0 unless its
+// TerrainType is TerrainHill. Protects the visual-only, hill-only contract
+// — a stray elevation on a non-hill tile would render as a phantom shadow.
+func TestLoadClashMap_ElevationHillOnly(t *testing.T) {
+	names := []string{"plains", "forest", "road", "river", "stronghold", "hills"}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			m := LoadClashMap(name)
+			if m == nil {
+				t.Fatalf("LoadClashMap(%q) returned nil", name)
+			}
+			for y := int32(0); y < m.Height; y++ {
+				for x := int32(0); x < m.Width; x++ {
+					tl := m.TileAt(x, y)
+					if tl.TerrainType != component.TerrainHill && tl.Elevation != 0 {
+						t.Errorf("%s: tile (%d,%d) terrain=%d has Elevation=%d; want 0 on non-hill",
+							name, x, y, tl.TerrainType, tl.Elevation)
+					}
+				}
+			}
+		})
+	}
+}

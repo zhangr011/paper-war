@@ -201,7 +201,11 @@ void main() {
     vec2 cell = floor(px * 0.8) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     float fleck = step(0.93, hash21(cell + 3.0));
-    n = grain * 0.16 + fleck * 0.14;
+    // Dappled sunlight — larger, softer bright patches (lower frequency
+    // than the flecks) reading as light filtering through the canopy.
+    vec2 dappleCell = floor(px * 0.25) + seedOff;
+    float dapple = step(0.78, hash21(dappleCell + 9.0));
+    n = grain * 0.16 + fleck * 0.14 + dapple * 0.10;
   } else if (t == 0) {
     // Plains: fine scattered-grass clumps.  A small-scale hash gives the
     // impression of individual grass tufts; the per-tile patchwork

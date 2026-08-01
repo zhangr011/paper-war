@@ -17,18 +17,16 @@ import (
 // already deterministic, pinning the AI seed (and the session RNG for spawn
 // jitter) makes the whole sim reproducible.
 //
-// Seed selection: swept AI seeds 1–30 on the default seed-42 map. Post
-// generator-connectivity fix (ADR generator-connectivity), the map is fully
-// connected for both movement profiles — flow fields are non-zero at every
-// passable tile. 5/30 AI seeds now produce a clean elimination finish
-// (8, 10, 17, 19, 28); seed 8 ends earliest (~tick 1491) so it stays the
-// canonical green seed. The remaining 25/30 still stalemate to tick 5000
-// for a NON-connectivity reason: both factions survive to the time cap with
-// units clustered far apart and not engaging (e.g. seed 1: 3 player units
-// near y≈25, 9 AI units near y≈46 at tick 5000). This is the AI
-// hunt/mop-up gap — separate follow-up. Do NOT bump the cap or change the
-// seed to mask a future stalemate: investigate the AI behavior directly.
-const deterministicAISeed int64 = 8
+// Seed selection: swept AI seeds 1–30 on the default seed-42 map, under this
+// test's exact setup (charge at tick 0). After the recruited-unit Speed fix
+// (recruit.go used to create VelocityComponent{} with Speed=0, immobilising
+// every recruit and any promoted commander — the dominant stalemate cause),
+// 21/30 seeds now end cleanly. Seed 3 ends early (~tick 1156) and robustly,
+// so it's the canonical green seed. The remaining 9/30 still stalemate for
+// residual combat-resolution reasons (Approach/retreat dynamics) — separate
+// follow-up. Do NOT bump the cap or change the seed to mask a future
+// stalemate: investigate the AI behavior directly.
+const deterministicAISeed int64 = 3
 
 // TestSoloMatchRunsToCompletion runs a full solo match to completion by
 // repeatedly issuing charge commands and ticking until the lifecycle

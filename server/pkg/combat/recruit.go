@@ -43,6 +43,12 @@ type RecruitmentSystem struct {
 	// SuccessfulRecruits collects {playerID: count} for each successful recruit.
 	// Cleared at start of each Tick. Session reads this for match stats.
 	SuccessfulRecruits map[uint32]uint16
+
+	// UnitSpeed is the fixed-point movement speed assigned to recruited units
+	// (from defaultCombatUnitSpeed(mapW, mapH)). MUST be set by the session —
+	// the movement system clamps velocity to [-Speed, Speed], so a zero Speed
+	// (the VelocityComponent zero value) permanently immobilises the unit.
+	UnitSpeed int64
 }
 
 func (s *RecruitmentSystem) Name() string  { return "RecruitmentSystem" }
@@ -155,7 +161,7 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 		X: cmdPos.X + fixed.FromFloat(0.5),
 		Y: cmdPos.Y + fixed.FromFloat(0.5),
 	})
-	s.velPool.Add(newEntity, component.VelocityComponent{})
+	s.velPool.Add(newEntity, component.VelocityComponent{Speed: s.UnitSpeed})
 	s.boidPool.Add(newEntity, component.BoidComponent{
 		SquadID:       squadID,
 		Role:          component.RoleMelee,

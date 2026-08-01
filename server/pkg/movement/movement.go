@@ -30,6 +30,12 @@ type MovementSystem struct {
 
 const PositionDivisor = 10
 
+// defaultEntitySpeed is the fallback movement speed used when an entity's
+// VelocityComponent.Speed is zero (a guard rail against spawn paths that
+// forget to set Speed, which would otherwise permanently freeze the entity).
+// Matches the order of magnitude of defaultCombatUnitSpeed for a standard map.
+const defaultEntitySpeed = 820 // ≈ fixed.FromFloat(0.2) in 12.4 fixed-point
+
 func (s *MovementSystem) Name() string  { return "MovementSystem" }
 func (s *MovementSystem) Priority() int { return 60 }
 
@@ -189,6 +195,12 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 
 		if hasVel {
 			speed := vel.Speed
+			if speed <= 0 {
+				// Guard rail: a zero/negative Speed (e.g. a spawn path that
+				// forgot to set it) would clamp velocity to 0 and permanently
+				// freeze the entity. Fall back to a sane default instead.
+				speed = defaultEntitySpeed
+			}
 			vel.Vx = fixed.Clamp(totalFX, -speed, speed)
 			vel.Vy = fixed.Clamp(totalFY, -speed, speed)
 			pos.X += vel.Vx / PositionDivisor

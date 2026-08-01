@@ -169,7 +169,11 @@ void main() {
     float grain = hash21(cell) * 2.0 - 1.0;
     // Occasional darker crack lines every ~10 px
     float crack = step(0.92, hash21(vec2(floor(px.y / 10.0), cell.x)));
-    n = grain * 0.20 - crack * 0.18;
+    // Directional relief — light from the top-left: brighten the top/left
+    // edge of the tile, darken bottom/right. Stacks on the CPU-side
+    // hillShadeRGB layer tint to fake raised 3D terrain.
+    float relief = (0.5 - v_texcoord.y) * 0.12 + (0.5 - v_texcoord.x) * 0.06;
+    n = grain * 0.20 - crack * 0.18 + relief;
   } else if (t == 1 || t == 7) {
     // Road / Bridge: plank lines every 8 px + grain.
     float plankDark = step(0.78, fract(px.y / 8.0));

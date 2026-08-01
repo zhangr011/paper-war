@@ -180,19 +180,16 @@ func TestContract_StrongholdSpecsValid(t *testing.T) {
 // TerrainDeep → TerrainBridge, so a bridge tile with no water and no bridge
 // neighbor would indicate a placement bug.
 //
-// NOTE on the relaxed contract: the original plan proposed "every bridge tile
-// is 4-adjacent to at least one TerrainDeep tile". That proxy is unsatisfiable
-// as written: placeBridges (generate.go ~695-715) runs a Y-extension loop that
-// deliberately converts the ENTIRE contiguous TerrainDeep run at the bridge's
-// X column into bridge tiles — a "full crossing". After conversion, interior
-// bridge tiles have only bridge/land neighbors; no TerrainDeep remains
-// adjacent. Every one of the 10 contract seeds fails the strict proxy. This
-// is intentional generator behavior, not an accident, so we relax to the
-// faithful observable contract ("bridge is anchored to the watercourse
-// structure, not stranded on land") and report the strict-proxy failure +
-// the map-edge over-consumption (e.g. seed 2 places a 4-tile bridge ending at
-// the bottom-right corner with no adjacent water) as a finding for separate
-// triage.
+// NOTE: the plan originally proposed "every bridge tile is 4-adjacent to at
+// least one TerrainDeep tile". That was unsatisfiable because placeBridges ran
+// an UNBOUNDED Y-extension that converted the entire contiguous Deep run into
+// bridge tiles, leaving no residual Deep adjacent. The over-consumption is now
+// fixed — the Y-extension is bounded to bridgeMaxHalfSpan each direction — so
+// residual Deep usually remains. We still assert the relaxed "anchored to the
+// watercourse (Deep OR Bridge)" contract here, because a short straight river
+// run fully within the bounded span can legitimately leave a bridge tile with
+// only bridge neighbors. The bounded-span and no-edge properties are asserted
+// directly in TestContract_BridgeBounded.
 func TestContract_BridgesSpanWater(t *testing.T) {
 	dirs := [][2]int32{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for _, seed := range contractSeeds {
@@ -232,6 +229,41 @@ func TestContract_BridgesSpanWater(t *testing.T) {
 				}
 			}
 			t.Logf("seed %d: %d bridges, %d touch residual TerrainDeep", seed, len(bridges), touchDeep)
+		})
+	}
+}
+
+// TestContract_BridgeBounded asserts the bridge-over-consumption fix:
+//   - Every bridge tile is interior (>= 1 tile from the map border), since
+//     narrows within bridgeEdgeMargin are skipped.
+//   - No contiguous vertical bridge run (at a given X) exceeds the max span
+//     of 1 + 2*bridgeMaxHalfSpan tiles — bridges span river width, not whole
+//     vertical Deep runs.
+func TestContract_BridgeBounded(t *testing.T) {
+	const maxRunLen = 1 + 2*3 // bridgeMaxHalfSpan = 3 (generate.go)
+	for _, seed := range contractSeeds {
+		t.Run(seedName(seed), func(t *testing.T) {
+			gm := GenerateMap(contractTestWidth, contractTestHeight, seed)
+			W, H := gm.Width, gm.Height
+			// Per-column vertical bridge runs + edge check.
+			for x := int32(0); x < W; x++ {
+				runLen := int32(0)
+				for y := int32(0); y < H; y++ {
+					if gm.TileAt(x, y).TerrainType == component.TerrainBridge {
+						// No bridge tile on the map border.
+						if x == 0 || x == W-1 || y == 0 || y == H-1 {
+							t.Errorf("seed %d: bridge on map border (%d,%d)", seed, x, y)
+						}
+						runLen++
+						if runLen > int32(maxRunLen) {
+							t.Errorf("seed %d: bridge run at x=%d length %d exceeds max %d (unbounded Y-extension regression)",
+								seed, x, runLen, maxRunLen)
+						}
+					} else {
+						runLen = 0
+					}
+				}
+			}
 		})
 	}
 }

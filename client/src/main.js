@@ -1515,11 +1515,13 @@ export class Game {
     const treeW = treeH * (7 / 11);
     const isPine = ((hash >> 28) & 1) === 0;
 
-    // Canopy tint — two-band dark-green variation so adjacent trees differ.
+    // Canopy tint — brightened green band so trees read against the dark
+    // forest floor (TERRAIN_COLORS[4] ~ (0.11,0.22,0.06)). Was ~0.04-0.08 /
+    // 0.12-0.18 — too close to the floor. lit = sunlit top tone, shade =
+    // shadow tone; pine tiers and broadleaf blobs interpolate between them.
     const tint = (hash >> 16 & 0xFF) / 255;
-    const cr = 0.04 + tint * 0.04;
-    const cg = 0.12 + tint * 0.06;
-    const cb = 0.02;
+    const litR = 0.16 + tint * 0.05,  litG = 0.34 + tint * 0.07, litB = 0.05;
+    const shadeR = 0.07 + tint * 0.03, shadeG = 0.20 + tint * 0.04, shadeB = 0.03;
 
     // Trunk (small brown quad under the canopy).
     {
@@ -1534,6 +1536,7 @@ export class Game {
 
     if (isPine) {
       // Pine: 3 stacked, shrinking tiers give a triangle silhouette.
+      // Top tier lit (sunlit), lower tiers shaded — gives volume.
       const tiers = 3;
       const tierH = treeH / tiers;
       for (let i = 0; i < tiers; i++) {
@@ -1543,11 +1546,13 @@ export class Game {
         o.y = y + i * tierH * 0.8;
         o.w = w;
         o.h = tierH + zoom; // slight overlap so seams disappear
-        o.r = cr; o.g = cg; o.b = cb;
+        o.r = i === 0 ? litR : shadeR;
+        o.g = i === 0 ? litG : shadeG;
+        o.b = i === 0 ? litB : shadeB;
         o.sortY = y + i * tierH * 0.8;
       }
     } else {
-      // Broadleaf: lower blob (wide) + upper crown (narrower) stacked.
+      // Broadleaf: lower blob (wide, shaded) + upper crown (narrower, lit).
       const lowerW = treeW;
       const lowerH = treeH * 0.6;
       const upperW = treeW * 0.75;
@@ -1558,7 +1563,7 @@ export class Game {
         o.y = y + treeH - lowerH;
         o.w = lowerW;
         o.h = lowerH;
-        o.r = cr; o.g = cg; o.b = cb;
+        o.r = shadeR; o.g = shadeG; o.b = shadeB;
         o.sortY = y + treeH - lowerH;
       }
       {
@@ -1567,7 +1572,7 @@ export class Game {
         o.y = y;
         o.w = upperW;
         o.h = upperH;
-        o.r = cr * 0.9; o.g = cg + 0.02; o.b = cb; // top slightly brighter
+        o.r = litR; o.g = litG; o.b = litB; // sunlit crown
         o.sortY = y;
       }
     }

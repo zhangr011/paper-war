@@ -391,6 +391,11 @@ export class Game {
     if (this.renderer && this.renderer.setMapTerrainTexture) {
       this.renderer.setMapTerrainTexture(this.terrainData, this.mapWidth, this.mapHeight);
     }
+    // Elevation grid (hill layer 0/1/2) — sampled by the hill shader branch
+    // for layer-aware rendering. Same fallback contract as the terrain texture.
+    if (this.renderer && this.renderer.setMapElevationTexture && this.elevationData) {
+      this.renderer.setMapElevationTexture(this.elevationData, this.mapWidth, this.mapHeight);
+    }
 
     // Compute spawn positions.  Prefer the server-provided spawns from
     // the match_found message (authoritative — they match the map

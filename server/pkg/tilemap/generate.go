@@ -43,9 +43,8 @@ const (
 	passThreshold2  = 1    // relaxed: non-hill with 1+ hill neighbor
 
 	// Bridges
-	bridgeHealth      = 200
-	bridgeMaxHalfSpan = 3 // max tiles each Y direction a bridge converts (bounds the crossing so it doesn't eat an entire vertical river run)
-	bridgeEdgeMargin  = bridgeMaxHalfSpan + 1 // narrows within this of a map edge are skipped so the full bridge span stays interior (no corner bridges with no water to span)
+	bridgeHealth     = 200
+	bridgeEdgeMargin = 2 // narrows within this of a map edge are skipped (no corner bridges with no water to span)
 
 	// Spawns
 	spawnClearRadius = 3 // 6x6 clearing (radius 3)
@@ -690,26 +689,38 @@ func placeBridges(gm *GameMap, riverTiles [][2]int32, r *rand.Rand) {
 		tile.Health = bridgeHealth
 		tile.MaxHealth = bridgeHealth
 
-		// Also bridge adjacent river tiles in Y direction (full crossing),
-		// but bounded to bridgeMaxHalfSpan each way so the bridge spans the
-		// river width instead of consuming an entire vertical Deep run
-		// (which would leave no water adjacent and eat long river segments).
-		for dy := int32(-1); dy >= -bridgeMaxHalfSpan; dy-- {
-			t := gm.TileAt(np.x, np.y+dy)
+		// Also bridge adjacent river tiles in Y direction (full crossing).
+		// The bridge MUST span the entire contiguous Deep run at this X so the
+		// river is fully crossed — a partial span leaves a Deep gap that
+		// disconnects the two map halves for the Light/Heavy profiles, which
+		// is the root cause of the solo-match stalemate (units on opposite
+		// sides can never reach each other). The narrow-point selection above
+		// already picks the narrowest X-crossings, so the Y-run here is the
+		// actual river width at the bridge.
+		for dy := int32(-1); ; dy-- {
+			yy := np.y + dy
+			if yy < 1 { // don't bridge onto the map border row
+				break
+			}
+			t := gm.TileAt(np.x, yy)
 			if t != nil && t.TerrainType == component.TerrainDeep {
-				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)
-				t = gm.TileAt(np.x, np.y+dy)
+				gm.SetTerrain(np.x, yy, component.TerrainBridge)
+				t = gm.TileAt(np.x, yy)
 				t.Health = bridgeHealth
 				t.MaxHealth = bridgeHealth
 			} else {
 				break
 			}
 		}
-		for dy := int32(1); dy <= bridgeMaxHalfSpan; dy++ {
-			t := gm.TileAt(np.x, np.y+dy)
+		for dy := int32(1); ; dy++ {
+			yy := np.y + dy
+			if yy > gm.Height-2 { // don't bridge onto the map border row
+				break
+			}
+			t := gm.TileAt(np.x, yy)
 			if t != nil && t.TerrainType == component.TerrainDeep {
-				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)
-				t = gm.TileAt(np.x, np.y+dy)
+				gm.SetTerrain(np.x, yy, component.TerrainBridge)
+				t = gm.TileAt(np.x, yy)
 				t.Health = bridgeHealth
 				t.MaxHealth = bridgeHealth
 			} else {

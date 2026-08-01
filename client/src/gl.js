@@ -151,10 +151,18 @@ void main() {
   float n = 0.0; // noise offset in [-1, 1]
 
   if (t == 2 || t == 3) {
-    // Water: horizontal wave bands + grain. Darken wave troughs.
+    // Water: two overlapping wave bands (horizontal + diagonal) for richer
+    // ripple motion, plus fine grain.
     float band = sin((px.y + v_seed * 17.0) * 0.7 + u_time * 1.6);
+    float band2 = sin(dot(px, vec2(0.6, 0.4)) + u_time * 1.1 + v_seed * 5.0);
     float grain = hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff) * 2.0 - 1.0;
-    n = band * 0.16 + grain * 0.10;
+    n = band * 0.14 + band2 * 0.06 + grain * 0.10;
+    // Animated specular sparkles — sun-glint on the surface. Time is
+    // quantized so sparkles twinkle on/off (re-rolled 3×/sec) rather than
+    // glow; only ~3.5% of sub-cells light up. Tunable via the threshold.
+    float twink = floor(u_time * 3.0);
+    float sparkle = step(0.965, hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + vec2(twink, v_seed)));
+    n += sparkle * 0.22;
   } else if (t == 5) {
     // Hill / mountain: chunky vertical grain like rock strata.
     vec2 cell = floor(vec2(px.x * 0.35, px.y * 0.8)) + seedOff;

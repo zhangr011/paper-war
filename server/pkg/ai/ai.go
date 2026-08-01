@@ -60,6 +60,10 @@ const (
 	RecruitWaveInterval uint32 = 60  // ~12s between recruitment waves
 	RecruitWaveMinGold  int32  = 30  // minimum gold to trigger a wave
 	DefaultEngageRange         = 5.0 // fallback when squad composition unknown
+
+	// ADR-0027 — bounded engagement anti-kite guards.
+	MaxPursuitDist     = 8.0  // tiles: max distance a squad will chase from its engagement anchor
+	AvoidCooldownTicks uint32 = 60 // skip a broken-off target for this many ticks (~2 eval cycles)
 )
 
 // roleTargetRatio is the ideal army composition ratio for each role.
@@ -91,6 +95,16 @@ type AIState struct {
 	PatrolX      int64
 	PatrolY      int64
 	NextEvalTick uint32
+
+	// ADR-0027 — bounded engagement. Anchor is the squad position when it
+	// first detected the current target; if the squad is pulled beyond
+	// MaxPursuitDist from the anchor it breaks off, returns to the anchor,
+	// and avoids that target until AvoidUntilTick.
+	EngageEnemyID  uint32
+	EngageAnchorX  int64
+	EngageAnchorY  int64
+	AvoidUnitID    uint32
+	AvoidUntilTick uint32
 }
 
 type AICommand struct {
@@ -298,10 +312,9 @@ func (as *AISystem) Update(
 		}
 
 		// --- SCAN ENEMIES (scored target selection + force ratio) ---
-		// bestDist / bestEnemyX / bestEnemyY were used by the v2 commit-
-		// range engagement; the v3 Guard policy (issue #52) doesn't move,
-		// so they're discarded. Kept in the signature for callers/tests.
-		_, _, bestEnemyID, _, _, enemyStrength :=
+		// ADR-0027: recover dist/pos (v3 Guard discarded them) for the
+		// bounded-engagement range + break-off checks.
+		_, bestDist, bestEnemyID, bestEnemyX, bestEnemyY, enemyStrength :=
 			as.scanEnemiesScored(cmdPool, posPool, ownerPool, healthPool, unitTypePool, aiFog, pos)
 
 		// --- BASE DEFENSE (scaled response) ---
@@ -325,14 +338,18 @@ func (as *AISystem) Update(
 		}
 
 		// --- COMBAT (highest priority if enemies visible) ---
+		// ADR-0027: bounded engagement. Reintroduces closing on out-of-
+		// range targets (removed by v3 Guard, issue #52) with anti-kite
+		// guards: stop at CommitRange, break off if pulled beyond
+		// MaxPursuitDist from the engagement anchor, avoid that target
+		// for AvoidCooldownTicks after a break-off.
 		if bestEnemyID != 0 {
-			state.TargetUnitID = bestEnemyID
-
 			// Force-ratio check: retreat if badly outnumbered and not at full strength.
 			squadStrength := assessment.Strength
 			if squadStrength > 0 && enemyStrength > 0 &&
 				float64(enemyStrength)/float64(squadStrength) > ForceRatioRetreat &&
 				hpRatio < 0.60 {
+				state.TargetUnitID = bestEnemyID
 				state.State = StateRetreat
 				if !as.MoveDisabled {
 					cmds = append(cmds, as.retreatCommand(squadID, pos))
@@ -340,25 +357,92 @@ func (as *AISystem) Update(
 				continue
 			}
 
-			// v3: Guard policy (issue #52). When any enemy is detected,
-			// hold ground and fire — do not pursue. CombatSystem fires
-			// when the target is within weapon range; out-of-range
-			// targets are ignored this tick (no CmdMove, and the combat
-			// system's auto-pursue is suppressed via StateLookup).
-			// Squad stays in Guard until no enemies remain, at which
-			// point the no-enemy path below returns it to Idle.
-			//
-			// Replaces the v2 commit-range if/else (Approach chased
-			// out-of-range enemies, which broke formation and got kited).
-			// Commit range is now unused for movement; CombatSystem still
-			// resolves in-range attacks as before.
-			state.State = StateGuard
-			cmds = append(cmds, AICommand{
-				Type:     CmdAttack,
-				SquadID:  squadID,
-				TargetID: bestEnemyID,
-			})
-			continue
+			// Avoid-cooldown gate: this enemy was broken off recently.
+			// Skip combat this eval and fall through to strategic behavior
+			// by clearing bestEnemyID (the no-enemy path runs below).
+			if state.AvoidUnitID == bestEnemyID && tick < state.AvoidUntilTick {
+				bestEnemyID = 0
+			} else {
+				// Anchor bookkeeping — record squad position on first
+				// detection of this target.
+				if state.EngageEnemyID != bestEnemyID {
+					state.EngageEnemyID = bestEnemyID
+					state.EngageAnchorX = pos.X
+					state.EngageAnchorY = pos.Y
+				}
+
+				// Break-off: squad pulled beyond MaxPursuitDist from its
+				// engagement anchor. Drop the target, return to anchor,
+				// set avoid-cooldown. Compare squared distances in raw
+				// fixed² units (no ISqrt needed here).
+				maxPursuit := fixed.FromFloat(MaxPursuitDist)
+				adx := pos.X - state.EngageAnchorX
+				ady := pos.Y - state.EngageAnchorY
+				if adx*adx+ady*ady > maxPursuit*maxPursuit {
+					state.AvoidUnitID = bestEnemyID
+					state.AvoidUntilTick = tick + AvoidCooldownTicks
+					state.EngageEnemyID = 0
+					state.TargetUnitID = 0
+					state.State = StateGuard
+					if !as.MoveDisabled {
+						cmds = append(cmds, AICommand{
+							Type:    CmdMove,
+							SquadID: squadID,
+							TargetX: state.EngageAnchorX,
+							TargetY: state.EngageAnchorY,
+						})
+					}
+					continue
+				}
+
+				state.TargetUnitID = bestEnemyID
+
+				// Close vs Guard. commitRange is fixed-point tiles; bestDist
+				// is the raw squared fixed-product (dx*dx + dy*dy, no shift),
+				// so it compares directly against commitRange*commitRange.
+				commitRange := assessment.CommitRange()
+				if bestDist > commitRange*commitRange {
+					// Out of range → Approach. Move to a point at
+					// commitRange from the enemy (toward the squad), NOT
+					// the enemy tile — stops the squad from overrunning
+					// into melee and lets ranged squads hover at max range.
+					dirX := pos.X - bestEnemyX
+					dirY := pos.Y - bestEnemyY
+					// bestDist is raw (dx*dx + dy*dy) in fixed² units; shift
+					// to fixed-point tiles² before ISqrt so the result is a
+					// fixed-point tile distance.
+					dist := fixed.ISqrt(bestDist >> 12)
+					var tx, ty int64
+					if dist > 0 {
+						ux := fixed.Div(dirX, dist)
+						uy := fixed.Div(dirY, dist)
+						tx = bestEnemyX + fixed.Mul(ux, commitRange)
+						ty = bestEnemyY + fixed.Mul(uy, commitRange)
+					} else {
+						tx = bestEnemyX
+						ty = bestEnemyY
+					}
+					state.State = StateApproach
+					if !as.MoveDisabled {
+						cmds = append(cmds, AICommand{
+							Type:    CmdMove,
+							SquadID: squadID,
+							TargetX: tx,
+							TargetY: ty,
+						})
+					}
+					continue
+				}
+
+				// In range → Guard + fire (today's behavior).
+				state.State = StateGuard
+				cmds = append(cmds, AICommand{
+					Type:     CmdAttack,
+					SquadID:  squadID,
+					TargetID: bestEnemyID,
+				})
+				continue
+			}
 		}
 
 		// --- STRATEGIC BEHAVIORS (no enemy visible) ---

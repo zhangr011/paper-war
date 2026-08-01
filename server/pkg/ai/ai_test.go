@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"math"
 	"testing"
 
 	"github.com/user/paper-war/server/pkg/component"
@@ -518,6 +519,16 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 	unitTypePool.Add(sniper, component.UnitTypeComponent{Type: component.UnitSniper})
 	boidPool.Add(sniper, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
 
+	// Second sniper so the squad is ranged-dominant (2 ranged > 1 melee cmd)
+	// and CommitRange = MaxRange (8). ADR-0027 brought back commit-range
+	// checks; without a second ranged unit, CommitRange falls back to 5.
+	sniper2 := em.Create()
+	posPool.Add(sniper2, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(30)})
+	ownerPool.Add(sniper2, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
+	healthPool.Add(sniper2, component.HealthComponent{HP: 30, MaxHP: 30})
+	unitTypePool.Add(sniper2, component.UnitTypeComponent{Type: component.UnitSniper})
+	boidPool.Add(sniper2, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
+
 	// Enemy at distance 7 tiles — within sniper range (8) but beyond old hardcoded 5
 	enemy := em.Create()
 	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(27), Y: fixed.FromFloat(30)})
@@ -812,23 +823,25 @@ func filterCmds(cmds []AICommand, cmdType uint8) []AICommand {
 	return result
 }
 
-// Issue #52 — Guard policy. When a squad detects an enemy (in or out of
-// weapon range), it must enter StateGuard, emit only CmdAttack, and emit
-// NO CmdMove. The unit holds ground and lets the enemy come to it.
+// Issue #52 / ADR-0027 — Guard policy, revised. When a squad detects an
+// enemy IN CommitRange, it holds ground (StateGuard) and fires (CmdAttack)
+// with no CmdMove. (The v3 test asserted Guard for any detected enemy;
+// ADR-0027 narrows Guard to in-range targets — out-of-range enemies now
+// trigger StateApproach, see TestAIApproachOutOfRangeEnemy.)
 func TestAIGuardOnEnemyDetected(t *testing.T) {
 	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
 
-	// AI commander standing at (30, 30), full HP.
+	// AI commander standing at (30, 30), full HP. No squad — melee-dominant,
+	// so CommitRange is DefaultEngageRange (5 tiles).
 	aiCmd := em.Create()
 	posPool.Add(aiCmd, component.PositionComponent{X: fixed.FromFloat(30), Y: fixed.FromFloat(30)})
 	cmdPool.Add(aiCmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	// Enemy commander far away (out of any weapon range — far beyond
-	// commit range too). The v3 Guard policy must NOT chase it.
+	// Enemy commander within CommitRange (3 tiles, < 5).
 	enemy := em.Create()
-	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(50), Y: fixed.FromFloat(50)})
+	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(33), Y: fixed.FromFloat(30)})
 	cmdPool.Add(enemy, component.CommanderComponent{SquadID: 2, IsAlive: true})
 	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy, component.HealthComponent{HP: 200, MaxHP: 200})
@@ -839,7 +852,7 @@ func TestAIGuardOnEnemyDetected(t *testing.T) {
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
 
 	if sys.States[1].State != StateGuard {
-		t.Errorf("expected StateGuard on enemy detection, got %d", sys.States[1].State)
+		t.Errorf("expected StateGuard for in-range enemy, got %d", sys.States[1].State)
 	}
 	attackCmds := filterCmds(cmds, CmdAttack)
 	if len(attackCmds) == 0 {
@@ -873,5 +886,233 @@ func TestAIGuardExitsWhenNoEnemies(t *testing.T) {
 
 	if sys.States[1].State == StateGuard {
 		t.Error("squad must leave Guard when no enemies are detected")
+	}
+}
+
+// ============================================================================
+// ADR-0027 TESTS — bounded engagement
+// ============================================================================
+
+// setupSquadWithCommander is a helper for the ADR-0027 tests: an AI
+// commander at (x,y), full HP, no squad members (melee-dominant →
+// CommitRange = DefaultEngageRange = 5 tiles).
+func setupSquadWithCommander(t *testing.T, x, y float64) (
+	em *ecs.EntityManager,
+	cmdPool *ecs.ComponentPool[component.CommanderComponent],
+	posPool *ecs.ComponentPool[component.PositionComponent],
+	ownerPool *ecs.ComponentPool[component.OwnerComponent],
+	healthPool *ecs.ComponentPool[component.HealthComponent],
+	unitTypePool *ecs.ComponentPool[component.UnitTypeComponent],
+	boidPool *ecs.ComponentPool[component.BoidComponent],
+	sys *AISystem,
+	aiCmdEntity ecs.Entity,
+) {
+	t.Helper()
+	em2, _, cmdPool2, posPool2, ownerPool2, healthPool2, unitTypePool2, boidPool2 := setupTestWorld()
+	em = em2
+	cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool =
+		cmdPool2, posPool2, ownerPool2, healthPool2, unitTypePool2, boidPool2
+	aiCmdEntity = em.Create()
+	posPool.Add(aiCmdEntity, component.PositionComponent{X: fixed.FromFloat(x), Y: fixed.FromFloat(y)})
+	cmdPool.Add(aiCmdEntity, component.CommanderComponent{SquadID: 1, IsAlive: true})
+	ownerPool.Add(aiCmdEntity, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
+	healthPool.Add(aiCmdEntity, component.HealthComponent{HP: 200, MaxHP: 200})
+	sys = NewAISystem(2, nil, 64, 64)
+	sys.RegisterSquad(1, uint32(aiCmdEntity))
+	return
+}
+
+// addEnemyAt adds an enemy commander entity at (x,y) and returns its entity ID.
+func addEnemyAt(
+	em *ecs.EntityManager,
+	cmdPool *ecs.ComponentPool[component.CommanderComponent],
+	posPool *ecs.ComponentPool[component.PositionComponent],
+	ownerPool *ecs.ComponentPool[component.OwnerComponent],
+	healthPool *ecs.ComponentPool[component.HealthComponent],
+	x, y float64,
+) ecs.Entity {
+	enemy := em.Create()
+	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(x), Y: fixed.FromFloat(y)})
+	cmdPool.Add(enemy, component.CommanderComponent{SquadID: 2, IsAlive: true})
+	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
+	healthPool.Add(enemy, component.HealthComponent{HP: 200, MaxHP: 200})
+	return enemy
+}
+
+// Test 1: Out-of-range enemy → StateApproach + CmdMove toward (not onto) enemy.
+func TestAIApproachOutOfRangeEnemy(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 30, 30)
+
+	// Enemy 15 tiles away — beyond CommitRange (5). Along the X axis for easy math.
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30)
+
+	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.States[1].State != StateApproach {
+		t.Fatalf("expected StateApproach for out-of-range enemy, got %d", sys.States[1].State)
+	}
+	moveCmds := filterCmds(cmds, CmdMove)
+	if len(moveCmds) == 0 {
+		t.Fatal("expected a CmdMove closing on the enemy")
+	}
+	// The move target must be at CommitRange (5) from the enemy, not on the
+	// enemy tile. Enemy at x=45, squad at x=30 → closing target ≈ x=40.
+	tx := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetX)
+	ty := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetY)
+	if ty != 30 {
+		t.Errorf("expected y=30 (axis-aligned), got y=%.2f", ty)
+	}
+	if tx <= 30 || tx >= 45 {
+		t.Errorf("expected target between squad and enemy (30<x<45), got x=%.2f", tx)
+	}
+	if math.Abs(tx-40) > 0.5 {
+		t.Errorf("expected target ≈ 40 (enemy 45 − CommitRange 5), got x=%.2f", tx)
+	}
+	// Anchor must be recorded at the squad's current position on first detection.
+	if sys.States[1].EngageEnemyID != uint32(enemy) {
+		t.Errorf("EngageEnemyID = %d, want %d", sys.States[1].EngageEnemyID, uint32(enemy))
+	}
+	if sys.States[1].EngageAnchorX != fixed.FromFloat(30) ||
+		sys.States[1].EngageAnchorY != fixed.FromFloat(30) {
+		t.Errorf("EngageAnchor = (%d,%d), want squad pos (30,30)",
+			sys.States[1].EngageAnchorX, sys.States[1].EngageAnchorY)
+	}
+}
+
+// Test 2: In-range enemy → StateGuard + CmdAttack (today's behavior preserved).
+func TestAIGuardInRangeEnemy(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 30, 30)
+
+	addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 33, 30) // 3 tiles, within CommitRange 5
+
+	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.States[1].State != StateGuard {
+		t.Fatalf("expected StateGuard for in-range enemy, got %d", sys.States[1].State)
+	}
+	if len(filterCmds(cmds, CmdAttack)) == 0 {
+		t.Error("expected a CmdAttack against the in-range enemy")
+	}
+	if len(filterCmds(cmds, CmdMove)) != 0 {
+		t.Error("in-range Guard must not emit CmdMove")
+	}
+}
+
+// Test 3: Break-off on kite — squad pulled beyond MaxPursuitDist from anchor
+// → AvoidUnitID/AvoidUntilTick set, EngageEnemyID cleared, CmdMove toward
+// anchor, StateGuard.
+func TestAIBreakOffOnKite(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 30, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30)
+
+	// Simulate the squad having already chased 10 tiles from an anchor at
+	// (20, 30) toward this same enemy — beyond MaxPursuitDist (8). Pre-seed
+	// the state so the next Update sees the kite condition.
+	st := sys.States[1]
+	st.EngageEnemyID = uint32(enemy)
+	st.EngageAnchorX = fixed.FromFloat(20)
+	st.EngageAnchorY = fixed.FromFloat(30)
+	st.AvoidUnitID = 0
+	st.AvoidUntilTick = 0
+
+	cmds := sys.Update(5, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if st.AvoidUnitID != uint32(enemy) {
+		t.Errorf("AvoidUnitID = %d, want enemy %d", st.AvoidUnitID, uint32(enemy))
+	}
+	if st.AvoidUntilTick <= 5 {
+		t.Errorf("AvoidUntilTick = %d, want > current tick 5", st.AvoidUntilTick)
+	}
+	if st.EngageEnemyID != 0 {
+		t.Errorf("EngageEnemyID = %d, want 0 (cleared on break-off)", st.EngageEnemyID)
+	}
+	if st.State != StateGuard {
+		t.Errorf("State = %d, want StateGuard (%d)", st.State, StateGuard)
+	}
+	moveCmds := filterCmds(cmds, CmdMove)
+	if len(moveCmds) == 0 {
+		t.Fatal("expected a CmdMove back toward the anchor")
+	}
+	tx := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetX)
+	ty := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetY)
+	if math.Abs(tx-20) > 0.5 || math.Abs(ty-30) > 0.5 {
+		t.Errorf("break-off should move toward anchor (20,30), got (%.1f,%.1f)", tx, ty)
+	}
+}
+
+// Test 4: Avoid-cooldown respected — same enemy re-appears as best target
+// within AvoidUntilTick → squad skips combat (no Approach/Attack) and falls
+// through to strategic behavior.
+func TestAIAvoidCooldownSkipsCombat(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 30, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30)
+
+	// Enemy is on avoid-cooldown until tick 100. Current tick is 5.
+	st := sys.States[1]
+	st.AvoidUnitID = uint32(enemy)
+	st.AvoidUntilTick = 100
+	// Force a fresh eval at tick 5.
+	st.NextEvalTick = 5
+
+	cmds := sys.Update(5, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if st.State == StateApproach || st.State == StateGuard {
+		t.Errorf("expected combat to be skipped (cooldown active), got State %d", st.State)
+	}
+	for _, c := range cmds {
+		if c.Type == CmdAttack {
+			t.Errorf("must not issue CmdAttack during avoid-cooldown; got %+v", c)
+		}
+	}
+}
+
+// Test 5: Cooldown expiry → normal combat resumes.
+func TestAIAvoidCooldownExpiry(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
+		setupSquadWithCommander(t, 30, 30)
+
+	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30)
+
+	// Cooldown expired at tick 100; we're now at tick 200.
+	st := sys.States[1]
+	st.AvoidUnitID = uint32(enemy)
+	st.AvoidUntilTick = 100
+	st.NextEvalTick = 200
+
+	sys.Update(200, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if st.State != StateApproach {
+		t.Errorf("expected combat to resume (Approach) after cooldown expiry, got State %d", st.State)
+	}
+	if st.EngageEnemyID != uint32(enemy) {
+		t.Errorf("expected fresh engagement on the same enemy after expiry, got EngageEnemyID %d",
+			st.EngageEnemyID)
+	}
+}
+
+// Test 6: Emergency retreat still wins at CriticallyLowHP, even with an
+// out-of-range enemy present (not Approach).
+func TestAIRetreatBeatsApproach(t *testing.T) {
+	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, aiCmd :=
+		setupSquadWithCommander(t, 30, 30)
+	// Drop HP below CriticallyLowHP (0.10). 1/200 = 0.005.
+	hp, _ := healthPool.GetPtr(aiCmd)
+	hp.HP = 1
+
+	addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30) // out of range
+
+	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
+
+	if sys.States[1].State != StateRetreat {
+		t.Fatalf("expected StateRetreat at CriticallyLowHP, got %d", sys.States[1].State)
+	}
+	if len(filterCmds(cmds, CmdMove)) == 0 {
+		t.Error("expected a retreat CmdMove")
 	}
 }

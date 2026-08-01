@@ -378,26 +378,35 @@ func ClashHills() *GameMap {
 // LoadClashMap returns a pre-designed clash map by name.
 // Returns nil if the name is not recognized.
 func LoadClashMap(name string) *GameMap {
+	var m *GameMap
 	switch name {
 	case "plains":
-		return ClashPlains()
+		m = ClashPlains()
 	case "forest":
-		return ClashForest()
+		m = ClashForest()
 	case "road":
-		return ClashRoad()
+		m = ClashRoad()
 	case "river":
-		return ClashRiver()
+		m = ClashRiver()
 	case "stronghold":
-		return ClashStronghold()
+		m = ClashStronghold()
 	case "hills":
-		return ClashHills()
+		m = ClashHills()
 	case "random":
 		maps := []func()*GameMap{
 			ClashPlains, ClashForest, ClashRoad,
 			ClashRiver, ClashStronghold, ClashHills,
 		}
-		return maps[rand.Intn(len(maps))]()
+		m = maps[rand.Intn(len(maps))]()
 	default:
 		return nil
 	}
+	// Clash maps author Hill tiles without Elevation; derive layer (peak/slope)
+	// from hill topology so the elevation-aware hill shader renders correctly.
+	// Procedural GenerateMap is NOT routed through this — its heightmap-based
+	// assignment (generate.go:108-122) is more accurate than topology.
+	if m != nil {
+		DeriveElevation(m)
+	}
+	return m
 }

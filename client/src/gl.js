@@ -142,6 +142,11 @@ void main() {
 
     coast = clamp(coast, 0.0, 1.0);
     base.rgb = mix(base.rgb, u_deepBlendTarget, coast);
+    // Waterline foam — a pale band right at the shore (where the teal blend
+    // is strongest), so the water→land transition reads as a real shoreline
+    // rather than a flat gradient.
+    float foam = smoothstep(0.55, 1.0, coast);
+    base.rgb = mix(base.rgb, vec3(0.62, 0.70, 0.66), foam * 0.45);
   }
 
   // Sample at the tile's pixel grid (TILE_WIDTH = 32 game units per tile).

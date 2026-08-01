@@ -179,12 +179,21 @@ void main() {
     // hillShadeRGB layer tint to fake raised 3D terrain.
     float relief = (0.5 - v_texcoord.y) * 0.12 + (0.5 - v_texcoord.x) * 0.06;
     n = grain * 0.20 - crack * 0.18 + relief;
-  } else if (t == 1 || t == 7) {
-    // Road / Bridge: plank lines every 8 px + grain.
+  } else if (t == 7) {
+    // Bridge: plank lines every 8 px + grain.
     float plankDark = step(0.78, fract(px.y / 8.0));
     vec2 cell = vec2(floor(px.x * 0.4), floor(px.y / 8.0) * 0.5) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     n = grain * 0.12 - plankDark * 0.16;
+  } else if (t == 1) {
+    // Road: warm worn-dirt — fine grain plus two faint darkened ruts at
+    // 1/3 and 2/3 across the tile (a well-traveled track), distinct from
+    // the wooden plank look of bridges.
+    vec2 cell = floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    float rut = smoothstep(0.05, 0.0, abs(v_texcoord.x - 0.33)) +
+                smoothstep(0.05, 0.0, abs(v_texcoord.x - 0.66));
+    n = grain * 0.10 - rut * 0.09;
   } else if (t == 4) {
     // Forest floor: darker organic noise with occasional light flecks
     // (sunlight through canopy).  Finer grain than plains so tree clusters

@@ -43,7 +43,9 @@ const (
 	passThreshold2  = 1    // relaxed: non-hill with 1+ hill neighbor
 
 	// Bridges
-	bridgeHealth = 200
+	bridgeHealth      = 200
+	bridgeMaxHalfSpan = 3 // max tiles each Y direction a bridge converts (bounds the crossing so it doesn't eat an entire vertical river run)
+	bridgeEdgeMargin  = bridgeMaxHalfSpan + 1 // narrows within this of a map edge are skipped so the full bridge span stays interior (no corner bridges with no water to span)
 
 	// Spawns
 	spawnClearRadius = 3 // 6x6 clearing (radius 3)
@@ -637,8 +639,11 @@ func placeBridges(gm *GameMap, riverTiles [][2]int32, r *rand.Rand) {
 			}
 		}
 
-		// Only consider points where gap is small (narrow)
-		if gapX <= 4 {
+		// Only consider points where gap is small (narrow) and not at the
+		// map edge (edge bridges have no water to span on one side).
+		if gapX <= 4 &&
+			rt[0] >= bridgeEdgeMargin && rt[0] < gm.Width-bridgeEdgeMargin &&
+			rt[1] >= bridgeEdgeMargin && rt[1] < gm.Height-bridgeEdgeMargin {
 			narrows = append(narrows, narrowPoint{rt[0], rt[1], gapX})
 		}
 	}
@@ -685,8 +690,11 @@ func placeBridges(gm *GameMap, riverTiles [][2]int32, r *rand.Rand) {
 		tile.Health = bridgeHealth
 		tile.MaxHealth = bridgeHealth
 
-		// Also bridge adjacent river tiles in Y direction (full crossing)
-		for dy := int32(-1); ; dy-- {
+		// Also bridge adjacent river tiles in Y direction (full crossing),
+		// but bounded to bridgeMaxHalfSpan each way so the bridge spans the
+		// river width instead of consuming an entire vertical Deep run
+		// (which would leave no water adjacent and eat long river segments).
+		for dy := int32(-1); dy >= -bridgeMaxHalfSpan; dy-- {
 			t := gm.TileAt(np.x, np.y+dy)
 			if t != nil && t.TerrainType == component.TerrainDeep {
 				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)
@@ -697,7 +705,7 @@ func placeBridges(gm *GameMap, riverTiles [][2]int32, r *rand.Rand) {
 				break
 			}
 		}
-		for dy := int32(1); ; dy++ {
+		for dy := int32(1); dy <= bridgeMaxHalfSpan; dy++ {
 			t := gm.TileAt(np.x, np.y+dy)
 			if t != nil && t.TerrainType == component.TerrainDeep {
 				gm.SetTerrain(np.x, np.y+dy, component.TerrainBridge)

@@ -17,14 +17,17 @@ import (
 // already deterministic, pinning the AI seed (and the session RNG for spawn
 // jitter) makes the whole sim reproducible.
 //
-// Seed selection: swept seeds 1–30; only 8 and 21 produce a clean finish
-// (both elimination, P1 winner). Seed 8 ends earliest (~tick 1297) so it's
-// the canonical green seed. Note: 28/30 seeds stalemate to tick 5000 — the
-// residual stalemate (hunt/mop-up of survivors) is the REAL underlying bug
-// and needs a separate follow-up; this test only pins one lucky seed so the
-// sim is reproducible while that fix is pending. If a future AI change flips
-// seed 8 into a stalemate, do NOT bump the cap or change the seed to mask
-// it — investigate the stalemate directly.
+// Seed selection: swept AI seeds 1–30 on the default seed-42 map. Post
+// generator-connectivity fix (ADR generator-connectivity), the map is fully
+// connected for both movement profiles — flow fields are non-zero at every
+// passable tile. 5/30 AI seeds now produce a clean elimination finish
+// (8, 10, 17, 19, 28); seed 8 ends earliest (~tick 1491) so it stays the
+// canonical green seed. The remaining 25/30 still stalemate to tick 5000
+// for a NON-connectivity reason: both factions survive to the time cap with
+// units clustered far apart and not engaging (e.g. seed 1: 3 player units
+// near y≈25, 9 AI units near y≈46 at tick 5000). This is the AI
+// hunt/mop-up gap — separate follow-up. Do NOT bump the cap or change the
+// seed to mask a future stalemate: investigate the AI behavior directly.
 const deterministicAISeed int64 = 8
 
 // TestSoloMatchRunsToCompletion runs a full solo match to completion by

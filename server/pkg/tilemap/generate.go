@@ -60,26 +60,36 @@ const (
 // GenerateMap creates a procedural terrain map using a heightmap-driven pipeline.
 // The output is fully deterministic: same (w, h, seed) always produces the same map.
 //
-// Pipeline: heightmap → hills → river → lake → forest → strongholds → bridges → spawns → objective → validate
+// Pipeline: heightmap → hills → river → lake → forest → strongholds → bridges → spawns → objective → repair → validate
 //
-// If the generated map fails connectivity validation, it retries with incremented seeds
-// (up to maxMapRetries) before giving up.
+// After water + bridge placement the map is repaired for full connectivity
+// (every passable tile reachable from every other, for every movement
+// profile) and the result is validated. If validation still fails the map is
+// regenerated with the next seed, up to maxMapRetries. Full connectivity
+// (rather than just spawn-to-spawn) is what guarantees no unit target is ever
+// unreachable — the root cause of the solo-match stalemate (a unit freezes
+// when its flow field is zero at a target in a disconnected region).
 func GenerateMap(w, h int32, seed int64) *GameMap {
 	const maxMapRetries = 20
+	profiles := component.StandardMovementProfiles()
+	var lastMap *GameMap
 	for attempt := 0; attempt < maxMapRetries; attempt++ {
 		gm := generateMapOnce(w, h, seed+int64(attempt))
-		// Validate connectivity
-		profiles := component.StandardMovementProfiles()
-		spawn1 := gm.Spawns[0]
-		spawn2 := gm.Spawns[1]
-		if isConnected(gm, spawn1, spawn2, profiles[0]) && isConnected(gm, spawn1, spawn2, profiles[1]) {
+		lastMap = gm
+		// Repair disconnected components for every profile (places Shallow
+		// fords for Light, Bridges for Heavy at Deep boundaries).
+		RepairConnectivity(gm, profiles)
+		// Validate full connectivity — stronger than spawn-to-spawn: any
+		// passable tile reachable from any other, for both profiles.
+		if gm.ConnectedFor(profiles[0]) && gm.ConnectedFor(profiles[1]) {
 			return gm
 		}
 		// Connectivity failed — retry with next seed
 	}
-	// All retries failed — return the last map anyway (rare edge case)
-	log.Printf("WARNING: GenerateMap failed connectivity after %d retries with base seed %d", maxMapRetries, seed)
-	return generateMapOnce(w, h, seed)
+	// All retries failed — return the last repaired map anyway (rare edge
+	// case; a repaired map is connected in practice).
+	log.Printf("WARNING: GenerateMap failed full connectivity after %d retries with base seed %d", maxMapRetries, seed)
+	return lastMap
 }
 
 // generateMapOnce creates a single procedural map instance for the given seed.

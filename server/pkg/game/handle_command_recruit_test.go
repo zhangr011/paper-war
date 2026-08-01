@@ -65,4 +65,24 @@ func TestHandleCommandRecruit(t *testing.T) {
 		t.Fatalf("HandleCommand CmdRecruit: gold after = %d, want %d (before %d - cost %d)",
 			gs.PlayerGold[playerID], goldBefore-recruitCost, goldBefore, recruitCost)
 	}
+
+	// Regression: a recruited unit MUST get a nonzero Speed. recruit.go used to
+	// create VelocityComponent{} (Speed=0); the movement system clamps velocity
+	// to [-Speed,Speed], so a zero Speed permanently immobilised the unit — and
+	// when such a unit was promoted to commander the whole AI squad froze,
+	// causing the solo-match stalemate.
+	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
+	gotSpeed := false
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		if bc.Role == component.RoleCommander {
+			return
+		}
+		vel, ok := velPool.Get(e)
+		if ok && vel.Speed > 0 {
+			gotSpeed = true
+		}
+	})
+	if !gotSpeed {
+		t.Fatalf("HandleCommand CmdRecruit: recruited unit has no nonzero Speed (stalemate bug regression)")
+	}
 }

@@ -209,7 +209,7 @@ func NewGameSession() *GameSession {
 	// v1 systems
 	gs.levelingSys = &combat.LevelingSystem{}
 	gs.objectiveSys = objective.NewObjectiveSystem(gs.Map)
-	gs.recruitSys = &combat.RecruitmentSystem{}
+	gs.recruitSys = &combat.RecruitmentSystem{UnitSpeed: defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)}
 	gs.buildSys = &combat.BuildSystem{PlayerGold: gs.PlayerGold, PlayerSpawns: map[uint32][2]int64{}}
 	gs.World.AddSystem(gs.levelingSys)
 	gs.World.AddSystem(gs.objectiveSys)

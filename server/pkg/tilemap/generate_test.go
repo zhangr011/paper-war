@@ -233,34 +233,23 @@ func TestContract_BridgesSpanWater(t *testing.T) {
 	}
 }
 
-// TestContract_BridgeBounded asserts the bridge-over-consumption fix:
-//   - Every bridge tile is interior (>= 1 tile from the map border), since
-//     narrows within bridgeEdgeMargin are skipped.
-//   - No contiguous vertical bridge run (at a given X) exceeds the max span
-//     of 1 + 2*bridgeMaxHalfSpan tiles — bridges span river width, not whole
-//     vertical Deep runs.
-func TestContract_BridgeBounded(t *testing.T) {
-	const maxRunLen = 1 + 2*3 // bridgeMaxHalfSpan = 3 (generate.go)
+// TestContract_BridgeNoEdge asserts bridges stay off the map border (narrows
+// within bridgeEdgeMargin are skipped). Bridges intentionally span the FULL
+// contiguous Deep run at their crossing X (a partial span would leave a Deep
+// gap that disconnects the map halves for the Light/Heavy profiles — the
+// solo-match stalemate root cause), so run length is deliberately unbounded
+// and not asserted here.
+func TestContract_BridgeNoEdge(t *testing.T) {
 	for _, seed := range contractSeeds {
 		t.Run(seedName(seed), func(t *testing.T) {
 			gm := GenerateMap(contractTestWidth, contractTestHeight, seed)
 			W, H := gm.Width, gm.Height
-			// Per-column vertical bridge runs + edge check.
 			for x := int32(0); x < W; x++ {
-				runLen := int32(0)
 				for y := int32(0); y < H; y++ {
 					if gm.TileAt(x, y).TerrainType == component.TerrainBridge {
-						// No bridge tile on the map border.
 						if x == 0 || x == W-1 || y == 0 || y == H-1 {
 							t.Errorf("seed %d: bridge on map border (%d,%d)", seed, x, y)
 						}
-						runLen++
-						if runLen > int32(maxRunLen) {
-							t.Errorf("seed %d: bridge run at x=%d length %d exceeds max %d (unbounded Y-extension regression)",
-								seed, x, runLen, maxRunLen)
-						}
-					} else {
-						runLen = 0
 					}
 				}
 			}

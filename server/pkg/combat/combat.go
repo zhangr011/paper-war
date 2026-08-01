@@ -180,11 +180,15 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			// Default: pursue by setting a pathfinding destination so the
 			// movement system closes the gap. Issue #52: a squad in
 			// StateGuard holds ground — skip the pursue so the unit stays
-			// planted. StateLookup returns the AI state for this entity
-			// (0 if unknown / not AI-driven — those still pursue).
+			// planted. ADR-0027: a squad in StateApproach is being moved
+			// by the AI to its CommitRange point — skip the pursue too,
+			// otherwise CombatSystem would overwrite the AI's closing
+			// destination with the enemy tile (double-move / overshoot).
+			// StateLookup returns the AI state for this entity (0 if
+			// unknown / not AI-driven — those still pursue).
 			if s.StateLookup != nil && s.boidPool != nil {
 				if bc, ok := s.boidPool.Get(e); ok {
-					if st := s.StateLookup(bc.SquadID); st == ai.StateGuard {
+					if st := s.StateLookup(bc.SquadID); st == ai.StateGuard || st == ai.StateApproach {
 						return
 					}
 				}

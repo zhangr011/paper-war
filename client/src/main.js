@@ -391,6 +391,11 @@ export class Game {
     if (this.renderer && this.renderer.setMapTerrainTexture) {
       this.renderer.setMapTerrainTexture(this.terrainData, this.mapWidth, this.mapHeight);
     }
+    // Elevation grid (hill layer 0/1/2) — sampled by the hill shader branch
+    // for layer-aware rendering. Same fallback contract as the terrain texture.
+    if (this.renderer && this.renderer.setMapElevationTexture && this.elevationData) {
+      this.renderer.setMapElevationTexture(this.elevationData, this.mapWidth, this.mapHeight);
+    }
 
     // Compute spawn positions.  Prefer the server-provided spawns from
     // the match_found message (authoritative — they match the map
@@ -1505,16 +1510,23 @@ export class Game {
   _pushTree(objects, x, y, hash, zoom) {
     // Hashed size multiplier in [0.85, 1.20] — small band so a tile never
     // grows a tree larger than its footprint.
+    // Sized to ~2× a combat unit. A unit renders at ATLAS_CELL * UNIT_SCALE
+    // = 32 * 1.5 = 48 px at zoom 1 (see buildUnitDescriptors); tree height
+    // ≈ 2× that, width keeps the taller-than-wide tree aspect (~7:11). At
+    // zoom 1 → ~96×61 px (about 3 tiles tall); dense forest will canopy
+    // over. ±20 % per-tree variation so adjacent trees differ.
     const sizeMul = 0.85 + ((hash >> 20 & 0xFF) / 255) * 0.35;
-    const treeW = 5 * zoom * sizeMul;
-    const treeH = 8 * zoom * sizeMul;
+    const treeH = 2 * ATLAS_CELL * UNIT_SCALE * zoom * sizeMul;
+    const treeW = treeH * (7 / 11);
     const isPine = ((hash >> 28) & 1) === 0;
 
-    // Canopy tint — two-band dark-green variation so adjacent trees differ.
+    // Canopy tint — brightened green band so trees read against the dark
+    // forest floor (TERRAIN_COLORS[4] ~ (0.11,0.22,0.06)). Was ~0.04-0.08 /
+    // 0.12-0.18 — too close to the floor. lit = sunlit top tone, shade =
+    // shadow tone; pine tiers and broadleaf blobs interpolate between them.
     const tint = (hash >> 16 & 0xFF) / 255;
-    const cr = 0.04 + tint * 0.04;
-    const cg = 0.12 + tint * 0.06;
-    const cb = 0.02;
+    const litR = 0.16 + tint * 0.05,  litG = 0.34 + tint * 0.07, litB = 0.05;
+    const shadeR = 0.07 + tint * 0.03, shadeG = 0.20 + tint * 0.04, shadeB = 0.03;
 
     // Trunk (small brown quad under the canopy).
     {
@@ -1529,6 +1541,7 @@ export class Game {
 
     if (isPine) {
       // Pine: 3 stacked, shrinking tiers give a triangle silhouette.
+      // Top tier lit (sunlit), lower tiers shaded — gives volume.
       const tiers = 3;
       const tierH = treeH / tiers;
       for (let i = 0; i < tiers; i++) {
@@ -1538,11 +1551,13 @@ export class Game {
         o.y = y + i * tierH * 0.8;
         o.w = w;
         o.h = tierH + zoom; // slight overlap so seams disappear
-        o.r = cr; o.g = cg; o.b = cb;
+        o.r = i === 0 ? litR : shadeR;
+        o.g = i === 0 ? litG : shadeG;
+        o.b = i === 0 ? litB : shadeB;
         o.sortY = y + i * tierH * 0.8;
       }
     } else {
-      // Broadleaf: lower blob (wide) + upper crown (narrower) stacked.
+      // Broadleaf: lower blob (wide, shaded) + upper crown (narrower, lit).
       const lowerW = treeW;
       const lowerH = treeH * 0.6;
       const upperW = treeW * 0.75;
@@ -1553,7 +1568,7 @@ export class Game {
         o.y = y + treeH - lowerH;
         o.w = lowerW;
         o.h = lowerH;
-        o.r = cr; o.g = cg; o.b = cb;
+        o.r = shadeR; o.g = shadeG; o.b = shadeB;
         o.sortY = y + treeH - lowerH;
       }
       {
@@ -1562,7 +1577,7 @@ export class Game {
         o.y = y;
         o.w = upperW;
         o.h = upperH;
-        o.r = cr * 0.9; o.g = cg + 0.02; o.b = cb; // top slightly brighter
+        o.r = litR; o.g = litG; o.b = litB; // sunlit crown
         o.sortY = y;
       }
     }
@@ -1639,6 +1654,45 @@ export class Game {
             o.h = 1.5 * zoom;
             o.r = 0.40; o.g = 0.30; o.b = 0.15;
             o.sortY = py;
+          }
+        } else if (terrainType === 16) {
+          // Rock: 1-2 gray boulders (heavy cover, blocks LOS — ADR-0024).
+          // Ground-level, ~1× a unit. Deterministic per-tile placement.
+          const cnt = (((tx * 3) ^ (ty * 7)) >>> 0) % 2 + 1;
+          for (let r = 0; r < cnt; r++) {
+            const h = ((tx * 61231 ^ ty * 49297 ^ r * 88069) >>> 0);
+            const sz = (12 + ((h >> 8) & 0x0F)) * zoom;        // ~12-27 px
+            const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - sz / zoom) * zoom;
+            const oy = ((h >> 16 & 0xFF) / 255) * (TILE_HEIGHT - sz / zoom) * zoom;
+            // Boulder body (mid gray) + lighter top facet for volume.
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox; o.y = sy + oy;
+              o.w = sz; o.h = sz * 0.8;
+              o.r = 0.42; o.g = 0.40; o.b = 0.38;
+              o.sortY = sy + oy + sz * 0.8;
+            }
+            {
+              const o = this._pooledPush(objects);
+              o.x = sx + ox + sz * 0.15; o.y = sy + oy;
+              o.w = sz * 0.55; o.h = sz * 0.3;
+              o.r = 0.52; o.g = 0.50; o.b = 0.47;
+              o.sortY = sy + oy + 1;
+            }
+          }
+        } else if (terrainType === 17) {
+          // Brush: 2-3 scrubby olive tufts (light cover — ADR-0024).
+          const cnt = (((tx * 5) ^ (ty * 11)) >>> 0) % 2 + 2;
+          for (let r = 0; r < cnt; r++) {
+            const h = ((tx * 22468 ^ ty * 32664 ^ r * 12289) >>> 0);
+            const sz = (6 + ((h >> 8) & 0x07)) * zoom;          // ~6-13 px
+            const ox = ((h & 0xFF) / 255) * (TILE_WIDTH - sz / zoom) * zoom;
+            const oy = ((h >> 16 & 0xFF) / 255) * (TILE_HEIGHT - sz / zoom) * zoom;
+            const o = this._pooledPush(objects);
+            o.x = sx + ox; o.y = sy + oy;
+            o.w = sz; o.h = sz * 0.7;
+            o.r = 0.22; o.g = 0.32; o.b = 0.12;
+            o.sortY = sy + oy + sz * 0.7;
           }
         }
       }

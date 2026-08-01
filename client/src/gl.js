@@ -67,6 +67,11 @@ uniform int u_terrainTexValid;   // 0 = no terrain texture (render flat, no blen
 uniform int u_blendableLandCount;
 uniform int u_blendableLandTypes[8];
 uniform vec3 u_deepBlendTarget;  // teal Shallow tint (TERRAIN_COLORS[2])
+// Elevation grid (one R8UI texel per tile, hill layer 0/1/2 = low/slope/peak).
+// Sampled in the hill branch to make hill tiles render layer-aware (peaks
+// rocky + bright, valleys darker/grassy). Uploaded by Renderer.setMapElevationTexture.
+uniform highp usampler2D u_elevationTex;
+uniform int u_elevationTexValid; // 0 = no elevation texture (uniform hill rendering)
 uniform vec2 u_camera;
 uniform float u_tileSize;
 out vec4 fragColor;
@@ -142,6 +147,11 @@ void main() {
 
     coast = clamp(coast, 0.0, 1.0);
     base.rgb = mix(base.rgb, u_deepBlendTarget, coast);
+    // Waterline foam — a pale band right at the shore (where the teal blend
+    // is strongest), so the water→land transition reads as a real shoreline
+    // rather than a flat gradient.
+    float foam = smoothstep(0.55, 1.0, coast);
+    base.rgb = mix(base.rgb, vec3(0.62, 0.70, 0.66), foam * 0.45);
   }
 
   // Sample at the tile's pixel grid (TILE_WIDTH = 32 game units per tile).
@@ -151,23 +161,68 @@ void main() {
   float n = 0.0; // noise offset in [-1, 1]
 
   if (t == 2 || t == 3) {
-    // Water: horizontal wave bands + grain. Darken wave troughs.
+    // Water: two overlapping wave bands (horizontal + diagonal) for richer
+    // ripple motion, plus fine grain.
     float band = sin((px.y + v_seed * 17.0) * 0.7 + u_time * 1.6);
+    float band2 = sin(dot(px, vec2(0.6, 0.4)) + u_time * 1.1 + v_seed * 5.0);
     float grain = hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff) * 2.0 - 1.0;
-    n = band * 0.16 + grain * 0.10;
+    n = band * 0.14 + band2 * 0.06 + grain * 0.10;
+    // Animated specular sparkles — sun-glint on the surface. Time is
+    // quantized so sparkles twinkle on/off (re-rolled 3×/sec) rather than
+    // glow; only ~3.5% of sub-cells light up. Tunable via the threshold.
+    float twink = floor(u_time * 3.0);
+    float sparkle = step(0.965, hash21(floor(vec2(px.x * 0.5, px.y * 0.5)) + vec2(twink, v_seed)));
+    n += sparkle * 0.22;
   } else if (t == 5) {
     // Hill / mountain: chunky vertical grain like rock strata.
     vec2 cell = floor(vec2(px.x * 0.35, px.y * 0.8)) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     // Occasional darker crack lines every ~10 px
     float crack = step(0.92, hash21(vec2(floor(px.y / 10.0), cell.x)));
-    n = grain * 0.20 - crack * 0.18;
-  } else if (t == 1 || t == 7) {
-    // Road / Bridge: plank lines every 8 px + grain.
+    // Directional relief — light from the top-left: brighten the top/left
+    // edge of the tile, darken bottom/right. Stacks on the CPU-side
+    // hillShadeRGB layer tint to fake raised 3D terrain.
+    float relief = (0.5 - v_texcoord.y) * 0.12 + (0.5 - v_texcoord.x) * 0.06;
+    n = grain * 0.20 - crack * 0.18 + relief;
+    // Elevation-aware: sample this tile's hill layer (0 valley, 1 slope,
+    // 2 peak) and render each distinctly. Bounds-checked because
+    // texelFetch off-range returns 0 (= valley).
+    if (u_elevationTexValid == 1) {
+      vec2 tilePosE = v_worldPos / u_tileSize;
+      ivec2 tcE = ivec2(floor(tilePosE));
+      ivec2 dimE = textureSize(u_elevationTex, 0);
+      int layer = 0;
+      if (tcE.x >= 0 && tcE.y >= 0 && tcE.x < dimE.x && tcE.y < dimE.y) {
+        layer = int(texelFetch(u_elevationTex, tcE, 0).x);
+      }
+      if (layer == 2) {
+        // Peak: brightest sun-catch, heavier rock cracks, faint pale
+        // dusting on the upper face so summits read as exposed stone/snow.
+        n += 0.10;
+        n -= step(0.70, hash21(cell + 5.0)) * 0.12;
+        n += (1.0 - v_texcoord.y) * 0.06;
+      } else if (layer == 0) {
+        // Valley: deeper shade, sparser cracks (grassy low ground).
+        n -= 0.07;
+        n += crack * 0.12;
+      }
+      // layer 1 (slope): base relief only — the slope face catches the light.
+    }
+  } else if (t == 7) {
+    // Bridge: plank lines every 8 px + grain.
     float plankDark = step(0.78, fract(px.y / 8.0));
     vec2 cell = vec2(floor(px.x * 0.4), floor(px.y / 8.0) * 0.5) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     n = grain * 0.12 - plankDark * 0.16;
+  } else if (t == 1) {
+    // Road: warm worn-dirt — fine grain plus two faint darkened ruts at
+    // 1/3 and 2/3 across the tile (a well-traveled track), distinct from
+    // the wooden plank look of bridges.
+    vec2 cell = floor(vec2(px.x * 0.5, px.y * 0.5)) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    float rut = smoothstep(0.05, 0.0, abs(v_texcoord.x - 0.33)) +
+                smoothstep(0.05, 0.0, abs(v_texcoord.x - 0.66));
+    n = grain * 0.10 - rut * 0.09;
   } else if (t == 4) {
     // Forest floor: darker organic noise with occasional light flecks
     // (sunlight through canopy).  Finer grain than plains so tree clusters
@@ -175,7 +230,11 @@ void main() {
     vec2 cell = floor(px * 0.8) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     float fleck = step(0.93, hash21(cell + 3.0));
-    n = grain * 0.16 + fleck * 0.14;
+    // Dappled sunlight — larger, softer bright patches (lower frequency
+    // than the flecks) reading as light filtering through the canopy.
+    vec2 dappleCell = floor(px * 0.25) + seedOff;
+    float dapple = step(0.78, hash21(dappleCell + 9.0));
+    n = grain * 0.16 + fleck * 0.14 + dapple * 0.10;
   } else if (t == 0) {
     // Plains: fine scattered-grass clumps.  A small-scale hash gives the
     // impression of individual grass tufts; the per-tile patchwork
@@ -367,6 +426,8 @@ class SpriteBatch {
     this.uTileSize = gl.getUniformLocation(program, 'u_tileSize');
     this.uTerrainTex = gl.getUniformLocation(program, 'u_terrainTex');
     this.uTerrainTexValid = gl.getUniformLocation(program, 'u_terrainTexValid');
+    this.uElevationTex = gl.getUniformLocation(program, 'u_elevationTex');
+    this.uElevationTexValid = gl.getUniformLocation(program, 'u_elevationTexValid');
     this.uBlendableLandCount = gl.getUniformLocation(program, 'u_blendableLandCount');
     this.uBlendableLandTypes = gl.getUniformLocation(program, 'u_blendableLandTypes[0]');
     this.uDeepBlendTarget = gl.getUniformLocation(program, 'u_deepBlendTarget');
@@ -375,6 +436,7 @@ class SpriteBatch {
     // texture itself (and its validity flag) is set by Renderer.setMapTerrainTexture.
     gl.useProgram(program);
     if (this.uTerrainTex) gl.uniform1i(this.uTerrainTex, 1); // bind to unit 1
+    if (this.uElevationTex) gl.uniform1i(this.uElevationTex, 2); // bind to unit 2
     if (this.uBlendableLandCount) {
       gl.uniform1i(this.uBlendableLandCount, BLENDABLE_LAND_TYPES.length);
     }
@@ -385,6 +447,7 @@ class SpriteBatch {
       gl.uniform3fv(this.uDeepBlendTarget, DEEP_BLEND_TARGET);
     }
     if (this.uTerrainTexValid) gl.uniform1i(this.uTerrainTexValid, 0);
+    if (this.uElevationTexValid) gl.uniform1i(this.uElevationTexValid, 0);
     gl.useProgram(null);
 
     // VAO + VBO
@@ -869,6 +932,36 @@ export class Renderer {
   }
 
   /**
+   * Upload the per-tile elevation grid (hill layer 0/1/2) as an R8UI texture
+   * on TEXTURE2, and flip u_elevationTexValid so the hill shader branch can
+   * sample it for layer-aware rendering. Mirror of setMapTerrainTexture.
+   */
+  setMapElevationTexture(elevationData, mapW, mapH) {
+    const gl = this.gl;
+    if (this.elevationTexture) gl.deleteTexture(this.elevationTexture);
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.R8UI, mapW, mapH, 0,
+      gl.RED_INTEGER, gl.UNSIGNED_BYTE, elevationData,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.elevationTexture = tex;
+    const loc = this.terrainBatch.uElevationTexValid;
+    if (loc) {
+      gl.useProgram(this.terrainBatch.program);
+      gl.uniform1i(loc, 1);
+      gl.useProgram(null);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /**
    * Mark the terrain-type texture as absent (e.g. on disconnect / map
    * unload). Shader falls back to flat-tile rendering, no coastline.
    */
@@ -878,10 +971,20 @@ export class Renderer {
       gl.deleteTexture(this.terrainTypeTexture);
       this.terrainTypeTexture = null;
     }
+    if (this.elevationTexture) {
+      gl.deleteTexture(this.elevationTexture);
+      this.elevationTexture = null;
+    }
     const loc = this.terrainBatch.uTerrainTexValid;
     if (loc) {
       gl.useProgram(this.terrainBatch.program);
       gl.uniform1i(loc, 0);
+      gl.useProgram(null);
+    }
+    const eloc = this.terrainBatch.uElevationTexValid;
+    if (eloc) {
+      gl.useProgram(this.terrainBatch.program);
+      gl.uniform1i(eloc, 0);
       gl.useProgram(null);
     }
   }

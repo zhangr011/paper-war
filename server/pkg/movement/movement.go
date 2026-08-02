@@ -64,9 +64,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 		s.Sh.Insert(uint64(e), pos.X, pos.Y)
 	})
 
-	// Build map of squadID -> commander position
+	// Build maps of squadID -> commander position and suppressing flag.
 	commanderPos := make(map[uint32][2]int64)
-	suppressing := make(map[uint32]bool) // squad is suppressing its surge
+	suppressing := make(map[uint32]bool) // squad is suppressing its surge (ADR-0025)
 	if s.cmdPool != nil {
 		s.cmdPool.Each(func(e ecs.Entity, cmd *component.CommanderComponent) {
 			if !cmd.IsAlive {
@@ -74,9 +74,9 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			}
 			if pos, ok := s.posPool.Get(e); ok {
 				commanderPos[cmd.SquadID] = [2]int64{pos.X, pos.Y}
-				if cmd.Suppressing {
-					suppressing[cmd.SquadID] = true
-				}
+			}
+			if cmd.Suppressing {
+				suppressing[cmd.SquadID] = true
 			}
 		})
 	}
@@ -149,41 +149,22 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 			}
 		}
 
-		neighborPos := s.queryNeighborPositions(pos.X, pos.Y, bc.NeighborRange, uint64(e))
-
-		// Commanders should not be repelled by their own squad members —
-		// they need to lead, not flee from their own units. Filter out
-		// same-squad neighbors so only enemies/obstacles cause repulsion.
-		if bc.Role == component.RoleCommander {
-			neighborPos = s.queryNeighborPositionsExcludeSquad(pos.X, pos.Y, bc.NeighborRange, uint64(e), bc.SquadID)
-		}
-
-		sepFX, sepFY := boid.SeparationForce([2]int64{pos.X, pos.Y}, neighborPos, bc.NeighborRange)
-
-		// Attraction force (toward commander/beacon/flow field target)
+		// Attraction force. Two sources:
+		//  - player beacon (active move order) for player units;
+		//  - cohesion toward the commander's position for non-commander units
+		//    (no formation-slot offsets — combat units clump on the commander).
 		var attrFX, attrFY int64
-
-		// Commander-following force (or beacon steering for player units)
 		if useBeacon {
 			attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
 		} else if bc.Role != component.RoleCommander {
 			if cpos, ok := commanderPos[bc.SquadID]; ok {
-				target := [2]int64{cpos[0], cpos[1]}
-				if s.formationRolePool != nil {
-					if fr, ok := s.formationRolePool.Get(e); ok {
-						target[0] += fr.OffsetX
-						target[1] += fr.OffsetY
-					}
-				}
-				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, target)
+				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, cpos)
 			}
 		}
 
 		totalFX := flowFX +
-			fixed.Mul(sepFX, bc.SeparationW) +
 			fixed.Mul(attrFX, bc.FormationW)
 		totalFY := flowFY +
-			fixed.Mul(sepFY, bc.SeparationW) +
 			fixed.Mul(attrFY, bc.FormationW)
 
 		maxForce := fixed.FromFloat(5.0)

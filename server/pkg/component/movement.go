@@ -35,6 +35,22 @@ func BlocksLOS(t TerrainType) bool {
 	}
 }
 
+// Conceals reports whether a tile of this terrain hides a unit standing in it
+// from distant viewers (soft cover / ambush terrain). Forest and Brush are
+// concealment: a unit inside is hidden from enemies beyond the detection
+// radius unless it fires (giving away its position). Contrast BlocksLOS —
+// Rock/Wall are hard LOS blockers handled by the fog raycast, so they are NOT
+// concealment here (no unit stands on a Wall, and Rock is Heavy-impassable).
+// ADR-0029.
+func Conceals(t TerrainType) bool {
+	switch t {
+	case TerrainForest, TerrainBrush:
+		return true
+	default:
+		return false
+	}
+}
+
 type MovementProfile struct {
 	ID           uint8
 	TerrainCosts [18]uint8

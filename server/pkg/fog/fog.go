@@ -12,6 +12,18 @@ const (
 	UnitVisionRadiusTiles = 6  // combat unit vision
 )
 
+// Concealment — a unit on a Conceals terrain (Forest/Brush) is hidden from
+// enemies unless one of those conditions holds:
+//   - a friendly detector is within ConcealmentDetectionRadius tiles, OR
+//   - the unit fired within the last ConcealRevealTicks (attacking gives away
+//     its position).
+// The concealed unit's tile stays FogVisible (the viewer sees the trees, not
+// the ambusher). ADR-0029.
+const (
+	ConcealmentDetectionRadius = 3 // tiles within which a detector spots a concealed unit
+	ConcealRevealTicks         = 8 // ~0.8s @ 10 Hz that firing breaks concealment
+)
+
 type FogGrid struct {
 	Width, Height int32
 	Visible       []uint8 // 0=unexplored, 1=explored, 2=visible

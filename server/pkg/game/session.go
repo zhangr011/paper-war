@@ -406,7 +406,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.VisionRadiusTiles,
+			radius: fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
@@ -429,7 +429,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.UnitVisionRadiusTiles,
+			radius: fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
@@ -450,6 +450,27 @@ func (gs *GameSession) updateFog() {
 		grid := gs.FogSys.GetOrCreateGrid(s.pid)
 		grid.BlocksLOS = blocksLOS
 		grid.RevealRadius(s.tileX, s.tileY, s.radius)
+	}
+}
+
+// elevationVisionBonus returns the extra vision tiles a viewer on the given
+// tile gains from height: peak (Elevation 2) +3, slope (1) +1, low/none 0.
+// High ground sees farther — peaks act as scout towers. ADR-0029.
+func (gs *GameSession) elevationVisionBonus(tileX, tileY int32) int32 {
+	if gs.Map == nil {
+		return 0
+	}
+	t := gs.Map.TileAt(tileX, tileY)
+	if t == nil {
+		return 0
+	}
+	switch t.Elevation {
+	case 2:
+		return 3
+	case 1:
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -528,6 +549,17 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 				return component.TerrainPlain
 			}
 			return tile.TerrainType
+		}
+		// Elevation lookup for high-ground range advantage (ADR-0029).
+		gs.combatSys.ElevationFn = func(x, y int32) uint8 {
+			if x < 0 || y < 0 || x >= gs.Map.Width || y >= gs.Map.Height {
+				return 0
+			}
+			tile := gs.Map.TileAt(x, y)
+			if tile == nil {
+				return 0
+			}
+			return tile.Elevation
 		}
 	}
 
@@ -1084,10 +1116,13 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	}
 
 	// --- Spawn CombatUnits from roster ---
-	// Compact concentric-ring disc centered on the commander (innermost ring
-	// first). Same layout as spawnCombatUnitsWithType. See formation.DiscOffsets.
+	// Formation grid: same layout as spawnCombatUnitsWithType
 	unitCount := len(cmd.Units)
-	slots := formation.DiscOffsets(unitCount, fixed.FromFloat(0.6))
+	formCols := 1
+	for formCols*formCols < unitCount {
+		formCols++
+	}
+	formSpacing := fixed.FromFloat(0.6)
 
 	for i, cu := range cmd.Units {
 		cuType, ok := component.ParseCombatUnitType(cu.Type)
@@ -1096,9 +1131,11 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		}
 		cuStats := component.CombatUnitTypeTable[cuType]
 
-		// Formation offset: disc slot i (centered on commander).
-		ox := slots[i][0]
-		oy := slots[i][1]
+		// Formation offset: grid around commander
+		col := i % formCols
+		row := i / formCols
+		ox := int64(col-(formCols-1)/2) * formSpacing
+		oy := int64(row+1) * formSpacing
 
 		// Alternate melee/ranged roles
 		role := component.RoleMelee
@@ -1123,7 +1160,9 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
 			FormationW:    fixed.FromFloat(2.0),
-			NeighborRange: fixed.FromFloat(2.0),
+			// NeighborRange sets the squad cluster radius (separation acts only within it).
+			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
+			NeighborRange: fixed.FromFloat(1.0),
 		})
 
 		// Scale HP by level (each level adds ~15% HP)
@@ -1347,21 +1386,37 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
+	spacing := fixed.FromFloat(0.6)
 
 	stats := component.CombatUnitTypeTable[unitType]
-
-	// Compact concentric-ring disc centered on the commander (innermost ring
-	// first). The disc is point-symmetric, so no faction x-mirror is needed
-	// (the old forward-extending grid required it; the centered disc has no
-	// facing). See formation.DiscOffsets.
-	slots := formation.DiscOffsets(formationCount, fixed.FromFloat(0.6))
 
 	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
-		// Slot offset (centered on commander).
-		ox := slots[i-startIndex][0]
-		oy := slots[i-startIndex][1]
+		// Arrange units in a grid pattern around the commander.
+		// Use float-centred column offsets so the formation is truly
+		// symmetric around the commander.  Integer division
+		// (col-(cols-1)/2) produces a lopsided grid whose centre is
+		// offset by half a column, which gives one faction's units a
+		// systematic range advantage over the other.
+		cols := 1
+		for cols*cols < formationCount {
+			cols++
+		}
+		row := i / cols
+		col := i % cols
+		colOffset := float64(col) - float64(cols-1)/2.0
+		ox := fixed.Mul(fixed.FromFloat(colOffset), spacing)
+		oy := int64(row+1) * spacing
+
+		// Mirror formation x-offsets for the enemy faction so the
+		// two formations face each other symmetrically.  Without
+		// this, both teams' col=0 units end up on the same physical
+		// side, giving one team a range advantage on the enemy
+		// commander.
+		if faction == component.FactionEnemy {
+			ox = -ox
+		}
 
 		// Small random jitter (±0.3 tiles) breaks the deterministic
 		// symmetry of mirror matches. Without this, the first entity
@@ -1397,7 +1452,9 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
 			FormationW:    fixed.FromFloat(2.0),
-			NeighborRange: fixed.FromFloat(2.0),
+			// NeighborRange sets the squad cluster radius (separation acts only within it).
+			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
+			NeighborRange: fixed.FromFloat(1.0),
 		})
 
 		gs.addComponent(unitEntity, component.HealthComponent{
@@ -1574,6 +1631,35 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 				tileY := int32(pos.Y >> 12)
 				if !fogGrid.IsCurrentlyVisible(tileX, tileY) {
 					return
+				}
+				// Concealment (ADR-0029): an enemy standing in Forest/Brush is
+				// hidden unless a friendly detector is within detection range OR
+				// it fired recently. The tile stays visible — the viewer sees the
+				// trees, not the ambusher inside.
+				if gs.Map != nil {
+					if tile := gs.Map.TileAt(tileX, tileY); tile != nil && component.Conceals(tile.TerrainType) {
+						firedRecently := false
+						if ac, ok := attackPool.Get(e); ok && ac.LastAttack != 0 &&
+							gs.tickCount-ac.LastAttack <= fog.ConcealRevealTicks {
+							firedRecently = true
+						}
+						if !firedRecently {
+							detected := false
+							detR := fixed.FromFloat(float64(fog.ConcealmentDetectionRadius))
+							for _, did := range gs.Sh.Query(pos.X, pos.Y, detR) {
+								if ecs.Entity(did) == e {
+									continue
+								}
+								if downer, ok := ownerPool.Get(ecs.Entity(did)); ok && downer.PlayerID == playerID {
+									detected = true
+									break
+								}
+							}
+							if !detected {
+								return
+							}
+						}
+					}
 				}
 			}
 		}

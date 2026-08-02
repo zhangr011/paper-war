@@ -1147,6 +1147,19 @@ export class Renderer {
 
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
+      // Concealment badge (ADR-0029): a small foliage leaf at the unit's
+      // top-right marks own units hidden in Forest/Brush. Drawn before the
+      // full-HP skip so the stealth state stays legible even at 100% HP.
+      if (u.concealed) {
+        const cx = u.x - camera.x;
+        const cy = u.y - camera.y;
+        const leaf = Math.max(3, Math.round(4 * (this.currentZoom || 1)));
+        const lx = cx + u.w - leaf - 1;
+        const ly = cy - leaf - 5;
+        batch.pushColorQuad(lx - 1, ly - 1, leaf + 2, leaf + 2, 0.10, 0.30, 0.08, 0.6);
+        batch.pushColorQuad(lx, ly, leaf, leaf, 0.22, 0.55, 0.18, 0.95);
+        batch.pushColorQuad(lx + 1, ly + 1, leaf - 2, leaf - 2, 0.35, 0.66, 0.24, 0.95);
+      }
       if (u.hpRatio === undefined) continue;
       if (u.hpRatio >= 0.99 && !u.isCommander) continue;
 

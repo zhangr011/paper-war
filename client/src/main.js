@@ -2090,6 +2090,21 @@ export class Game {
       unit.displayedHpRatio = unit.displayedHpRatio + (hpRatio - unit.displayedHpRatio) * 0.18;
       d.hpRatio = unit.displayedHpRatio;
       d.isCommander = !!unit.isCommander;
+      // Concealment indicator (ADR-0029): badge the local player's own
+      // units standing in Forest(4)/Brush(17) so the stealth state is
+      // legible. Enemies we render are by definition not concealed-from-us
+      // (concealed enemies aren't sent in our snapshot), so this is
+      // own-units only. Pure client derivation from the static terrain
+      // grid — no server cost.
+      d.concealed = false;
+      if (this.terrainData && (unit.team === this.playerID)) {
+        const tx = Math.floor(unit.renderX);
+        const ty = Math.floor(unit.renderY);
+        if (tx >= 0 && ty >= 0 && tx < this.mapWidth && ty < this.mapHeight) {
+          const tt = this.terrainData[ty * this.mapWidth + tx];
+          d.concealed = (tt === 4 || tt === 17); // Forest / Brush
+        }
+      }
     }
 
     // Y-sort: draw far units first (painter's algorithm)

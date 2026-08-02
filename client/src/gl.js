@@ -207,6 +207,33 @@ void main() {
         n += crack * 0.12;
       }
       // layer 1 (slope): base relief only — the slope face catches the light.
+
+      // Cross-tile directional relief: sample the 4 neighbor elevations to
+      // derive a slope normal, then Lambertian-shade against the top-left
+      // light. Turns the flat per-tile tint into real 3D relief — a hill
+      // tile reads bright on its north/west face and dark on the south/east,
+      // so ridge lines and valleys become legible instead of every hill
+      // tile looking identical. Flat tiles (no gradient) contribute ~0.
+      float eN = 0.0, eS = 0.0, eW = 0.0, eE = 0.0;
+      ivec2 cN = tcE + ivec2(0, -1), cS = tcE + ivec2(0, 1);
+      ivec2 cW = tcE + ivec2(-1, 0), cE = tcE + ivec2(1, 0);
+      if (cN.x >= 0 && cN.y >= 0 && cN.x < dimE.x && cN.y < dimE.y)
+        eN = float(texelFetch(u_elevationTex, cN, 0).x);
+      if (cS.x >= 0 && cS.y >= 0 && cS.x < dimE.x && cS.y < dimE.y)
+        eS = float(texelFetch(u_elevationTex, cS, 0).x);
+      if (cW.x >= 0 && cW.y >= 0 && cW.x < dimE.x && cW.y < dimE.y)
+        eW = float(texelFetch(u_elevationTex, cW, 0).x);
+      if (cE.x >= 0 && cE.y >= 0 && cE.x < dimE.x && cE.y < dimE.y)
+        eE = float(texelFetch(u_elevationTex, cE, 0).x);
+      // Central-difference slope (elevation is discrete 0/1/2, so this is a
+      // step function — stylized but reads clearly as relief).
+      float dzx = (eE - eW) * 0.5;
+      float dzy = (eS - eN) * 0.5;
+      vec3 norm = normalize(vec3(-dzx, -dzy, 1.0));
+      vec3 toLight = normalize(vec3(-0.5, -0.5, 0.8));
+      float lambert = clamp(dot(norm, toLight), 0.0, 1.0);
+      // Flat baseline lambert ≈ 0.75 (z-dominant normal); remap to ~0 there.
+      n += (lambert - 0.75) * 0.5;
     }
   } else if (t == 7) {
     // Bridge: plank lines every 8 px + grain.

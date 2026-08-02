@@ -953,7 +953,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		FormationW:    fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -1049,7 +1049,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		FormationW:    fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -1159,7 +1159,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			SeparationW:   fixed.FromFloat(1.5),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(2.0),
+			FormationW:    fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),
@@ -1451,7 +1451,7 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			SeparationW:   fixed.FromFloat(1.5),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(2.0),
+			FormationW:    fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),

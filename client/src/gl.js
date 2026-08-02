@@ -246,8 +246,49 @@ void main() {
     // Sparse brighter grass blades (~12% of pixels) for subtle highlights.
     float blade = step(0.88, hash21(cell + 7.0));
     n = grain * 0.13 + blade * 0.08;
+  } else if (t == 16) {
+    // Rock: heavy craggy stone — blocky coarse grain (larger cells than
+    // Hill so it reads as bigger boulders), diagonal fracture lines, and a
+    // few bright Quartz flecks. Heavier amplitude than Hill so crags feel
+    // rough and distinct from the strata-free slopes. Rock is heavy cover
+    // + LOS blocker (ADR-0024) and now gameplay-relevant, so it earns a
+    // dedicated branch instead of the generic grain.
+    vec2 cell = floor(vec2(px.x * 0.28, px.y * 0.28)) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    // Diagonal fractures every ~9 px along the minor axis.
+    float frac1 = step(0.90, hash21(vec2(floor((px.x + px.y) / 9.0), cell.y)));
+    // Bright mineral flecks (~6% of cells) — Quartz / mica glint.
+    float fleck = step(0.94, hash21(cell + 11.0));
+    // Top-left relief consistent with the Hill branch's light direction.
+    float relief = (0.5 - v_texcoord.y) * 0.10 + (0.5 - v_texcoord.x) * 0.05;
+    n = grain * 0.26 - frac1 * 0.20 + fleck * 0.16 + relief;
+  } else if (t == 17) {
+    // Brush: scrubby undergrowth — fine high-frequency organic noise
+    // (tighter than plains) with small clustered leaf flecks, reading as
+    // light scrub rather than the dark forest floor (t==4). Brush is the
+    // soft concealment terrain (ADR-0029), so a distinct, recognizable
+    // look helps players spot ambush cover at a glance.
+    vec2 cell = floor(px * 1.1) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    // Clustered leaf flecks (~22% of cells) — small bright green dabs.
+    float leaf = step(0.78, hash21(cell + 4.0));
+    // Slightly larger mottled patches for depth.
+    vec2 patchCell = floor(px * 0.4) + seedOff;
+    float mottle = hash21(patchCell + 2.0) * 2.0 - 1.0;
+    n = grain * 0.14 + leaf * 0.12 + mottle * 0.07;
+  } else if (t == 6) {
+    // Swamp: murky saturated ground — mottled sickly green-brown patches
+    // with occasional dark standing-water pools and a faint glint, so it
+    // reads as wet bog rather than flat green.
+    vec2 cell = floor(px * 0.55) + seedOff;
+    float grain = hash21(cell) * 2.0 - 1.0;
+    // Large dark pools (~25% of low-frequency cells).
+    float pool = step(0.75, hash21(floor(px * 0.3) + seedOff + 6.0));
+    // Slow water glint on the pools (reuses the time-animated shimmer).
+    float glint = pool * step(0.92, hash21(cell + vec2(floor(u_time * 2.0), v_seed)));
+    n = grain * 0.12 - pool * 0.16 + glint * 0.14;
   } else {
-    // Swamp / desert / generic: organic per-pixel grain.
+    // Desert / Snow / generic: organic per-pixel grain.
     vec2 cell = floor(px * 0.7) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     n = grain * 0.15;

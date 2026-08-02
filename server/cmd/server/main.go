@@ -409,15 +409,23 @@ func main() {
 				squadID++
 			}
 
-			// Per-unit position jitter: add ±1 tile random offset to each
-			// combat unit so that deterministic entity-processing-order
-			// bias doesn't produce identical match outcomes every time.
+			// Per-unit position jitter: a small random offset on each combat
+			// unit so deterministic entity-processing-order bias doesn't
+			// produce identical match outcomes every time. The bias-break
+			// only needs continuous entropy, so the magnitude is kept at
+			// ±0.3 tile (matching the spawn jitter in spawnCombatUnitsWithType,
+			// not 3× it) — a larger value just spreads the formation.
+			// Commanders are excluded: they are the formation anchor, and
+			// jittering them scatters the whole squad's reference frame.
 			posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 			boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
 			boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+				if bc.Role == component.RoleCommander {
+					return
+				}
 				if pos, ok := posPool.GetPtr(e); ok {
-					pos.X += fixed.FromFloat(rand.Float64()*2 - 1)
-					pos.Y += fixed.FromFloat(rand.Float64()*2 - 1)
+					pos.X += fixed.FromFloat(rand.Float64()*0.6 - 0.3)
+					pos.Y += fixed.FromFloat(rand.Float64()*0.6 - 0.3)
 				}
 			})
 

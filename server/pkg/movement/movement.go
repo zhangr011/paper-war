@@ -201,6 +201,16 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 				// freeze the entity. Fall back to a sane default instead.
 				speed = defaultEntitySpeed
 			}
+			// The commander is exempt from same-squad separation and has no
+			// formation attraction, so its full force budget goes into the
+			// march direction and it outruns the squad (whose force is diluted
+			// by intra-squad forces). Cap the commander's per-axis velocity to
+			// ~80% so it matches the squad's diluted marching speed and the
+			// formation stays together. Fixed (non-coupled) value — no feedback
+			// loop with slot-attraction. Tuned via cohesion_equilibrium_test.
+			if bc.Role == component.RoleCommander {
+				speed = speed * 80 / 100
+			}
 			vel.Vx = fixed.Clamp(totalFX, -speed, speed)
 			vel.Vy = fixed.Clamp(totalFY, -speed, speed)
 			pos.X += vel.Vx / PositionDivisor

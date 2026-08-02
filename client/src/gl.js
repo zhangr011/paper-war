@@ -243,6 +243,24 @@ void main() {
       float lambert = clamp(dot(norm, toLight), 0.0, 1.0);
       // Flat baseline lambert ≈ 0.75 (z-dominant normal); remap to ~0 there.
       n += (lambert - 0.75) * 0.5;
+
+      // Cliff-edge ambient occlusion: where this tile sits higher than a
+      // neighbor, the lip facing that drop-off falls into contact shadow.
+      // Each elevation step then reads as a physical raised ledge with a
+      // shaded cliff face, not just a flat color band. Scales by the height
+      // difference (a peak→plain 2-step cliff shadows harder than a slope
+      // edge). Reuses the neighbor elevations fetched for the slope term.
+      float cl = float(layer);
+      float ledge = 0.0;
+      float dropS = cl - eS;
+      if (dropS > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.y) * dropS);
+      float dropN = cl - eN;
+      if (dropN > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.y) * dropN);
+      float dropE = cl - eE;
+      if (dropE > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.x) * dropE);
+      float dropW = cl - eW;
+      if (dropW > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.x) * dropW);
+      n -= ledge * 0.18;
     }
   } else if (t == 7) {
     // Bridge: plank lines every 8 px + grain.

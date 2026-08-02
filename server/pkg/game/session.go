@@ -1084,13 +1084,10 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	}
 
 	// --- Spawn CombatUnits from roster ---
-	// Formation grid: same layout as spawnCombatUnitsWithType
+	// Compact concentric-ring disc centered on the commander (innermost ring
+	// first). Same layout as spawnCombatUnitsWithType. See formation.DiscOffsets.
 	unitCount := len(cmd.Units)
-	formCols := 1
-	for formCols*formCols < unitCount {
-		formCols++
-	}
-	formSpacing := fixed.FromFloat(0.6)
+	slots := formation.DiscOffsets(unitCount, fixed.FromFloat(0.6))
 
 	for i, cu := range cmd.Units {
 		cuType, ok := component.ParseCombatUnitType(cu.Type)
@@ -1099,11 +1096,9 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		}
 		cuStats := component.CombatUnitTypeTable[cuType]
 
-		// Formation offset: grid around commander
-		col := i % formCols
-		row := i / formCols
-		ox := int64(col-(formCols-1)/2) * formSpacing
-		oy := int64(row+1) * formSpacing
+		// Formation offset: disc slot i (centered on commander).
+		ox := slots[i][0]
+		oy := slots[i][1]
 
 		// Alternate melee/ranged roles
 		role := component.RoleMelee
@@ -1352,37 +1347,21 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
-	spacing := fixed.FromFloat(0.6)
 
 	stats := component.CombatUnitTypeTable[unitType]
+
+	// Compact concentric-ring disc centered on the commander (innermost ring
+	// first). The disc is point-symmetric, so no faction x-mirror is needed
+	// (the old forward-extending grid required it; the centered disc has no
+	// facing). See formation.DiscOffsets.
+	slots := formation.DiscOffsets(formationCount, fixed.FromFloat(0.6))
 
 	for i := startIndex; i < startIndex+count; i++ {
 		unitEntity := em.Create()
 
-		// Arrange units in a grid pattern around the commander.
-		// Use float-centred column offsets so the formation is truly
-		// symmetric around the commander.  Integer division
-		// (col-(cols-1)/2) produces a lopsided grid whose centre is
-		// offset by half a column, which gives one faction's units a
-		// systematic range advantage over the other.
-		cols := 1
-		for cols*cols < formationCount {
-			cols++
-		}
-		row := i / cols
-		col := i % cols
-		colOffset := float64(col) - float64(cols-1)/2.0
-		ox := fixed.Mul(fixed.FromFloat(colOffset), spacing)
-		oy := int64(row+1) * spacing
-
-		// Mirror formation x-offsets for the enemy faction so the
-		// two formations face each other symmetrically.  Without
-		// this, both teams' col=0 units end up on the same physical
-		// side, giving one team a range advantage on the enemy
-		// commander.
-		if faction == component.FactionEnemy {
-			ox = -ox
-		}
+		// Slot offset (centered on commander).
+		ox := slots[i-startIndex][0]
+		oy := slots[i-startIndex][1]
 
 		// Small random jitter (±0.3 tiles) breaks the deterministic
 		// symmetry of mirror matches. Without this, the first entity

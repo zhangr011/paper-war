@@ -26,6 +26,42 @@ func CalcOffsets(ft component.FormationType, spacing int64, roles []component.Bo
 	}
 }
 
+// DiscOffsets returns count slot positions arranged in concentric rings
+// centered on (0,0), filling the innermost ring first. Ring r (0-indexed)
+// sits at radius (r+1)*spacing and holds up to 6*(r+1) units. A partially
+// filled ring is spread evenly around the FULL circle so the cluster has no
+// directional bias and its mass stays centered on the commander. This
+// replaces the old forward-extending spawn grid (oy = (row+1)*spacing) which
+// stacked units ahead of the commander and produced a loose ~1.3-tile cluster.
+// Role assignment is left to the caller.
+func DiscOffsets(count int, spacing int64) [][2]int64 {
+	out := make([][2]int64, count)
+	placed := 0
+	ring := 0
+	for placed < count {
+		radius := int64(ring+1) * spacing
+		cap := 6 * (ring + 1)
+		if cap > count-placed {
+			cap = count - placed
+		}
+		for i := 0; i < cap; i++ {
+			angle := 2 * math.Pi * float64(i) / float64(cap)
+			// spacing is a fixed-point raw value (e.g. fixed.FromFloat(0.6));
+			// keep arithmetic in fixed-point via fixed.Mul so the result is
+			// a fixed-point offset, not a float-scaled blow-up.
+			cosF := fixed.FromFloat(math.Cos(angle))
+			sinF := fixed.FromFloat(math.Sin(angle))
+			out[placed+i] = [2]int64{
+				fixed.Mul(cosF, radius),
+				fixed.Mul(sinF, radius),
+			}
+		}
+		placed += cap
+		ring++
+	}
+	return out
+}
+
 func lineFormation(spacing int64, roles []component.BoidRole) []Offset {
 	offsets := make([]Offset, len(roles))
 	meleeCount := 0

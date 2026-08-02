@@ -1123,7 +1123,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		formCols++
 	}
 	formRows := (unitCount + formCols - 1) / formCols
-	formSpacing := fixed.FromFloat(0.6)
+	formSpacing := fixed.FromFloat(0.1)
 
 	for i, cu := range cmd.Units {
 		cuType, ok := component.ParseCombatUnitType(cu.Type)
@@ -1389,7 +1389,7 @@ func (gs *GameSession) spawnCombatUnits(squadID uint32, cx, cy int64, startIndex
 func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, startIndex, count, formationCount int, playerID uint32, faction uint8, unitType component.CombatUnitType) {
 	em := gs.World.Entities()
 	unitSpeed := defaultCombatUnitSpeed(gs.Map.Width, gs.Map.Height)
-	spacing := fixed.FromFloat(0.6)
+	spacing := fixed.FromFloat(0.1)
 
 	stats := component.CombatUnitTypeTable[unitType]
 
@@ -2067,7 +2067,7 @@ func (gs *GameSession) handleChangeFormation(squadID uint32, formationType uint8
 	for i, m := range members {
 		roles[i] = m.role
 	}
-	spacing := fixed.FromFloat(0.6)
+	spacing := fixed.FromFloat(0.1)
 	offsets := formation.CalcOffsets(component.FormationType(formationType), spacing, roles)
 
 	// 4. Apply new offsets to FormationRoleComponent.

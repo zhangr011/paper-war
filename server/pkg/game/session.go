@@ -1116,12 +1116,13 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	}
 
 	// --- Spawn CombatUnits from roster ---
-	// Formation grid: same layout as spawnCombatUnitsWithType
+	// Centered grid: rows straddle the commander (not all ahead).
 	unitCount := len(cmd.Units)
 	formCols := 1
 	for formCols*formCols < unitCount {
 		formCols++
 	}
+	formRows := (unitCount + formCols - 1) / formCols
 	formSpacing := fixed.FromFloat(0.6)
 
 	for i, cu := range cmd.Units {
@@ -1131,11 +1132,13 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		}
 		cuStats := component.CombatUnitTypeTable[cuType]
 
-		// Formation offset: grid around commander
+		// Centered grid offset (rows straddle the commander, not all ahead).
 		col := i % formCols
 		row := i / formCols
-		ox := int64(col-(formCols-1)/2) * formSpacing
-		oy := int64(row+1) * formSpacing
+		colOffset := float64(col) - float64(formCols-1)/2.0
+		rowOffset := float64(row) - float64(formRows-1)/2.0
+		ox := fixed.Mul(fixed.FromFloat(colOffset), formSpacing)
+		oy := fixed.Mul(fixed.FromFloat(rowOffset), formSpacing)
 
 		// Alternate melee/ranged roles
 		role := component.RoleMelee
@@ -1403,11 +1406,13 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		for cols*cols < formationCount {
 			cols++
 		}
+		rows := (formationCount + cols - 1) / cols
 		row := i / cols
 		col := i % cols
 		colOffset := float64(col) - float64(cols-1)/2.0
+		rowOffset := float64(row) - float64(rows-1)/2.0
 		ox := fixed.Mul(fixed.FromFloat(colOffset), spacing)
-		oy := int64(row+1) * spacing
+		oy := fixed.Mul(fixed.FromFloat(rowOffset), spacing)
 
 		// Mirror formation x-offsets for the enemy faction so the
 		// two formations face each other symmetrically.  Without

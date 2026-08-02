@@ -75,7 +75,7 @@ func TestSoloMatchRunsToCompletion(t *testing.T) {
 	goldStart1 := gs.PlayerGold[1]
 	goldStart2 := gs.PlayerGold[2]
 
-	const MaxTicks = 5000 // 500s at 10Hz; plenty for any solo match
+	const MaxTicks = 10000 // raised from 5000: centered formation narrows combat frontage, matches resolve slower
 	lastTickUnits := 0
 	unitCountChanges := 0
 	goldChanges := 0

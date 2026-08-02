@@ -406,7 +406,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.VisionRadiusTiles,
+			radius: fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
@@ -429,7 +429,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.UnitVisionRadiusTiles,
+			radius: fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
@@ -450,6 +450,27 @@ func (gs *GameSession) updateFog() {
 		grid := gs.FogSys.GetOrCreateGrid(s.pid)
 		grid.BlocksLOS = blocksLOS
 		grid.RevealRadius(s.tileX, s.tileY, s.radius)
+	}
+}
+
+// elevationVisionBonus returns the extra vision tiles a viewer on the given
+// tile gains from height: peak (Elevation 2) +3, slope (1) +1, low/none 0.
+// High ground sees farther — peaks act as scout towers. ADR-0029.
+func (gs *GameSession) elevationVisionBonus(tileX, tileY int32) int32 {
+	if gs.Map == nil {
+		return 0
+	}
+	t := gs.Map.TileAt(tileX, tileY)
+	if t == nil {
+		return 0
+	}
+	switch t.Elevation {
+	case 2:
+		return 3
+	case 1:
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -528,6 +549,17 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 				return component.TerrainPlain
 			}
 			return tile.TerrainType
+		}
+		// Elevation lookup for high-ground range advantage (ADR-0029).
+		gs.combatSys.ElevationFn = func(x, y int32) uint8 {
+			if x < 0 || y < 0 || x >= gs.Map.Width || y >= gs.Map.Height {
+				return 0
+			}
+			tile := gs.Map.TileAt(x, y)
+			if tile == nil {
+				return 0
+			}
+			return tile.Elevation
 		}
 	}
 
@@ -1128,7 +1160,9 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
 			FormationW:    fixed.FromFloat(2.0),
-			NeighborRange: fixed.FromFloat(2.0),
+			// NeighborRange sets the squad cluster radius (separation acts only within it).
+			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
+			NeighborRange: fixed.FromFloat(1.0),
 		})
 
 		// Scale HP by level (each level adds ~15% HP)
@@ -1418,7 +1452,9 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
 			FormationW:    fixed.FromFloat(2.0),
-			NeighborRange: fixed.FromFloat(2.0),
+			// NeighborRange sets the squad cluster radius (separation acts only within it).
+			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
+			NeighborRange: fixed.FromFloat(1.0),
 		})
 
 		gs.addComponent(unitEntity, component.HealthComponent{
@@ -1595,6 +1631,35 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 				tileY := int32(pos.Y >> 12)
 				if !fogGrid.IsCurrentlyVisible(tileX, tileY) {
 					return
+				}
+				// Concealment (ADR-0029): an enemy standing in Forest/Brush is
+				// hidden unless a friendly detector is within detection range OR
+				// it fired recently. The tile stays visible — the viewer sees the
+				// trees, not the ambusher inside.
+				if gs.Map != nil {
+					if tile := gs.Map.TileAt(tileX, tileY); tile != nil && component.Conceals(tile.TerrainType) {
+						firedRecently := false
+						if ac, ok := attackPool.Get(e); ok && ac.LastAttack != 0 &&
+							gs.tickCount-ac.LastAttack <= fog.ConcealRevealTicks {
+							firedRecently = true
+						}
+						if !firedRecently {
+							detected := false
+							detR := fixed.FromFloat(float64(fog.ConcealmentDetectionRadius))
+							for _, did := range gs.Sh.Query(pos.X, pos.Y, detR) {
+								if ecs.Entity(did) == e {
+									continue
+								}
+								if downer, ok := ownerPool.Get(ecs.Entity(did)); ok && downer.PlayerID == playerID {
+									detected = true
+									break
+								}
+							}
+							if !detected {
+								return
+							}
+						}
+					}
 				}
 			}
 		}

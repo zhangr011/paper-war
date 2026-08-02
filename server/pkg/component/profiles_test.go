@@ -98,6 +98,25 @@ func TestBlocksLOS(t *testing.T) {
 	}
 }
 
+// TestConceals verifies the terrains that hide a unit standing in them from
+// distant viewers (ADR-0029). Forest and Brush are concealment; Rock/Wall are
+// hard LOS blockers (not concealment — no unit stands on a Wall, Rock is
+// Heavy-impassable), and open terrain conceals nothing.
+func TestConceals(t *testing.T) {
+	concealing := []TerrainType{TerrainForest, TerrainBrush}
+	clear := []TerrainType{TerrainPlain, TerrainRoad, TerrainHill, TerrainWall, TerrainRock, TerrainSwamp}
+	for _, tt := range concealing {
+		if !Conceals(tt) {
+			t.Errorf("Conceals(%d) = false, want true", tt)
+		}
+	}
+	for _, tt := range clear {
+		if Conceals(tt) {
+			t.Errorf("Conceals(%d) = true, want false", tt)
+		}
+	}
+}
+
 // TestRockPassableForBothProfiles — Rock is heavy cover but must not cut Heavy
 // routes, so it stays passable (slow) for both profiles. Issue #55 phase 3.
 func TestRockPassableForBothProfiles(t *testing.T) {

@@ -27,6 +27,11 @@ type CombatSystem struct {
 	strongholdPool *ecs.ComponentPool[component.StrongholdComponent]
 	MapW, MapH     int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
+	// ElevationFn returns the Hill elevation band (0/1/2) of a tile, 0 off-map
+	// or when no map is present. Each level of height advantage over the target
+	// adds +1 tile to effective attack range (high ground outranges low).
+	// ADR-0029. Nil → flat map, no bonus (preserves legacy test behavior).
+	ElevationFn func(x, y int32) uint8
 	// StateLookup returns the AI state for a squad (0 if unknown or not
 	// AI-driven). Used to suppress auto-pursuit for squads in StateGuard
 	// so they hold ground instead of chasing out-of-range targets. Set
@@ -173,7 +178,18 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		dx := targetPos.X - pos.X
 		dy := targetPos.Y - pos.Y
 		distSq := (dx*dx + dy*dy) >> 12
-		rangeSq := (ac.Range * ac.Range) >> 12
+		// Effective range gains +1 tile per elevation level the attacker holds
+		// over the target (peak vs low = +2). Shooting uphill never shortens
+		// range — the defender already keeps hill cover. ADR-0029.
+		effRange := ac.Range
+		if s.ElevationFn != nil {
+			ax, ay := int32(pos.X>>12), int32(pos.Y>>12)
+			tx, ty := int32(targetPos.X>>12), int32(targetPos.Y>>12)
+			if adv := int64(s.ElevationFn(ax, ay)) - int64(s.ElevationFn(tx, ty)); adv > 0 {
+				effRange = ac.Range + adv<<12 // +1 tile (FIXED_ONE) per level
+			}
+		}
+		rangeSq := (effRange * effRange) >> 12
 
 		if distSq > rangeSq {
 			// Target is out of attack range but still viable.

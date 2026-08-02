@@ -298,3 +298,53 @@ func TestCombatOutOfRange(t *testing.T) {
 		t.Errorf("out of range target HP = %d, want 100 (undamaged)", hp.HP)
 	}
 }
+
+// TestCombatElevationRangeBonus — high ground extends attack range. A unit
+// with range 5 cannot hit a target 6 tiles away at equal elevation, but the
+// same attacker on a peak (Elevation 2) over a low target (0) gains +2 tiles
+// of range and connects. ADR-0029.
+func TestCombatElevationRangeBonus(t *testing.T) {
+	// range 5, target at distance 6 → out of base range.
+	const dist = 6.0
+
+	run := func(attackerElev, targetElev uint8) int32 {
+		em, w, sh, posPool, healthPool, attackPool, boidPool, utPool := setupCombatWorld()
+		cs := w.SystemByName("CombatSystem").(*CombatSystem)
+		cs.ElevationFn = func(x, y int32) uint8 {
+			if x == 0 && y == 0 {
+				return attackerElev
+			}
+			return targetElev
+		}
+
+		attacker := em.Create()
+		posPool.Add(attacker, component.PositionComponent{X: 0, Y: 0})
+		attackPool.Add(attacker, component.AttackComponent{Range: fixed.FromFloat(5.0), Damage: 10, Cooldown: 1})
+		boidPool.Add(attacker, component.BoidComponent{SquadID: 1})
+		utPool.Add(attacker, component.UnitTypeComponent{Type: component.UnitLightInfantry, Weapon: component.WeaponGun, Armor: component.ArmorLight})
+
+		target := em.Create()
+		posPool.Add(target, component.PositionComponent{X: fixed.FromFloat(dist), Y: 0})
+		healthPool.Add(target, component.HealthComponent{HP: 100, MaxHP: 100})
+		boidPool.Add(target, component.BoidComponent{SquadID: 2})
+		utPool.Add(target, component.UnitTypeComponent{Type: component.UnitLightInfantry, Weapon: component.WeaponGun, Armor: component.ArmorLight})
+
+		rebuildSpatialHash(sh, posPool)
+		w.Tick(1)
+		hp, _ := healthPool.Get(target)
+		return hp.HP
+	}
+
+	// Equal elevation (0 vs 0): distance 6 > range 5 → no damage.
+	if hp := run(0, 0); hp != 100 {
+		t.Errorf("equal-elevation HP=%d, want 100 (no height bonus, out of range)", hp)
+	}
+	// Peak over low (2 vs 0): +2 range → effective 7 ≥ 6 → damage applied.
+	if hp := run(2, 0); hp == 100 {
+		t.Errorf("peak-over-low HP=%d, want <100 (height advantage should extend range)", hp)
+	}
+	// Shooting uphill (0 vs 2): no bonus, still out of range → no damage.
+	if hp := run(0, 2); hp != 100 {
+		t.Errorf("uphill HP=%d, want 100 (shooting uphill gains no range)", hp)
+	}
+}

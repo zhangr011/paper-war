@@ -21,7 +21,7 @@ A Commander's recruitment blueprint. Defines slots per CombatUnitType (e.g., 8 L
 _Avoid_: composition, loadout, build
 
 **CombatUnit**:
-A non-Commander entity in a Squad. Has a CombatUnitType that determines weapon, armor, stats, and cost. Types are permanent — never convert. Movement uses attraction (toward formation offset from Commander) and separation (from nearby units). The total cost of fielded units cannot exceed the Commander's Leading Skill. Has a Level (max 6) that grows through kill points (exponential: 2, 4, 8, 16, 32, 64 cumulative). Persistent across matches — death is permanent (Permadeath).
+A non-Commander entity in a Squad. Has a CombatUnitType that determines weapon, armor, stats, and cost. Types are permanent — never convert. Movement uses attraction toward a concentric-ring formation slot centered on the commander (innermost ring first, via formation.DiscOffsets) and separation (from nearby units). The attraction target is `commanderPos + slotOffset`, so the cluster radius is set by the slot layout (ring spacing ~0.6 tile), not by boid separation/attraction weights. The total cost of fielded units cannot exceed the Commander's Leading Skill. Has a Level (max 6) that grows through kill points (exponential: 2, 4, 8, 16, 32, 64 cumulative). Persistent across matches — death is permanent (Permadeath).
 _Avoid_: soldier, unit (ambiguous), troop
 
 **CombatUnitType**:
@@ -162,4 +162,4 @@ _Avoid_: win condition, game mode
 
 - "unit" was used to mean both **CombatUnit** (an entity) and "a game unit" (generic) — resolved: **CombatUnit** is the specific term; "unit" is only used informally.
 - "team" was used to mean both **Squad** and **Faction** — resolved: **Squad** is the command group, **Faction** is the side.
-- "formation" was used to describe both Squad arrangement and formation types (Line/Wedge/Circle/Scatter) — resolved: v1 has no formation switching, units use default loose cluster positioning. "Formation" refers only to the spatial arrangement.
+- "formation" was used to describe both Squad arrangement and formation types (Line/Wedge/Circle/Scatter) — resolved: v1 has no formation switching, units hold a compact concentric-ring cluster centered on the commander (radius governed by formation slot layout, not boid weights). "Formation" refers only to the spatial arrangement.

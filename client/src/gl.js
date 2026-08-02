@@ -381,6 +381,40 @@ void main() {
     n = grain * 0.15;
   }
 
+  // Cast shadows from raised terrain (light from NW → shadows fall SE).
+  // A tile whose up-sun neighbors (N / W / NW) are higher than it receives
+  // a shadow from the adjacent hill, strongest at its NW corner and fading
+  // toward the SE. Shadows are the strongest perceptual height cue — they
+  // make peaks read as physically raised bodies casting onto the low
+  // ground behind them. Applies to every terrain type; no-op when the
+  // elevation texture is absent or nothing up-sun is higher.
+  if (u_elevationTexValid == 1) {
+    vec2 tps = v_worldPos / u_tileSize;
+    ivec2 tcs = ivec2(floor(tps));
+    ivec2 dims = textureSize(u_elevationTex, 0);
+    float e0 = 0.0, sN = 0.0, sW = 0.0, sNW = 0.0;
+    if (tcs.x >= 0 && tcs.y >= 0 && tcs.x < dims.x && tcs.y < dims.y)
+      e0 = float(texelFetch(u_elevationTex, tcs, 0).x);
+    ivec2 snN = tcs + ivec2(0, -1);
+    if (snN.x >= 0 && snN.y >= 0 && snN.x < dims.x && snN.y < dims.y)
+      sN = float(texelFetch(u_elevationTex, snN, 0).x);
+    ivec2 snW = tcs + ivec2(-1, 0);
+    if (snW.x >= 0 && snW.y >= 0 && snW.x < dims.x && snW.y < dims.y)
+      sW = float(texelFetch(u_elevationTex, snW, 0).x);
+    ivec2 snNW = tcs + ivec2(-1, -1);
+    if (snNW.x >= 0 && snNW.y >= 0 && snNW.x < dims.x && snNW.y < dims.y)
+      sNW = float(texelFetch(u_elevationTex, snNW, 0).x);
+    float blocker = max(max(sN, sW), sNW);
+    float drop = blocker - e0;
+    if (drop > 0.0) {
+      vec2 fr2 = fract(tps);
+      // Distance from the NW corner (0 at the corner → 1 at the SE corner).
+      float fromNW = max(fr2.x, fr2.y);
+      float sh = smoothstep(0.40, 0.0, fromNW) * min(drop, 2.0);
+      n -= sh * 0.16;
+    }
+  }
+
   fragColor = vec4(clamp(base.rgb * (1.0 + n), 0.0, 1.0), base.a);
 }
 `;

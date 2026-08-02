@@ -92,6 +92,15 @@ bool isBlendableLand(int n) {
   return false;
 }
 
+// True for natural terrains distinctly DARKER than Plains. Used to feather a
+// plain tile's border toward them so the Plain↔Forest/Swamp boundary is a soft
+// gradient instead of a knife-edge color change. Lighter/warmer neighbors
+// (Hill/Road/Rock) are intentionally excluded — darkening toward them would
+// push the wrong direction.
+bool isDarkerNatural(int n) {
+  return n == 4 || n == 6; // Forest, Swamp
+}
+
 void main() {
   vec4 base = texture(u_texture, v_texcoord) * v_color;
   int t = int(v_tileType + 0.5);
@@ -273,6 +282,39 @@ void main() {
     // Sparse brighter grass blades (~12% of pixels) for subtle highlights.
     float blade = step(0.88, hash21(cell + 7.0));
     n = grain * 0.13 + blade * 0.08;
+    // Border feather: where this plain tile meets a darker natural tile
+    // (Forest/Swamp), creep undergrowth shade into the edge so the boundary
+    // softens into a gradient instead of a hard color seam. Mirrors the
+    // coastline mechanism — sample each of the 4 neighbors, fade the term
+    // by per-pixel distance to that edge. Bounds-checked because
+    // texelFetch off-range returns 0 (= Plain), which would otherwise paint
+    // a false dark border around the map edge.
+    if (u_terrainTexValid == 1) {
+      vec2 tp = v_worldPos / u_tileSize;
+      vec2 fr = fract(tp);
+      ivec2 tc2 = ivec2(floor(tp));
+      ivec2 dm = textureSize(u_terrainTex, 0);
+      const float FEATHER = 0.22;
+      float edge = 0.0;
+      ivec2 nb;
+      nb = tc2 + ivec2(-1, 0);
+      if (nb.x >= 0 && nb.y >= 0 && nb.x < dm.x && nb.y < dm.y &&
+          isDarkerNatural(int(texelFetch(u_terrainTex, nb, 0).x)))
+        edge = max(edge, 1.0 - fr.x / FEATHER);
+      nb = tc2 + ivec2(1, 0);
+      if (nb.x >= 0 && nb.y >= 0 && nb.x < dm.x && nb.y < dm.y &&
+          isDarkerNatural(int(texelFetch(u_terrainTex, nb, 0).x)))
+        edge = max(edge, 1.0 - (1.0 - fr.x) / FEATHER);
+      nb = tc2 + ivec2(0, -1);
+      if (nb.x >= 0 && nb.y >= 0 && nb.x < dm.x && nb.y < dm.y &&
+          isDarkerNatural(int(texelFetch(u_terrainTex, nb, 0).x)))
+        edge = max(edge, 1.0 - fr.y / FEATHER);
+      nb = tc2 + ivec2(0, 1);
+      if (nb.x >= 0 && nb.y >= 0 && nb.x < dm.x && nb.y < dm.y &&
+          isDarkerNatural(int(texelFetch(u_terrainTex, nb, 0).x)))
+        edge = max(edge, 1.0 - (1.0 - fr.y) / FEATHER);
+      n -= clamp(edge, 0.0, 1.0) * 0.12;
+    }
   } else if (t == 16) {
     // Rock: heavy craggy stone — blocky coarse grain (larger cells than
     // Hill so it reads as bigger boulders), diagonal fracture lines, and a

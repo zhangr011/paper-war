@@ -119,11 +119,11 @@ func TestCombatUnitsDoNotSeparate(t *testing.T) {
 	}
 }
 
-// TestCombatUnitDoesNotSteerToFormationSlot: a combat unit sitting on the
-// commander with a nonzero FormationRoleComponent offset, no flow, must not
-// steer toward its (commander+offset) slot. Before the fix the formation
-// attraction pulls it toward the slot; after the fix it stays put.
-func TestCombatUnitDoesNotSteerToFormationSlot(t *testing.T) {
+// TestCombatUnitSteersToFormationSlot: a combat unit sitting on the commander
+// with a nonzero FormationRoleComponent offset, no flow, must steer toward its
+// (commander+offset) slot. The formation-slot attraction is the tether that
+// arranges units around the commander in their slot grid.
+func TestCombatUnitSteersToFormationSlot(t *testing.T) {
 	world, em, posPool, boidPool := newMovementWorld(t, 10, 10)
 	cmdPool := world.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
 	velPool := world.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
@@ -146,7 +146,7 @@ func TestCombatUnitDoesNotSteerToFormationSlot(t *testing.T) {
 	velPool.Add(unit, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
 	boidPool.Add(unit, component.BoidComponent{
 		SquadID: 1, Role: component.RoleRanged,
-		FormationW: fixed.FromFloat(6.0), // large so the red failure is unambiguous
+		FormationW: fixed.FromFloat(6.0), // large so the movement is unambiguous
 	})
 	movePool.Add(unit, component.MovementComponent{ProfileID: 0})
 	// No flow: path target = own position.
@@ -160,9 +160,8 @@ func TestCombatUnitDoesNotSteerToFormationSlot(t *testing.T) {
 	after, _ := posPool.Get(unit)
 
 	dx := fixed.ToFloat(after.X) - fixed.ToFloat(before.X)
-	dy := fixed.ToFloat(after.Y) - fixed.ToFloat(before.Y)
-	if math.Abs(dx) > 1e-3 || math.Abs(dy) > 1e-3 {
-		t.Errorf("combat unit steered toward its formation slot despite no flow: moved (%.4f, %.4f) (formation force should be gone)",
-			dx, dy)
+	if dx <= 0 {
+		t.Errorf("combat unit did not steer toward its formation slot (offset +3 X): dx=%.4f (expected positive — east)",
+			dx)
 	}
 }

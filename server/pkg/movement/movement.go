@@ -151,14 +151,22 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 
 		// Attraction force. Two sources:
 		//  - player beacon (active move order) for player units;
-		//  - cohesion toward the commander's position for non-commander units
-		//    (no formation-slot offsets — combat units clump on the commander).
+		//  - formation-slot attraction toward (commander + slot offset) for
+		//    non-commander units. The slot offset arranges the squad into its
+		//    grid around the commander. Separation is not applied.
 		var attrFX, attrFY int64
 		if useBeacon {
 			attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
 		} else if bc.Role != component.RoleCommander {
 			if cpos, ok := commanderPos[bc.SquadID]; ok {
-				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, cpos)
+				target := [2]int64{cpos[0], cpos[1]}
+				if s.formationRolePool != nil {
+					if fr, ok := s.formationRolePool.Get(e); ok {
+						target[0] += fr.OffsetX
+						target[1] += fr.OffsetY
+					}
+				}
+				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, target)
 			}
 		}
 

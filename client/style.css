@@ -1760,7 +1760,6 @@ canvas:focus-visible {
    smaller icon buttons (formation, recruit, build, minimap controls). */
 .lobby-btn,
 .cmd-type-btn,
-.formation-btn,
 .recruit-btn,
 .build-btn,
 .clash-size-btn,
@@ -1788,7 +1787,6 @@ button,
 [role="button"],
 .lobby-btn,
 .cmd-type-btn,
-.formation-btn,
 .recruit-btn,
 .build-btn {
   transition:

@@ -183,7 +183,7 @@ export class InputHandler {
     this.keys.add(e.key.toLowerCase());
 
     // Dispatch to the high-level handler (main.js). This fires real
-    // gameplay hotkeys: A=attack-ground, Q/W/E/R=tactics, 1-4=formation,
+    // gameplay hotkeys: A=attack-ground, Q/W/E/R=tactics,
     // Escape=cancel/settings, Space=jump-to-base. (Issue #35: this call
     // was missing entirely, so all those bindings were dead code.)
     //

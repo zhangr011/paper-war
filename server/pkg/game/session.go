@@ -17,7 +17,6 @@ import (
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 	"github.com/user/paper-war/server/pkg/fog"
-	"github.com/user/paper-war/server/pkg/formation"
 	"github.com/user/paper-war/server/pkg/movement"
 	"github.com/user/paper-war/server/pkg/network"
 	"github.com/user/paper-war/server/pkg/objective"
@@ -151,8 +150,6 @@ func NewGameSession() *GameSession {
 	cmdPool := ecs.NewComponentPool[component.CommanderComponent]()
 	movePool := ecs.NewComponentPool[component.MovementComponent]()
 	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
-	formationPool := ecs.NewComponentPool[component.FormationComponent]()
-	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 	ownerPool := ecs.NewComponentPool[component.OwnerComponent]()
 	projPool := ecs.NewComponentPool[component.ProjectileComponent]()
 	killPointsPool := ecs.NewComponentPool[component.KillPointsComponent]()
@@ -168,8 +165,6 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.CommanderComponent{}, cmdPool)
 	gs.World.RegisterPool(component.MovementComponent{}, movePool)
 	gs.World.RegisterPool(component.PathfindingComponent{}, pathPool)
-	gs.World.RegisterPool(component.FormationComponent{}, formationPool)
-	gs.World.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 	gs.World.RegisterPool(component.OwnerComponent{}, ownerPool)
 	gs.World.RegisterPool(component.ProjectileComponent{}, projPool)
 	gs.World.RegisterPool(component.KillPointsComponent{}, killPointsPool)
@@ -953,7 +948,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 		SeparationW:   fixed.FromFloat(0.1),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(6.0),
+		AttractionW:    fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -994,10 +989,6 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 
 	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cmdStats.Armor)})
 	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
-	gs.addComponent(cmdEntity, component.FormationRoleComponent{
-		Role: component.RoleCommander,
-	})
-
 	faction := component.FactionPlayer
 	if playerID == 2 {
 		faction = component.FactionEnemy
@@ -1049,7 +1040,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		SeparationW:   fixed.FromFloat(0.1),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(6.0),
+		AttractionW:    fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -1094,10 +1085,6 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 
 	gs.addComponent(cmdEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cmdStats.Armor)})
 	gs.addComponent(cmdEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
-	gs.addComponent(cmdEntity, component.FormationRoleComponent{
-		Role: component.RoleCommander,
-	})
-
 	faction := component.FactionPlayer
 	if playerID == 2 {
 		faction = component.FactionEnemy
@@ -1162,7 +1149,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			SeparationW:   fixed.FromFloat(0.1),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(6.0),
+			AttractionW:    fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),
@@ -1191,11 +1178,6 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		})
 		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cuStats.Armor)})
 		gs.addComponent(cuEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
-		gs.addComponent(cuEntity, component.FormationRoleComponent{
-			Role:    role,
-			OffsetX: ox,
-			OffsetY: oy,
-		})
 		gs.addComponent(cuEntity, component.OwnerComponent{
 			PlayerID: playerID,
 			Faction:  faction,
@@ -1456,7 +1438,7 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			SeparationW:   fixed.FromFloat(0.1),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(6.0),
+			AttractionW:    fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),
@@ -1485,11 +1467,6 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 
 		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(stats.Armor)})
 		gs.addComponent(unitEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
-		gs.addComponent(unitEntity, component.FormationRoleComponent{
-			Role:    role,
-			OffsetX: ox,
-			OffsetY: oy,
-		})
 		gs.addComponent(unitEntity, component.OwnerComponent{
 			PlayerID: playerID,
 			Faction:  faction,
@@ -1539,7 +1516,6 @@ func (gs *GameSession) removeComponents(e ecs.Entity) {
 	gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent]).Remove(e)
 	gs.World.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent]).Remove(e)
 	gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent]).Remove(e)
-	gs.World.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent]).Remove(e)
 }
 
 // HandleCommand processes a player command from the network.
@@ -1556,8 +1532,6 @@ func (gs *GameSession) HandleCommand(clientID uint32, cmd *network.Command) {
 		gs.handleAttackTarget(cmd.SquadID, cmd.TargetID)
 	case network.CmdAttackGround:
 		gs.handleAttackGround(cmd.SquadID, int64(cmd.TargetX), int64(cmd.TargetY))
-	case network.CmdChangeFormation:
-		gs.handleChangeFormation(cmd.SquadID, cmd.FormationType)
 	case network.CmdTacticalOrder:
 		gs.handleTacticalOrder(cmd.SquadID, cmd.OrderType)
 	case network.CmdBuild:
@@ -2033,52 +2007,6 @@ func (gs *GameSession) handleAttackGround(squadID uint32, targetX, targetY int64
 	})
 }
 
-func (gs *GameSession) handleChangeFormation(squadID uint32, formationType uint8) {
-	squadID = gs.resolveSquadID(squadID)
-	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
-	formationPool := gs.World.Pool(component.FormationComponent{}).(*ecs.ComponentPool[component.FormationComponent])
-	formationRolePool := gs.World.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent])
-
-	// 1. Update FormationType on FormationComponent for all squad members.
-	// 2. Collect roles in entity order for CalcOffsets.
-	type entry struct {
-		entity ecs.Entity
-		role   component.BoidRole
-	}
-	var members []entry
-	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
-		if bc.SquadID != squadID {
-			return
-		}
-		if fc, ok := formationPool.GetPtr(e); ok {
-			fc.FormationType = component.FormationType(formationType)
-		}
-		if bc.Role != component.RoleCommander {
-			members = append(members, entry{entity: e, role: bc.Role})
-		}
-	})
-
-	if len(members) == 0 {
-		return
-	}
-
-	// 3. Compute new offsets via formation.CalcOffsets.
-	roles := make([]component.BoidRole, len(members))
-	for i, m := range members {
-		roles[i] = m.role
-	}
-	spacing := fixed.FromFloat(0.5)
-	offsets := formation.CalcOffsets(component.FormationType(formationType), spacing, roles)
-
-	// 4. Apply new offsets to FormationRoleComponent.
-	for i, m := range members {
-		if fr, ok := formationRolePool.GetPtr(m.entity); ok {
-			fr.OffsetX = offsets[i].DX
-			fr.OffsetY = offsets[i].DY
-		}
-	}
-}
-
 func (gs *GameSession) handleTacticalOrder(squadID uint32, orderType uint8) {
 	squadID = gs.resolveSquadID(squadID)
 	cmdPool := gs.World.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
@@ -2131,10 +2059,6 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 		p.Add(e, comp.(component.MovementComponent))
 	case *ecs.ComponentPool[component.PathfindingComponent]:
 		p.Add(e, comp.(component.PathfindingComponent))
-	case *ecs.ComponentPool[component.FormationComponent]:
-		p.Add(e, comp.(component.FormationComponent))
-	case *ecs.ComponentPool[component.FormationRoleComponent]:
-		p.Add(e, comp.(component.FormationRoleComponent))
 	case *ecs.ComponentPool[component.OwnerComponent]:
 		p.Add(e, comp.(component.OwnerComponent))
 	case *ecs.ComponentPool[component.ProjectileComponent]:

@@ -414,8 +414,8 @@ func main() {
 			// produce identical match outcomes every time. The bias-break
 			// only needs continuous entropy, so the magnitude is kept at
 			// ±0.3 tile (matching the spawn jitter in spawnCombatUnitsWithType,
-			// not 3× it) — a larger value just spreads the formation.
-			// Commanders are excluded: they are the formation anchor, and
+			// not 3× it) — a larger value just spreads the spawn cluster.
+			// Commanders are excluded: they are the squad anchor, and
 			// jittering them scatters the whole squad's reference frame.
 			posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
 			boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])

@@ -54,7 +54,7 @@ func TestSpeedWithFixedFromFloatMoves(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(1.0),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
 	movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -117,7 +117,7 @@ func TestSpeedDivisorSlowsMovement(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(1.0),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
 	movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -199,7 +199,7 @@ func runSingleUnitStraightLineMove(t *testing.T, speed int64) int64 {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(1.0),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
 	movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -238,7 +238,6 @@ func TestSquadStaysWithCommander(t *testing.T) {
 	movePool := ecs.NewComponentPool[component.MovementComponent]()
 	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
 	cmdPool := ecs.NewComponentPool[component.CommanderComponent]()
-	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 
 	w.RegisterPool(component.PositionComponent{}, posPool)
 	w.RegisterPool(component.VelocityComponent{}, velPool)
@@ -246,7 +245,6 @@ func TestSquadStaysWithCommander(t *testing.T) {
 	w.RegisterPool(component.MovementComponent{}, movePool)
 	w.RegisterPool(component.PathfindingComponent{}, pathPool)
 	w.RegisterPool(component.CommanderComponent{}, cmdPool)
-	w.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 
 	ms := &MovementSystem{
 		Gm:       gm,
@@ -274,7 +272,7 @@ func TestSquadStaysWithCommander(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
 	movePool.Add(cmd, component.MovementComponent{ProfileID: 0})
@@ -298,15 +296,11 @@ func TestSquadStaysWithCommander(t *testing.T) {
 			SeparationW:   fixed.FromFloat(1.5),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(2.0),
+			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(3.0),
 		})
 		movePool.Add(u, component.MovementComponent{ProfileID: 0})
 		pathPool.Add(u, component.PathfindingComponent{TargetX: targetX, TargetY: targetY})
-		formationRolePool.Add(u, component.FormationRoleComponent{
-			OffsetX: off[0],
-			OffsetY: off[1],
-		})
 	}
 
 	// Run 50 ticks

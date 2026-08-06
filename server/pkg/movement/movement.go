@@ -24,7 +24,6 @@ type MovementSystem struct {
 	movePool          *ecs.ComponentPool[component.MovementComponent]
 	pathPool          *ecs.ComponentPool[component.PathfindingComponent]
 	cmdPool           *ecs.ComponentPool[component.CommanderComponent]
-	formationRolePool *ecs.ComponentPool[component.FormationRoleComponent]
 	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
 }
 
@@ -47,9 +46,6 @@ func (s *MovementSystem) Init(w *ecs.World) {
 	s.pathPool = w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
 	if p := w.Pool(component.CommanderComponent{}); p != nil {
 		s.cmdPool = p.(*ecs.ComponentPool[component.CommanderComponent])
-	}
-	if p := w.Pool(component.FormationRoleComponent{}); p != nil {
-		s.formationRolePool = p.(*ecs.ComponentPool[component.FormationRoleComponent])
 	}
 	if p := w.Pool(component.OwnerComponent{}); p != nil {
 		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
@@ -151,29 +147,21 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 
 		// Attraction force. Two sources:
 		//  - player beacon (active move order) for player units;
-		//  - formation-slot attraction toward (commander + slot offset) for
-		//    non-commander units. The slot offset arranges the squad into its
-		//    grid around the commander. Separation is not applied.
+		//  - commander-attraction (cohesion): non-commander units steer toward
+		//    their commander's position so the squad clusters on it.
 		var attrFX, attrFY int64
 		if useBeacon {
 			attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, *s.BeaconPos)
 		} else if bc.Role != component.RoleCommander {
 			if cpos, ok := commanderPos[bc.SquadID]; ok {
-				target := [2]int64{cpos[0], cpos[1]}
-				if s.formationRolePool != nil {
-					if fr, ok := s.formationRolePool.Get(e); ok {
-						target[0] += fr.OffsetX
-						target[1] += fr.OffsetY
-					}
-				}
-				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, target)
+				attrFX, attrFY = boid.AttractionForce([2]int64{pos.X, pos.Y}, cpos)
 			}
 		}
 
 		totalFX := flowFX +
-			fixed.Mul(attrFX, bc.FormationW)
+			fixed.Mul(attrFX, bc.AttractionW)
 		totalFY := flowFY +
-			fixed.Mul(attrFY, bc.FormationW)
+			fixed.Mul(attrFY, bc.AttractionW)
 
 		maxForce := fixed.FromFloat(5.0)
 		if hasVel && vel.Speed > maxForce {

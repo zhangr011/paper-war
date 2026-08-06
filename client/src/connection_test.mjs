@@ -111,17 +111,6 @@ describe('Command encoding (client → server)', () => {
     assert.equal(v.getInt32(17, true), 200, 'targetY');
   });
 
-  test('sendChangeFormation writes correct wire format', () => {
-    const c = makeConnection();
-    c.sendChangeFormation(1, 2); // squadID=1, formationType=2 (Wedge)
-    const buf = c.ws.sent[0];
-    assert.equal(buf.byteLength, 14, 'CmdChangeFormation should be 14 bytes');
-    const v = new DataView(buf);
-    assert.equal(v.getUint8(0), 0x04, 'command type');
-    assert.equal(v.getUint32(9, true), 1, 'squadID');
-    assert.equal(v.getUint8(13), 2, 'formationType');
-  });
-
   test('sendBuild writes correct wire format', () => {
     const c = makeConnection();
     c.sendBuild(1, 0x1000, 0x2000); // Tower at (4096, 8192) in fixed-point

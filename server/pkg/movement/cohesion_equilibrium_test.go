@@ -241,7 +241,7 @@ func TestCohesionEquilibriumMeasurement(t *testing.T) {
 	verifySpawnedWeights(t)
 
 	// ---------- 1. BASELINE: current committed weights (SeparationW=1.5) ----------
-	t.Log("=== BASELINE: committed weights (SeparationW=1.5, FormationW=2.0,")
+	t.Log("=== BASELINE: committed weights (SeparationW=1.5, AttractionW=2.0,")
 	t.Log("    NeighborRange=1.0, CohesionW=0.8, AlignmentW=1.0). Zero flow (see setup).")
 	t.Log("    Equilibrium checkpoints (tick 100/300/500) shown per N to confirm plateau.")
 	t.Log("")
@@ -317,11 +317,11 @@ func verifySpawnedWeights(t *testing.T) {
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	expectedCombat := map[string]float64{
-		"SeparationW": 1.5, "FormationW": 2.0, "NeighborRange": 2.0,
+		"SeparationW": 1.5, "AttractionW": 2.0, "NeighborRange": 2.0,
 		"CohesionW": 0.8, "AlignmentW": 1.0,
 	}
 	expectedCmd := map[string]float64{
-		"SeparationW": 1.5, "FormationW": 2.0, "NeighborRange": 2.0,
+		"SeparationW": 1.5, "AttractionW": 2.0, "NeighborRange": 2.0,
 		"CohesionW": 0.8, "AlignmentW": 1.0,
 	}
 
@@ -340,7 +340,7 @@ func verifySpawnedWeights(t *testing.T) {
 			"SeparationW":   fixed.ToFloat(bc.SeparationW),
 			"CohesionW":     fixed.ToFloat(bc.CohesionW),
 			"AlignmentW":    fixed.ToFloat(bc.AlignmentW),
-			"FormationW":    fixed.ToFloat(bc.FormationW),
+			"AttractionW":    fixed.ToFloat(bc.AttractionW),
 			"NeighborRange": fixed.ToFloat(bc.NeighborRange),
 		}
 		discrepancy := ""
@@ -355,7 +355,7 @@ func verifySpawnedWeights(t *testing.T) {
 			speed = fixed.ToFloat(v.Speed)
 		}
 		t.Logf("  [%s] SepW=%.2f FormW=%.2f CohW=%.2f AlignW=%.2f NbrRange=%.2f speed(tiles/tick)=%.4f%s",
-			label, actual["SeparationW"], actual["FormationW"], actual["CohesionW"],
+			label, actual["SeparationW"], actual["AttractionW"], actual["CohesionW"],
 			actual["AlignmentW"], actual["NeighborRange"], speed, discrepancy)
 	})
 	t.Log("")

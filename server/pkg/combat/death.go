@@ -16,8 +16,6 @@ type DeathSystem struct {
 	cmdPool           *ecs.ComponentPool[component.CommanderComponent]
 	movePool          *ecs.ComponentPool[component.MovementComponent]
 	pathPool          *ecs.ComponentPool[component.PathfindingComponent]
-	formationPool     *ecs.ComponentPool[component.FormationComponent]
-	formationRolePool *ecs.ComponentPool[component.FormationRoleComponent]
 	ownerPool         *ecs.ComponentPool[component.OwnerComponent]
 	killPointsPool    *ecs.ComponentPool[component.KillPointsComponent]
 	unitTypePool      *ecs.ComponentPool[component.UnitTypeComponent]
@@ -92,12 +90,6 @@ func (s *DeathSystem) Init(w *ecs.World) {
 	}
 	s.movePool = w.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent])
 	s.pathPool = w.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
-	if p := w.Pool(component.FormationComponent{}); p != nil {
-		s.formationPool = p.(*ecs.ComponentPool[component.FormationComponent])
-	}
-	if p := w.Pool(component.FormationRoleComponent{}); p != nil {
-		s.formationRolePool = p.(*ecs.ComponentPool[component.FormationRoleComponent])
-	}
 	if p := w.Pool(component.OwnerComponent{}); p != nil {
 		s.ownerPool = p.(*ecs.ComponentPool[component.OwnerComponent])
 	}
@@ -239,12 +231,6 @@ func (s *DeathSystem) Tick(w *ecs.World, tick uint32) {
 		s.pathPool.Remove(e)
 		if s.cmdPool != nil {
 			s.cmdPool.Remove(e)
-		}
-		if s.formationPool != nil {
-			s.formationPool.Remove(e)
-		}
-		if s.formationRolePool != nil {
-			s.formationRolePool.Remove(e)
 		}
 		if s.ownerPool != nil {
 			s.ownerPool.Remove(e)

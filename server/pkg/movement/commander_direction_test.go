@@ -64,7 +64,7 @@ func TestCommanderMovesTowardTarget_YAxis(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 	movePool.Add(cmdEntity, component.MovementComponent{ProfileID: 0})
@@ -85,7 +85,7 @@ func TestCommanderMovesTowardTarget_YAxis(t *testing.T) {
 			SeparationW:   fixed.FromFloat(1.5),
 			CohesionW:     fixed.FromFloat(0.8),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(2.0),
+			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(2.0),
 		})
 		movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -162,7 +162,7 @@ func TestCommanderMovesTowardTarget_XAxis(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(0.8),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 	movePool.Add(cmdEntity, component.MovementComponent{ProfileID: 0})

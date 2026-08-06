@@ -4,7 +4,7 @@
 // Regression test for #35: _onKeyDown used to handle tactical hotkeys
 // inline (with a desynced keymap sending to a dead server path) and never
 // invoked this.onKeyDown. Result: every binding in main.js's onKeyDown
-// (A=attack-ground, 1-4=formations, Escape=cancel, Space=jump-to-base)
+// (A=attack-ground, Escape=cancel, Space=jump-to-base)
 // was dead code. Q/W/E/R "worked" but only via the stale duplicate.
 
 import assert from 'node:assert/strict';

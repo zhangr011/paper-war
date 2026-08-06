@@ -6,7 +6,6 @@ import (
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
-	"github.com/user/paper-war/server/pkg/formation"
 	"github.com/user/paper-war/server/pkg/pathfinding"
 	"github.com/user/paper-war/server/pkg/spatial"
 	"github.com/user/paper-war/server/pkg/tilemap"
@@ -56,7 +55,7 @@ func TestMovementSystemMovesTowardTarget(t *testing.T) {
 		SeparationW:   fixed.FromFloat(1.5),
 		CohesionW:     fixed.FromFloat(1.0),
 		AlignmentW:    fixed.FromFloat(1.0),
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
 	movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -108,15 +107,21 @@ func TestSquadMovesTogether(t *testing.T) {
 		component.RoleMelee, component.RoleMelee,
 		component.RoleRanged, component.RoleRanged,
 	}
-	offsets := formation.CalcOffsets(component.FormationLine, fixed.FromFloat(1.5), roles)
+	// Simple inline spawn spread (no formation package): 4 units in a line.
+	offsets := [4][2]int64{
+		{fixed.FromFloat(-1.5), 0},
+		{fixed.FromFloat(-0.5), 0},
+		{fixed.FromFloat(0.5), 0},
+		{fixed.FromFloat(1.5), 0},
+	}
 	squadCenterX := fixed.FromFloat(5.0)
 	squadCenterY := fixed.FromFloat(5.0)
 
 	for i := 0; i < 4; i++ {
 		e := em.Create()
 		posPool.Add(e, component.PositionComponent{
-			X: squadCenterX + offsets[i].DX,
-			Y: squadCenterY + offsets[i].DY,
+			X: squadCenterX + offsets[i][0],
+			Y: squadCenterY + offsets[i][1],
 		})
 		velPool.Add(e, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
 		boidPool.Add(e, component.BoidComponent{
@@ -125,7 +130,7 @@ func TestSquadMovesTogether(t *testing.T) {
 			SeparationW:   fixed.FromFloat(1.5),
 			CohesionW:     fixed.FromFloat(1.0),
 			AlignmentW:    fixed.FromFloat(1.0),
-			FormationW:    fixed.FromFloat(2.0),
+			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(3.0),
 		})
 		movePool.Add(e, component.MovementComponent{ProfileID: 0})
@@ -146,7 +151,7 @@ func TestSquadMovesTogether(t *testing.T) {
 			t.Errorf("unit %d not found", i)
 			continue
 		}
-		if pos.X <= fixed.FromFloat(5.0)+offsets[i].DX {
+		if pos.X <= fixed.FromFloat(5.0)+offsets[i][0] {
 			t.Errorf("unit %d didn't move: (%v, %v)", i, fixed.ToFloat(pos.X), fixed.ToFloat(pos.Y))
 		}
 	}

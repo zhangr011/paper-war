@@ -46,21 +46,6 @@ func TestEncodeDecodeAttackTarget(t *testing.T) {
 	}
 }
 
-func TestEncodeDecodeChangeFormation(t *testing.T) {
-	orig := &Command{
-		Type: CmdChangeFormation, ClientSeq: 10, PredictedTick: 200,
-		SquadID: 1, FormationType: 2,
-	}
-	data := EncodeCommand(orig)
-	decoded, err := DecodeCommand(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decoded.FormationType != 2 {
-		t.Errorf("FormationType = %d, want 2", decoded.FormationType)
-	}
-}
-
 func TestDecodeInvalidData(t *testing.T) {
 	_, err := DecodeCommand([]byte{0xFF}) // too short
 	if err == nil {
@@ -73,7 +58,6 @@ func TestRoundTripAllTypes(t *testing.T) {
 		{Type: CmdMoveSquad, SquadID: 1, TargetX: 100, TargetY: 200},
 		{Type: CmdAttackTarget, SquadID: 2, TargetID: 50},
 		{Type: CmdAttackGround, SquadID: 3, TargetX: -500, TargetY: 300},
-		{Type: CmdChangeFormation, SquadID: 4, FormationType: 3},
 		{Type: CmdTacticalOrder, SquadID: 5, OrderType: 1},
 	}
 	for _, orig := range cmds {

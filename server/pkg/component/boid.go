@@ -15,7 +15,7 @@ type BoidComponent struct {
 	SeparationW   int64
 	CohesionW     int64
 	AlignmentW    int64
-	FormationW    int64
+	AttractionW   int64
 	NeighborRange int64
 	// GarrisonedIn is the entity ID of the Stronghold this unit is inside, or
 	// 0 when not garrisoned. Garrisoned units don't move (movement skips them),

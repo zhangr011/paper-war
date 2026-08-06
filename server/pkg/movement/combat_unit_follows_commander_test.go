@@ -43,7 +43,7 @@ func TestCombatUnitMovesTowardCommander(t *testing.T) {
 	velPool.Add(unit, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
 	boidPool.Add(unit, component.BoidComponent{
 		SquadID: 1, Role: component.RoleRanged,
-		FormationW: fixed.FromFloat(6.0),
+		AttractionW: fixed.FromFloat(6.0),
 	})
 	movePool.Add(unit, component.MovementComponent{ProfileID: 0})
 	// No PathfindingComponent → flow force is zeroed (movement.go skips the

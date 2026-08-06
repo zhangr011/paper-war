@@ -88,7 +88,7 @@ func TestCommanderDeath(t *testing.T) {
 	posPool.Add(unit, component.PositionComponent{X: fixed.FromFloat(2.0), Y: 0})
 	boidPool.Add(unit, component.BoidComponent{
 		SquadID: 1, Role: component.RoleMelee,
-		SeparationW: 100, CohesionW: 100, FormationW: 200,
+		SeparationW: 100, CohesionW: 100, AttractionW: 200,
 	})
 
 	sh.Clear()
@@ -104,8 +104,8 @@ func TestCommanderDeath(t *testing.T) {
 	}
 
 	b, _ := boidPool.Get(unit)
-	if b.FormationW >= 200 {
-		t.Errorf("formation weight should decrease after commander death, got %d", b.FormationW)
+	if b.AttractionW >= 200 {
+		t.Errorf("attraction weight should decrease after commander death, got %d", b.AttractionW)
 	}
 }
 

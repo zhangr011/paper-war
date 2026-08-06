@@ -1,13 +1,9 @@
 package movement
 
-// Behavioral spec for the removal of the formation attraction and spread
-// (separation) forces from MovementSystem. Combat-unit movement is now driven
-// by the flow field (and the player beacon) only — units no longer repel each
-// other and no longer steer toward a formation slot.
-//
-// These tests go red on the current code (the forces still fire) and green
-// once the sepFX*SepW and formation-slot attrFX*FormW terms are dropped from
-// the combat-unit force sum in movement.go.
+// Behavioral spec for combat-unit steering in MovementSystem. With the
+// formation system removed, combat-unit movement is driven by the flow field,
+// the player beacon, and commander-attraction — units no longer steer toward
+// assigned formation slots.
 
 import (
 	"math"
@@ -42,7 +38,6 @@ func newMovementWorld(t *testing.T, w, h int32) (*ecs.World, *ecs.EntityManager,
 	movePool := ecs.NewComponentPool[component.MovementComponent]()
 	pathPool := ecs.NewComponentPool[component.PathfindingComponent]()
 	cmdPool := ecs.NewComponentPool[component.CommanderComponent]()
-	formationRolePool := ecs.NewComponentPool[component.FormationRoleComponent]()
 
 	world.RegisterPool(component.PositionComponent{}, posPool)
 	world.RegisterPool(component.VelocityComponent{}, velPool)
@@ -50,7 +45,6 @@ func newMovementWorld(t *testing.T, w, h int32) (*ecs.World, *ecs.EntityManager,
 	world.RegisterPool(component.MovementComponent{}, movePool)
 	world.RegisterPool(component.PathfindingComponent{}, pathPool)
 	world.RegisterPool(component.CommanderComponent{}, cmdPool)
-	world.RegisterPool(component.FormationRoleComponent{}, formationRolePool)
 
 	profile := testProfile()
 	ms := &MovementSystem{
@@ -77,7 +71,7 @@ func TestCombatUnitsDoNotSeparate(t *testing.T) {
 		SquadID:       1,
 		Role:          component.RoleRanged,
 		SeparationW:   fixed.FromFloat(1.5), // large so the red failure is unambiguous
-		FormationW:    fixed.FromFloat(2.0),
+		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(1.0),
 	}
 
@@ -116,52 +110,5 @@ func TestCombatUnitsDoNotSeparate(t *testing.T) {
 	if math.Abs(after-before) > 1e-3 {
 		t.Errorf("combat units drifted apart despite no flow: dist %.4f → %.4f (separation force should be gone)",
 			before, after)
-	}
-}
-
-// TestCombatUnitSteersToFormationSlot: a combat unit sitting on the commander
-// with a nonzero FormationRoleComponent offset, no flow, must steer toward its
-// (commander+offset) slot. The formation-slot attraction is the tether that
-// arranges units around the commander in their slot grid.
-func TestCombatUnitSteersToFormationSlot(t *testing.T) {
-	world, em, posPool, boidPool := newMovementWorld(t, 10, 10)
-	cmdPool := world.Pool(component.CommanderComponent{}).(*ecs.ComponentPool[component.CommanderComponent])
-	velPool := world.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
-	movePool := world.Pool(component.MovementComponent{}).(*ecs.ComponentPool[component.MovementComponent])
-	pathPool := world.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
-	formationRolePool := world.Pool(component.FormationRoleComponent{}).(*ecs.ComponentPool[component.FormationRoleComponent])
-
-	// Commander at (5,5), stationary (path target = own position).
-	cmd := em.Create()
-	posPool.Add(cmd, component.PositionComponent{X: fixed.FromFloat(5.0), Y: fixed.FromFloat(5.0)})
-	velPool.Add(cmd, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
-	boidPool.Add(cmd, component.BoidComponent{SquadID: 1, Role: component.RoleCommander, NeighborRange: fixed.FromFloat(1.0)})
-	movePool.Add(cmd, component.MovementComponent{ProfileID: 0})
-	pathPool.Add(cmd, component.PathfindingComponent{TargetX: fixed.FromFloat(5.0), TargetY: fixed.FromFloat(5.0)})
-	cmdPool.Add(cmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
-
-	// Combat unit on the commander, with a slot offset 3 tiles east.
-	unit := em.Create()
-	posPool.Add(unit, component.PositionComponent{X: fixed.FromFloat(5.0), Y: fixed.FromFloat(5.0)})
-	velPool.Add(unit, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
-	boidPool.Add(unit, component.BoidComponent{
-		SquadID: 1, Role: component.RoleRanged,
-		FormationW: fixed.FromFloat(6.0), // large so the movement is unambiguous
-	})
-	movePool.Add(unit, component.MovementComponent{ProfileID: 0})
-	// No flow: path target = own position.
-	pathPool.Add(unit, component.PathfindingComponent{TargetX: fixed.FromFloat(5.0), TargetY: fixed.FromFloat(5.0)})
-	formationRolePool.Add(unit, component.FormationRoleComponent{OffsetX: fixed.FromFloat(3.0)})
-
-	before, _ := posPool.Get(unit)
-	for tick := uint32(1); tick <= 10; tick++ {
-		world.Tick(tick)
-	}
-	after, _ := posPool.Get(unit)
-
-	dx := fixed.ToFloat(after.X) - fixed.ToFloat(before.X)
-	if dx <= 0 {
-		t.Errorf("combat unit did not steer toward its formation slot (offset +3 X): dx=%.4f (expected positive — east)",
-			dx)
 	}
 }

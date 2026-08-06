@@ -7,7 +7,6 @@
 export const CMD_MOVE_SQUAD = 0x01;
 export const CMD_ATTACK_TARGET = 0x02;
 export const CMD_ATTACK_GROUND = 0x03;
-export const CMD_CHANGE_FORMATION = 0x04;
 export const CMD_TACTICAL_ORDER = 0x05;
 export const CMD_BUILD = 0x08;
 
@@ -217,17 +216,6 @@ export class Connection {
     let off = this._writeHeader(buf, CMD_ATTACK_GROUND, squadID, predictedTick);
     view.setInt32(off, targetX, true); off += 4;
     view.setInt32(off, targetY, true); off += 4;
-    this.send(buf);
-  }
-
-  /**
-   * CmdChangeFormation (0x04): header + FormationType(uint8) = 14 bytes.
-   */
-  sendChangeFormation(squadID, formationType) {
-    const buf = new ArrayBuffer(CMD_HEADER_SIZE + 1);
-    const view = new DataView(buf);
-    const off = this._writeHeader(buf, CMD_CHANGE_FORMATION, squadID, 0);
-    view.setUint8(off, formationType);
     this.send(buf);
   }
 

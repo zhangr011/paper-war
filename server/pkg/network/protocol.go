@@ -10,7 +10,6 @@ const (
 	CmdMoveSquad       uint8 = 0x01
 	CmdAttackTarget    uint8 = 0x02
 	CmdAttackGround    uint8 = 0x03
-	CmdChangeFormation uint8 = 0x04
 	CmdTacticalOrder   uint8 = 0x05
 	CmdRecruit         uint8 = 0x06
 	CmdSelectCommander uint8 = 0x07
@@ -25,7 +24,6 @@ type Command struct {
 	TargetX       int32
 	TargetY       int32
 	TargetID      uint32
-	FormationType uint8
 	OrderType     uint8
 	RecruitType   uint8 // CombatUnitType for CmdRecruit
 }
@@ -43,8 +41,6 @@ func EncodeCommand(cmd *Command) []byte {
 		binary.Write(buf, binary.LittleEndian, cmd.TargetY)
 	case CmdAttackTarget:
 		binary.Write(buf, binary.LittleEndian, cmd.TargetID)
-	case CmdChangeFormation:
-		binary.Write(buf, binary.LittleEndian, cmd.FormationType)
 	case CmdTacticalOrder:
 		binary.Write(buf, binary.LittleEndian, cmd.OrderType)
 	case CmdRecruit:
@@ -85,10 +81,6 @@ func DecodeCommand(data []byte) (*Command, error) {
 		}
 	case CmdAttackTarget:
 		if err := binary.Read(r, binary.LittleEndian, &cmd.TargetID); err != nil {
-			return nil, err
-		}
-	case CmdChangeFormation:
-		if err := binary.Read(r, binary.LittleEndian, &cmd.FormationType); err != nil {
 			return nil, err
 		}
 	case CmdTacticalOrder:

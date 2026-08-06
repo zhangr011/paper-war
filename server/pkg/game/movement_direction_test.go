@@ -117,7 +117,7 @@ func TestCombatUnitsMoveForward(t *testing.T) {
 	}
 }
 
-// TestCombatUnitsFollowCommander verifies that the FormationW=2.0 attraction
+// TestCombatUnitsFollowCommander verifies that the AttractionW=2.0 attraction
 // force works — combat units should converge toward their commander over time.
 func TestCombatUnitsFollowCommander(t *testing.T) {
 	gs := NewGameSession()
@@ -210,7 +210,7 @@ func TestCombatUnitsFollowCommander(t *testing.T) {
 	t.Logf("avg dist from commander: %.2f -> %.2f", avgDistBefore, avgDistAfter)
 
 	// Units should be reasonably close to commander (< 3 tiles avg distance)
-	// This proves FormationW is pulling them toward the commander
+	// This proves AttractionW is pulling them toward the commander
 	if avgDistAfter > 9.0 {
 		t.Errorf("units too far from commander after 50 ticks: avgDistSq=%.2f", avgDistAfter)
 	}

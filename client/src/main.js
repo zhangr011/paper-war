@@ -17,6 +17,7 @@ import { TacticLoadout } from './tactic_loadout.js?v=v8';
 import { formatMatchResultHeading } from './match_result.js?v=v8';
 import {
   generateUnitAtlas,
+  loadUnitAtlasImage,
   atlasCell,
   currentFrame,
   ATLAS_CELL,
@@ -251,6 +252,11 @@ export class Game {
       }
       const atlasCanvas = generateUnitAtlas();
       this.renderer.setUnitTexture(atlasCanvas, ATLAS_W, ATLAS_H);
+      // Async override: if a hand-authored / AI-generated atlas PNG exists
+      // at assets/sprites/unit_atlas.png, swap it in once loaded.  No-op
+      // (keeps the procedural atlas) when no file ships.  See
+      // docs/research/art-asset-pipeline.md.
+      loadUnitAtlasImage(this.renderer);
     } catch (err) {
       // Atlas generation is non-fatal — renderer falls back to the
       // 1×1 white pixel so units render as flat tinted quads.

@@ -15,7 +15,7 @@ func TestFogGridSentInSnapshot(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(20.0), fixed.FromFloat(20.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth)-10), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
@@ -67,7 +67,7 @@ func TestFogClearPreservesExplored(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(24.0), fixed.FromFloat(48.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth)-10), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)
@@ -126,7 +126,7 @@ func TestCombatUnitsProvideVision(t *testing.T) {
 	gs.Lifecycle.Start()
 
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(10.0), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) - 10), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth)-10), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	grid := gs.FogSys.GetGrid(1)

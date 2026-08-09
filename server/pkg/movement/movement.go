@@ -194,41 +194,6 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 	})
 }
 
-func (s *MovementSystem) queryNeighborPositions(x, y, range_ int64, exclude uint64) [][2]int64 {
-	ids := s.Sh.Query(x, y, range_)
-	var result [][2]int64
-	for _, id := range ids {
-		if id == exclude {
-			continue
-		}
-		if pos, ok := s.posPool.Get(ecs.Entity(id)); ok {
-			result = append(result, [2]int64{pos.X, pos.Y})
-		}
-	}
-	return result
-}
-
-// queryNeighborPositionsExcludeSquad returns neighbor positions, skipping any
-// entity that shares the given squadID (used by commanders to avoid being
-// repelled by their own squad members).
-func (s *MovementSystem) queryNeighborPositionsExcludeSquad(x, y, range_ int64, exclude uint64, squadID uint32) [][2]int64 {
-	ids := s.Sh.Query(x, y, range_)
-	var result [][2]int64
-	for _, id := range ids {
-		if id == exclude {
-			continue
-		}
-		ent := ecs.Entity(id)
-		if bc, ok := s.boidPool.Get(ent); ok && bc.SquadID == squadID {
-			continue
-		}
-		if pos, ok := s.posPool.Get(ent); ok {
-			result = append(result, [2]int64{pos.X, pos.Y})
-		}
-	}
-	return result
-}
-
 func clamp32(v, lo, hi int32) int32 {
 	if v < lo {
 		return lo

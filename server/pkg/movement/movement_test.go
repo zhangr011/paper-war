@@ -52,9 +52,6 @@ func TestMovementSystemMovesTowardTarget(t *testing.T) {
 	velPool.Add(e, component.VelocityComponent{Speed: fixed.FromFloat(0.5)})
 	boidPool.Add(e, component.BoidComponent{
 		SquadID: 1, Role: component.RoleMelee,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(1.0),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
@@ -127,9 +124,6 @@ func TestSquadMovesTogether(t *testing.T) {
 		boidPool.Add(e, component.BoidComponent{
 			SquadID:       1,
 			Role:          roles[i],
-			SeparationW:   fixed.FromFloat(1.5),
-			CohesionW:     fixed.FromFloat(1.0),
-			AlignmentW:    fixed.FromFloat(1.0),
 			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(3.0),
 		})

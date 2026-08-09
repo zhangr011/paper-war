@@ -15,7 +15,7 @@ func TestTickPipelineSystemOrder(t *testing.T) {
 
 	// Spawn two teams
 	gs.SpawnTeam(1, 1, fixed.FromFloat(10), fixed.FromFloat(10), 1)
-	gs.SpawnTeam(2, 2, fixed.FromFloat(38), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1)
+	gs.SpawnTeam(2, 2, fixed.FromFloat(38), fixed.FromFloat(float64(DefaultMapHeight)-10), 1)
 
 	// Verify key v1 systems are non-nil
 	if gs.terrainSys == nil {

@@ -10,8 +10,8 @@ type counterSystem struct {
 	count atomic.Int32
 }
 
-func (s *counterSystem) Name() string    { return "counter" }
-func (s *counterSystem) Priority() int   { return 0 }
+func (s *counterSystem) Name() string       { return "counter" }
+func (s *counterSystem) Priority() int      { return 0 }
 func (s *counterSystem) Init(_ interface{}) {}
 func (s *counterSystem) Tick(_ interface{}, _ uint32) {
 	s.count.Add(1)

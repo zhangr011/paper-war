@@ -113,7 +113,7 @@ func setupSession(t *testing.T, N int, unitType component.CombatUnitType, seed i
 		gs.Lifecycle.Start()
 	}
 
-	// Pin spawn jitter so runs are comparable across the SeparationW sweep.
+	// Pin spawn jitter so runs are comparable across squad sizes.
 	gs.SetSessionRNG(rand.New(rand.NewSource(seed)))
 
 	spawnX := fixed.FromFloat(float64(game.DefaultMapWidth) / 2)
@@ -131,20 +131,6 @@ func setupSession(t *testing.T, N int, unitType component.CombatUnitType, seed i
 		pathPool.Remove(e)
 	})
 	return gs, squadID
-}
-
-// setCombatSeparationW overrides SeparationW on every non-commander unit in
-// the squad (commander keeps its spawned 1.5). Used by the sweep.
-func setCombatSeparationW(t *testing.T, gs *game.GameSession, squadID uint32, w float64) {
-	t.Helper()
-	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
-	val := fixed.FromFloat(w)
-	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
-		if bc.SquadID != squadID || bc.Role == component.RoleCommander {
-			return
-		}
-		bc.SeparationW = val
-	})
 }
 
 // measure collects positions at the current tick and computes the distance
@@ -234,15 +220,13 @@ func runToEquilibrium(t *testing.T, gs *game.GameSession, squadID uint32, checkp
 
 // TestCohesionEquilibriumMeasurement is a measurement-only test. It logs
 // (1) a verification of the spawned boid weights the sim actually uses,
-// (2) a baseline table across squad sizes N∈{4,8,12,16} at committed weights,
-// (3) a SeparationW sweep for N=8 and N=16 to find the stacking floor.
+// (2) a baseline table across squad sizes N∈{4,8,12,16} at committed weights.
 func TestCohesionEquilibriumMeasurement(t *testing.T) {
 	// ---------- 0. Verify spawned weights the sim actually sees ----------
 	verifySpawnedWeights(t)
 
-	// ---------- 1. BASELINE: current committed weights (SeparationW=1.5) ----------
-	t.Log("=== BASELINE: committed weights (SeparationW=1.5, AttractionW=2.0,")
-	t.Log("    NeighborRange=1.0, CohesionW=0.8, AlignmentW=1.0). Zero flow (see setup).")
+	// ---------- 1. BASELINE: current committed weights (AttractionW=2.0) ----------
+	t.Log("=== BASELINE: committed weights (AttractionW=2.0, NeighborRange=1.0).")
 	t.Log("    Equilibrium checkpoints (tick 100/300/500) shown per N to confirm plateau.")
 	t.Log("")
 	t.Log("N   | mean   | median | P90    | max    | <=0.5  | <=1.0  | <=1.5  | <=2.0  | minSpace")
@@ -254,47 +238,6 @@ func TestCohesionEquilibriumMeasurement(t *testing.T) {
 		t.Logf("%-3d | %.3f  | %.3f  | %.3f  | %.3f  | %d/%-4d | %d/%-4d | %d/%-4d | %d/%-4d | %.3f",
 			N, m.mean, m.median, m.p90, m.max,
 			m.within05, m.n, m.within10, m.n, m.within15, m.n, m.within20, m.n, m.meanMinSpace)
-	}
-
-	// ---------- 2. SEPARATION SWEEP — find the stacking floor ----------
-	sweepVals := []float64{1.5, 1.0, 0.75, 0.5, 0.3, 0.15, 0.0}
-	const plateauRelThreshold = 0.05 // <5% relative shrinkage vs previous step ⇒ plateau
-	for _, N := range []int{8, 16} {
-		t.Log("")
-		t.Logf("=== SEPARATION SWEEP (N=%d) — all other weights held at committed values ===", N)
-		t.Log("SepW  | mean   | median | P90    | max    | meanMinSpace")
-		var prevMean float64 = -1
-		floorW := -1.0
-		floorMean := 0.0
-		for i, w := range sweepVals {
-			gs, squadID := setupSession(t, N, component.UnitLightInfantry, 1)
-			if i == 0 {
-				// Baseline (1.5) already has the right value; for the rest, override.
-			} else {
-				setCombatSeparationW(t, gs, squadID, w)
-			}
-			runToEquilibrium(t, gs, squadID, nil, 500, "sweep")
-			m := measure(t, gs, squadID)
-			t.Logf("%.2f | %.3f  | %.3f  | %.3f  | %.3f  | %.3f",
-				w, m.mean, m.median, m.p90, m.max, m.meanMinSpace)
-			if floorW < 0 && prevMean > 0 {
-				relDrop := (prevMean - m.mean) / prevMean
-				if relDrop < plateauRelThreshold {
-					floorW = w
-					floorMean = m.mean
-				}
-			}
-			prevMean = m.mean
-		}
-		if floorW >= 0 {
-			t.Logf("Floor (N=%d): radius plateaued at SeparationW=%.2f (mean≈%.3f tiles,",
-				N, floorW, floorMean)
-			t.Logf("              using <%.0f%% relative shrinkage vs prior step as the plateau rule).",
-				plateauRelThreshold*100)
-		} else {
-			t.Logf("Floor (N=%d): radius kept shrinking down to SeparationW=0.0 — no plateau", N)
-			t.Logf("              within the tested range (radius still dropping at each step).")
-		}
 	}
 }
 
@@ -317,12 +260,10 @@ func verifySpawnedWeights(t *testing.T) {
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	expectedCombat := map[string]float64{
-		"SeparationW": 1.5, "AttractionW": 2.0, "NeighborRange": 2.0,
-		"CohesionW": 0.8, "AlignmentW": 1.0,
+		"AttractionW": 2.0, "NeighborRange": 2.0,
 	}
 	expectedCmd := map[string]float64{
-		"SeparationW": 1.5, "AttractionW": 2.0, "NeighborRange": 2.0,
-		"CohesionW": 0.8, "AlignmentW": 1.0,
+		"AttractionW": 2.0, "NeighborRange": 2.0,
 	}
 
 	t.Log("=== SPAWNED WEIGHTS (sim-actual) ===")
@@ -337,9 +278,6 @@ func verifySpawnedWeights(t *testing.T) {
 			exp = expectedCombat
 		}
 		actual := map[string]float64{
-			"SeparationW":   fixed.ToFloat(bc.SeparationW),
-			"CohesionW":     fixed.ToFloat(bc.CohesionW),
-			"AlignmentW":    fixed.ToFloat(bc.AlignmentW),
 			"AttractionW":    fixed.ToFloat(bc.AttractionW),
 			"NeighborRange": fixed.ToFloat(bc.NeighborRange),
 		}
@@ -354,9 +292,8 @@ func verifySpawnedWeights(t *testing.T) {
 		if v, ok := velPool.Get(e); ok {
 			speed = fixed.ToFloat(v.Speed)
 		}
-		t.Logf("  [%s] SepW=%.2f FormW=%.2f CohW=%.2f AlignW=%.2f NbrRange=%.2f speed(tiles/tick)=%.4f%s",
-			label, actual["SeparationW"], actual["AttractionW"], actual["CohesionW"],
-			actual["AlignmentW"], actual["NeighborRange"], speed, discrepancy)
+		t.Logf("  [%s] FormW=%.2f NbrRange=%.2f speed(tiles/tick)=%.4f%s",
+			label, actual["AttractionW"], actual["NeighborRange"], speed, discrepancy)
 	})
 	t.Log("")
 }

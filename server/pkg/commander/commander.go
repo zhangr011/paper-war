@@ -126,13 +126,12 @@ func (s *CommanderSystem) Tick(w *ecs.World, tick uint32) {
 }
 
 func (s *CommanderSystem) handleCommanderDeath(squadID uint32) {
-	// Increase boid weights, halve commander-attraction → squad becomes autonomous
+	// Halve commander-attraction → squad becomes autonomous (hard collision now
+	// handles spacing; ADR-0030).
 	s.boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
 		if bc.SquadID != squadID {
 			return
 		}
-		bc.SeparationW = bc.SeparationW * 3 / 2
-		bc.CohesionW = bc.CohesionW * 2
 		bc.AttractionW = bc.AttractionW / 2
 	})
 }

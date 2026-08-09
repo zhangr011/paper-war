@@ -165,7 +165,6 @@ func (s *RecruitmentSystem) processRecruit(req RecruitRequest) {
 	s.boidPool.Add(newEntity, component.BoidComponent{
 		SquadID:       squadID,
 		Role:          component.RoleMelee,
-		SeparationW:   fixed.FromFloat(1.5),
 		NeighborRange: fixed.FromFloat(5.0),
 	})
 	s.movePool.Add(newEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(typeStats.Armor)})

@@ -6,28 +6,6 @@ import (
 	"github.com/user/paper-war/server/pkg/fixed"
 )
 
-func TestSeparationForce(t *testing.T) {
-	self := [2]int64{fixed.FromFloat(5.0), fixed.FromFloat(5.0)}
-	neighbors := [][2]int64{
-		{fixed.FromFloat(6.0), fixed.FromFloat(5.0)},
-	}
-	fx, fy := SeparationForce(self, neighbors, fixed.FromFloat(3.0))
-	if fx >= 0 {
-		t.Errorf("separation should push away, fx=%d", fx)
-	}
-	if fy != 0 {
-		t.Errorf("separation fy should be 0, got %d", fy)
-	}
-}
-
-func TestSeparationNoNeighbors(t *testing.T) {
-	self := [2]int64{fixed.FromFloat(5.0), fixed.FromFloat(5.0)}
-	fx, fy := SeparationForce(self, nil, fixed.FromFloat(3.0))
-	if fx != 0 || fy != 0 {
-		t.Errorf("no neighbors = zero force, got (%d,%d)", fx, fy)
-	}
-}
-
 func TestAttractionForceSteersTowardTarget(t *testing.T) {
 	self := [2]int64{fixed.FromFloat(0.0), fixed.FromFloat(0.0)}
 	target := [2]int64{fixed.FromFloat(5.0), fixed.FromFloat(5.0)}

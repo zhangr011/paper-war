@@ -54,18 +54,20 @@ const UNIT_ROLE = {
 
 // AI's target army-composition ratio per role (ai.go roleTargetRatio).
 const ROLE_TARGET_RATIO = { Frontline: 0.40, Ranged: 0.30, Heavy: 0.30 };
+// Tactical-role tint per unit (mirrors the CSS vars in units.html).
+const ROLE_TINT = { Frontline: 'var(--front)', Ranged: 'var(--ranged)', Heavy: 'var(--heavy)' };
 // AI's recruit floor — recruitDecisions() no-ops below 15 gold.
 const AI_GOLD_FLOOR = 15;
 
 // Source-of-truth snapshot of CombatUnitTypeTable (unit_type.go:50).
 const SOURCE_STATS = {
-  LightInfantry:     { Weapon: 'Gun',     Armor: 'Light', Cost: 1, HP: 100, Damage: 15, Range: 5, Cooldown: 3,  RecruitCost: 15, KillBounty: 12 },
-  HeavyInfantry:     { Weapon: 'Cannon',  Armor: 'Light', Cost: 2, HP: 60,  Damage: 25, Range: 7, Cooldown: 5,  RecruitCost: 25, KillBounty: 20 },
-  Sniper:            { Weapon: 'Sniper',  Armor: 'Light', Cost: 1, HP: 30,  Damage: 20, Range: 8, Cooldown: 12, RecruitCost: 50, KillBounty: 40 },
-  AntiArmorInfantry: { Weapon: 'Missile', Armor: 'Light', Cost: 2, HP: 60,  Damage: 35, Range: 8, Cooldown: 6,  RecruitCost: 30, KillBounty: 24 },
-  MotorGun:          { Weapon: 'Gun',     Armor: 'Heavy', Cost: 2, HP: 120, Damage: 15, Range: 5, Cooldown: 2,  RecruitCost: 25, KillBounty: 20 },
-  MotorArtillery:    { Weapon: 'Cannon',  Armor: 'Heavy', Cost: 4, HP: 150, Damage: 40, Range: 7, Cooldown: 5,  RecruitCost: 50, KillBounty: 40 },
-  MotorMissile:      { Weapon: 'Missile', Armor: 'Heavy', Cost: 4, HP: 130, Damage: 50, Range: 9, Cooldown: 7,  RecruitCost: 60, KillBounty: 48 },
+  LightInfantry:     { Weapon: 'Gun',     Armor: 'Light', Cost: 1, HP: 100, Damage: 15, Range: 5, Cooldown: 3,  RecruitCost: 15, KillBounty: 12, Radius: 0.22 },
+  HeavyInfantry:     { Weapon: 'Cannon',  Armor: 'Light', Cost: 2, HP: 60,  Damage: 25, Range: 7, Cooldown: 5,  RecruitCost: 25, KillBounty: 20, Radius: 0.25 },
+  Sniper:            { Weapon: 'Sniper',  Armor: 'Light', Cost: 1, HP: 30,  Damage: 20, Range: 8, Cooldown: 12, RecruitCost: 50, KillBounty: 40, Radius: 0.22 },
+  AntiArmorInfantry: { Weapon: 'Missile', Armor: 'Light', Cost: 2, HP: 60,  Damage: 35, Range: 8, Cooldown: 6,  RecruitCost: 30, KillBounty: 24, Radius: 0.24 },
+  MotorGun:          { Weapon: 'Gun',     Armor: 'Heavy', Cost: 2, HP: 120, Damage: 15, Range: 5, Cooldown: 2,  RecruitCost: 25, KillBounty: 20, Radius: 0.35 },
+  MotorArtillery:    { Weapon: 'Cannon',  Armor: 'Heavy', Cost: 4, HP: 150, Damage: 40, Range: 7, Cooldown: 5,  RecruitCost: 50, KillBounty: 40, Radius: 0.40 },
+  MotorMissile:      { Weapon: 'Missile', Armor: 'Heavy', Cost: 4, HP: 130, Damage: 50, Range: 9, Cooldown: 7,  RecruitCost: 60, KillBounty: 48, Radius: 0.38 },
 };
 
 // Source-of-truth snapshot of damageMatrix (unit_type.go:89).
@@ -129,6 +131,8 @@ function validateUnit(k) {
   if (s.HP <= 0) warns.push('HP > 0');
   if (s.Damage <= 0) warns.push('Damage > 0');
   if (s.Range < 1) warns.push('Range ≥ 1 tile');
+  if (!(s.Radius > 0)) warns.push('Radius > 0 tiles');
+  if (s.Radius > 1) warns.push('Radius > 1 tile (very large collision)');
   return warns;
 }
 
@@ -157,6 +161,7 @@ function renderStats() {
     { key: 'Cooldown',    kind: 'int', min: 1,  max: 127 },
     { key: 'RecruitCost', kind: 'int', min: 0,  max: 9999 },
     { key: 'KillBounty',  kind: 'int', min: 0,  max: 9999 },
+    { key: 'Radius',      kind: 'float', min: 0.05, max: 2.0, step: 0.01 },
   ];
 
   let html = '<table class="stats"><thead><tr>' +
@@ -178,7 +183,7 @@ function renderStats() {
           `</select></td>`;
       } else {
         html += `<td><input type="number" class="${cls}" data-unit="${k}" data-field="${f.key}" ` +
-          `min="${f.min}" max="${f.max}" value="${s[f.key]}"></td>`;
+          `min="${f.min}" max="${f.max}" step="${f.step || 1}" value="${s[f.key]}"></td>`;
       }
     }
     html += `<td class="${warns.length ? 'warn' : ''}">${warns.length ? warns.join('; ') : '<span class="ok-text">ok</span>'}</td>`;
@@ -204,12 +209,14 @@ function onStatInput(e) {
   if (typeof SOURCE_STATS[k][f] === 'number') {
     v = Number(v);
     if (!Number.isFinite(v)) return;
-    v = Math.round(v);
+    // Integer stats (Range, Cost, …) are rounded; Radius is fractional.
+    if (Number.isInteger(SOURCE_STATS[k][f])) v = Math.round(v);
   }
   stats[k][f] = v;
   // Editing weapon changes derived columns; rebuild downstream views.
   renderMetrics();
   renderAiView();
+  renderCollision();
   // Toggle the dirty class on this cell without a full rebuild (preserves focus).
   e.target.classList.toggle('dirty', v !== SOURCE_STATS[k][f]);
   $('dirty-flag').textContent = isDirty()
@@ -257,7 +264,7 @@ function renderMetrics() {
   let html = '<table class="metrics"><thead><tr>' +
     '<th>unit</th><th>DPS</th>' +
     ARMORS.map((a) => `<th>vs ${a}</th>`).join('') +
-    '<th>HP/gold</th><th>DPS/gold</th><th>range</th></tr></thead><tbody>';
+    '<th>HP/gold</th><th>DPS/gold</th><th>range</th><th>radius</th></tr></thead><tbody>';
   for (const k of UNIT_KEYS) {
     const s = stats[k];
     const d = dps(s);
@@ -268,7 +275,8 @@ function renderMetrics() {
         `<td class="num-c">${effDps(s, ai).toFixed(1)}</td>`).join('') +
       `<td class="num-c">${(s.HP / gold).toFixed(2)}</td>` +
       `<td class="num-c">${(d / gold).toFixed(3)}</td>` +
-      `<td class="num-c">${s.Range}</td></tr>`;
+      `<td class="num-c">${s.Range}</td>` +
+      `<td class="num-c">${s.Radius.toFixed(2)}</td></tr>`;
   }
   html += '</tbody></table>';
   $('metrics-table').innerHTML = html;
@@ -306,6 +314,42 @@ function renderAiView() {
   $('ai-view').innerHTML = html;
 }
 
+// --- Render: collision radius (to scale) ---------------------------------
+//
+// Visualises each unit's CollisionComponent radius (ADR-0030) as a circle at
+// a fixed px/tile scale, so footprints are directly comparable and the effect
+// of editing Radius is visible immediately. The dashed ring is a 0.5-tile
+// radius reference (the packed-cluster spacing collision produces).
+
+const COLL_SCALE = 160; // px per tile
+const COLL_CELL = 150;  // svg box size (px)
+
+function renderCollision() {
+  const c = COLL_CELL / 2;
+  let cells = '';
+  for (const k of UNIT_KEYS) {
+    const s = stats[k];
+    const rPx = Math.max(0, s.Radius) * COLL_SCALE;
+    const dirty = s.Radius !== SOURCE_STATS[k].Radius;
+    const tint = ROLE_TINT[UNIT_ROLE[k]] || 'var(--accent)';
+    cells +=
+      `<div class="coll-cell${dirty ? ' dirty' : ''}">` +
+      `<svg width="${COLL_CELL}" height="${COLL_CELL}" viewBox="0 0 ${COLL_CELL} ${COLL_CELL}" style="overflow:visible">` +
+        `<circle cx="${c}" cy="${c}" r="${0.5 * COLL_SCALE}" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="2 3" />` +
+        `<circle cx="${c}" cy="${c}" r="${rPx}" fill="${tint}" fill-opacity="0.18" stroke="${tint}" stroke-width="2" />` +
+        `<circle cx="${c}" cy="${c}" r="2.5" fill="${tint}" />` +
+      `</svg>` +
+      `<div class="coll-label">${UNIT_NAMES[k]}</div>` +
+      `<div class="coll-val">r = ${Number(s.Radius).toFixed(2)} tile</div>` +
+      `</div>`;
+  }
+  $('collision-view').innerHTML =
+    `<div class="coll-row">${cells}</div>` +
+    `<p class="info" style="margin-top:4px">Scale: 1 tile = ${COLL_SCALE}px. ` +
+    `Solid circle = collision radius; dashed ring = 0.5-tile radius reference ` +
+    `(packed-cluster spacing). Fill colour = tactical role. Edited values get a gold border.</p>`;
+}
+
 // --- Export: Go source ---------------------------------------------------
 
 function goSource() {
@@ -319,6 +363,7 @@ function goSource() {
       `\t\tType: ${unitConst(k)}, Weapon: ${weaponConst(s.Weapon)}, Armor: ${armorConst(s.Armor)},\n` +
       `\t\tCost: ${s.Cost}, HP: ${s.HP}, Damage: ${s.Damage}, Range: ${s.Range}, Cooldown: ${s.Cooldown},\n` +
       `\t\tRecruitCost: ${s.RecruitCost}, KillBounty: ${s.KillBounty},\n` +
+      `\t\tRadius: fixed.FromFloat(${s.Radius}),\n` +
       `\t},\n`;
   }
   out += '}\n\n';
@@ -595,6 +640,7 @@ function renderAll() {
   renderMatrix();
   renderMetrics();
   renderAiView();
+  renderCollision();
 }
 
 bindControls();

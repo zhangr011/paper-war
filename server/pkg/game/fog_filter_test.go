@@ -17,7 +17,7 @@ func TestFogFiltersEnemyUnits(t *testing.T) {
 	// Vision radius: commander=12 tiles, unit=6 tiles.
 	// Map is 48x96, so y=85 is ~75 tiles from y=10 — well outside vision.
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(24.0), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(24.0), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(24.0), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	// Player 1's fog grid should NOT show tiles around y=85

@@ -28,13 +28,13 @@ import {
 // --- Constants ----------------------------------------------------------
 
 const UNIT_TYPES = [
-  { id: 0, name: 'Light Inf' },
-  { id: 1, name: 'Heavy Inf' },
-  { id: 2, name: 'Sniper' },
-  { id: 3, name: 'Anti-Armor' },
-  { id: 4, name: 'Motor Gun' },
-  { id: 5, name: 'Motor Art' },
-  { id: 6, name: 'Motor Mis' },
+  { id: 0, key: 'LightInfantry',     name: 'Light Inf' },
+  { id: 1, key: 'HeavyInfantry',     name: 'Heavy Inf' },
+  { id: 2, key: 'Sniper',            name: 'Sniper' },
+  { id: 3, key: 'AntiArmorInfantry', name: 'Anti-Armor' },
+  { id: 4, key: 'MotorGun',          name: 'Motor Gun' },
+  { id: 5, key: 'MotorArtillery',    name: 'Motor Art' },
+  { id: 6, key: 'MotorMissile',      name: 'Motor Mis' },
 ];
 
 const STATE_NAMES = ['Idle', 'Idle2', 'Move', 'Attack', 'Die'];
@@ -59,10 +59,34 @@ const ui = {
   fps: animFps[STATE_ATTACK], // editable per-state FPS override for the preview
   playing: true,
   scrubFrame: null, // when non-null, preview holds on this frame
+  showCollision: false, // collision-radius overlay toggle (ADR-0030)
 };
 
 let previewTimeMs = 0; // accumulates while playing
 let lastRaf = 0;
+
+// CombatUnitTypeTable fetched from /editor/unit-stats — single server source,
+// no hand-maintained mirror. Keyed by full unit name (UNIT_TYPES[].key). Used
+// only for the read-only collision overlay; radius is authored in the units
+// editor / unit_type.go (ADR-0030), not here.
+let unitStats = {};
+
+async function loadUnitStats() {
+  try {
+    const r = await fetch('/editor/unit-stats');
+    if (r.ok) unitStats = await r.json();
+  } catch { unitStats = {}; }
+  renderPreview();
+  renderScrubStrip();
+  renderGridView();
+}
+
+function radiusForUnit(unitType) {
+  const u = UNIT_TYPES.find((x) => x.id === unitType);
+  if (!u || !unitStats[u.key]) return null;
+  const r = Number(unitStats[u.key].radius);
+  return Number.isFinite(r) && r > 0 ? r : null;
+}
 
 // --- DOM ----------------------------------------------------------------
 
@@ -96,6 +120,32 @@ function paintCell(canvas, unitType, state, dir, frame) {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawCell(ctx, 0, 0, unitType, state, dir, frame);
+  if (ui.showCollision) drawCollisionOverlay(ctx, canvas, unitType);
+}
+
+// Read-only collision-radius overlay (ADR-0030). The sprite cell is treated
+// as 1 tile (TILE_WIDTH = 32 game-px per tile, gl.js:1428), so the circle
+// radius in canvas px = radiusTiles × canvas.width, centred on the cell.
+// Sourced from /editor/unit-stats — not editable here.
+function drawCollisionOverlay(ctx, canvas, unitType) {
+  const r = radiusForUnit(unitType);
+  if (r === null) return;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const px = r * canvas.width;
+  ctx.save();
+  ctx.strokeStyle = '#c8503c'; // --bad red, readable over sprite art
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, px, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#c8503c';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function renderPreview() {
@@ -320,6 +370,15 @@ function bindPlayback() {
       renderPreview();
     }
   });
+  const tog = $('collision-toggle');
+  if (tog) {
+    tog.addEventListener('change', (e) => {
+      ui.showCollision = e.target.checked;
+      renderPreview();
+      renderScrubStrip();
+      renderGridView();
+    });
+  }
 }
 
 function bindCopy() {
@@ -540,5 +599,6 @@ rebuildDirRow();
 bindPlayback();
 bindCopy();
 bindAi();
+loadUnitStats();
 renderAll();
 requestAnimationFrame(loop);

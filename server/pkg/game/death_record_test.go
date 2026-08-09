@@ -3,8 +3,8 @@ package game
 import (
 	"testing"
 
-	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/combat"
+	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
 	"github.com/user/paper-war/server/pkg/fixed"
 )

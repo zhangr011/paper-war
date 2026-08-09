@@ -9,10 +9,10 @@ import (
 
 // TestMapScalePacingTargets verifies the four pacing invariants from issue #45:
 //
-//   1. Cross-map traversal (long axis) ≤ 240 s.
-//   2. PvP first-contact ≤ 120 s (spawns at top/bottom of portrait map).
-//   3. Commander vision covers ≥ 25% of the long axis.
-//   4. Starter roster occupies ≥ 0.4% of map area.
+//  1. Cross-map traversal (long axis) ≤ 240 s.
+//  2. PvP first-contact ≤ 120 s (spawns at top/bottom of portrait map).
+//  3. Commander vision covers ≥ 25% of the long axis.
+//  4. Starter roster occupies ≥ 0.4% of map area.
 //
 // This is a pure constant-calculation test — no GameSession needed. It runs
 // in microseconds and locks down the issue #45 fix against future regressions

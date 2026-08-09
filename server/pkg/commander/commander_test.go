@@ -88,7 +88,7 @@ func TestCommanderDeath(t *testing.T) {
 	posPool.Add(unit, component.PositionComponent{X: fixed.FromFloat(2.0), Y: 0})
 	boidPool.Add(unit, component.BoidComponent{
 		SquadID: 1, Role: component.RoleMelee,
-		SeparationW: 100, CohesionW: 100, AttractionW: 200,
+		AttractionW: 200,
 	})
 
 	sh.Clear()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/user/paper-war/server/pkg/ai"
+	"github.com/user/paper-war/server/pkg/collision"
 	"github.com/user/paper-war/server/pkg/combat"
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
@@ -39,6 +40,7 @@ type GameSession struct {
 	terrainSys         *terrain.TerrainSystem
 	commanderSys       *commander.CommanderSystem
 	movementSys        *movement.MovementSystem
+	collisionSys       *collision.CollisionSystem
 	combatSys          *combat.CombatSystem
 	deathSys           *combat.DeathSystem
 	levelingSys        *combat.LevelingSystem // v1
@@ -156,6 +158,7 @@ func NewGameSession() *GameSession {
 	unitTypePool := ecs.NewComponentPool[component.UnitTypeComponent]()
 	structPool := ecs.NewComponentPool[component.StructureComponent]()
 	strongholdPool := ecs.NewComponentPool[component.StrongholdComponent]()
+	collisionPool := ecs.NewComponentPool[component.CollisionComponent]()
 
 	gs.World.RegisterPool(component.PositionComponent{}, posPool)
 	gs.World.RegisterPool(component.VelocityComponent{}, velPool)
@@ -171,6 +174,7 @@ func NewGameSession() *GameSession {
 	gs.World.RegisterPool(component.UnitTypeComponent{}, unitTypePool)
 	gs.World.RegisterPool(component.StructureComponent{}, structPool)
 	gs.World.RegisterPool(component.StrongholdComponent{}, strongholdPool)
+	gs.World.RegisterPool(component.CollisionComponent{}, collisionPool)
 
 	// Build movement profiles from the standard Light/Heavy definitions.
 	// Light (ID 0): infantry — faster terrain traversal, can ford Shallow water.
@@ -193,9 +197,22 @@ func NewGameSession() *GameSession {
 	gs.combatSys = &combat.CombatSystem{Sh: gs.Sh}
 	gs.deathSys = &combat.DeathSystem{}
 
+	// CollisionSystem rebuilds the spatial hash from post-move positions, so it
+	// must run after MovementSystem (priority 60) and before CombatSystem (80).
+	// Priority 65 places it alongside BuildSystem (also 65 — independent).
+	//
+	// Iterations=8: each unit attracts to its commander's exact position
+	// (AttractionW=6.0), re-compacting the squad every tick. A single
+	// resolution pass plateaus below rSum (units stay overlapping — the
+	// "collision not worked" symptom); ~8 relaxation passes let the
+	// positional push-out converge to near-non-overlap within the tick.
+	// Cost is trivial: friendly-unit count × neighbors × 8 at 10 Hz.
+	gs.collisionSys = &collision.CollisionSystem{Sh: gs.Sh, Iterations: 8}
+
 	gs.World.AddSystem(gs.terrainSys)
 	gs.World.AddSystem(gs.commanderSys)
 	gs.World.AddSystem(gs.movementSys)
+	gs.World.AddSystem(gs.collisionSys)
 	gs.World.AddSystem(gs.combatSys)
 	gs.World.AddSystem(&combat.ProjectileSystem{})
 	gs.World.AddSystem(&combat.StrongholdSystem{}) // capture/garrison — after Combat(80), before Death(90) (#54 1B)
@@ -401,7 +418,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
+			radius: fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
 		})
 	})
 
@@ -424,7 +441,7 @@ func (gs *GameSession) updateFog() {
 			pid:    owner.PlayerID,
 			tileX:  int32(pos.X >> 12),
 			tileY:  int32(pos.Y >> 12),
-			radius: fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X >> 12), int32(pos.Y >> 12)),
+			radius: fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
 		})
 	})
 
@@ -945,10 +962,7 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 	gs.addComponent(cmdEntity, component.BoidComponent{
 		SquadID:       squadID,
 		Role:          component.RoleCommander,
-		SeparationW:   fixed.FromFloat(0.1),
-		CohesionW:     fixed.FromFloat(0.8),
-		AlignmentW:    fixed.FromFloat(1.0),
-		AttractionW:    fixed.FromFloat(6.0),
+		AttractionW:   fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -978,6 +992,8 @@ func (gs *GameSession) SpawnSquadWithType(playerID uint32, squadID uint32, cx, c
 		Armor:  cmdStats.Armor,
 		Level:  1,
 	})
+
+	gs.addComponent(cmdEntity, component.CollisionComponent{Radius: cmdStats.Radius})
 
 	gs.addComponent(cmdEntity, component.CommanderComponent{
 		SquadID:         squadID,
@@ -1037,10 +1053,7 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 	gs.addComponent(cmdEntity, component.BoidComponent{
 		SquadID:       squadID,
 		Role:          component.RoleCommander,
-		SeparationW:   fixed.FromFloat(0.1),
-		CohesionW:     fixed.FromFloat(0.8),
-		AlignmentW:    fixed.FromFloat(1.0),
-		AttractionW:    fixed.FromFloat(6.0),
+		AttractionW:   fixed.FromFloat(6.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
 
@@ -1074,6 +1087,8 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 		Armor:  cmdStats.Armor,
 		Level:  cmd.Level,
 	})
+
+	gs.addComponent(cmdEntity, component.CollisionComponent{Radius: cmdStats.Radius})
 
 	gs.addComponent(cmdEntity, component.CommanderComponent{
 		SquadID:         squadID,
@@ -1144,12 +1159,9 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			Speed: unitSpeed,
 		})
 		gs.addComponent(cuEntity, component.BoidComponent{
-			SquadID:       squadID,
-			Role:          role,
-			SeparationW:   fixed.FromFloat(0.1),
-			CohesionW:     fixed.FromFloat(0.8),
-			AlignmentW:    fixed.FromFloat(1.0),
-			AttractionW:    fixed.FromFloat(6.0),
+			SquadID:     squadID,
+			Role:        role,
+			AttractionW: fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),
@@ -1176,6 +1188,8 @@ func (gs *GameSession) SpawnTeamFromRoster(playerID uint32, squadID uint32, cx, 
 			Armor:  cuStats.Armor,
 			Level:  cu.Level,
 		})
+
+		gs.addComponent(cuEntity, component.CollisionComponent{Radius: cuStats.Radius})
 		gs.addComponent(cuEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(cuStats.Armor)})
 		gs.addComponent(cuEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
 		gs.addComponent(cuEntity, component.OwnerComponent{
@@ -1433,12 +1447,9 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 		}
 
 		gs.addComponent(unitEntity, component.BoidComponent{
-			SquadID:       squadID,
-			Role:          role,
-			SeparationW:   fixed.FromFloat(0.1),
-			CohesionW:     fixed.FromFloat(0.8),
-			AlignmentW:    fixed.FromFloat(1.0),
-			AttractionW:    fixed.FromFloat(6.0),
+			SquadID:     squadID,
+			Role:        role,
+			AttractionW: fixed.FromFloat(6.0),
 			// NeighborRange sets the squad cluster radius (separation acts only within it).
 			// Tightened 2.0 → 1.0 for a ~1-tile cluster. See CONTEXT.md (CombatUnit).
 			NeighborRange: fixed.FromFloat(1.0),
@@ -1464,6 +1475,8 @@ func (gs *GameSession) spawnCombatUnitsWithType(squadID uint32, cx, cy int64, st
 			Armor:  stats.Armor,
 			Level:  1,
 		})
+
+		gs.addComponent(unitEntity, component.CollisionComponent{Radius: stats.Radius})
 
 		gs.addComponent(unitEntity, component.MovementComponent{ProfileID: component.ArmorTypeToProfileID(stats.Armor)})
 		gs.addComponent(unitEntity, component.PathfindingComponent{TargetX: cx, TargetY: cy})
@@ -2067,6 +2080,8 @@ func (gs *GameSession) addComponent(e ecs.Entity, comp interface{}) {
 		p.Add(e, comp.(component.UnitTypeComponent))
 	case *ecs.ComponentPool[component.KillPointsComponent]:
 		p.Add(e, comp.(component.KillPointsComponent))
+	case *ecs.ComponentPool[component.CollisionComponent]:
+		p.Add(e, comp.(component.CollisionComponent))
 	}
 }
 

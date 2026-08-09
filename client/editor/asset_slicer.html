@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Asset Slicer — paper-war</title>
+<!--
+  Asset Slicer — split a flat design sheet (e.g. an AI-generated Paper UI Kit)
+  into individual transparent PNGs for client/assets/textures/.
+
+  Why this exists: design/component.png is a *labeled spec sheet* on textured
+  cream paper, so automated slicing (luminance threshold / connected-components)
+  fails — the paper grain itself reads as content. This tool lets a human pick
+  each element, keys out the background by color-distance per selection, and
+  exports a clean PNG + a reproducible JSON manifest of the crop coordinates.
+
+  No build step, no deps — matches the client/editor/*.html convention.
+  See docs/research/ui-asset-extraction.md for the technique write-up.
+-->
+<style>
+  :root {
+    --bg: #2a2620;
+    --panel: #3a342b;
+    --ink: #e8e0d0;
+    --muted: #a89c84;
+    --accent: #c8a25a;
+    --line: #5a5044;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.4 'Inter', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 14px; margin: 0; color: var(--accent); font-weight: 600; }
+  header .sp { flex: 1; }
+  button, label.btn {
+    background: #4a4238; color: var(--ink); border: 1px solid var(--line);
+    padding: 4px 10px; border-radius: 4px; cursor: pointer; font: inherit;
+  }
+  button:hover, label.btn:hover { border-color: var(--accent); }
+  input[type=number], input[type=text] {
+    background: #221e18; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 3px; padding: 3px 6px; font: inherit; width: 5em;
+  }
+  input[type=text].wide { width: 16em; }
+  input[type=range] { width: 9em; vertical-align: middle; }
+  .swatch {
+    display: inline-block; width: 16px; height: 16px; border: 1px solid var(--line);
+    border-radius: 3px; vertical-align: middle; background: #fbf9f6;
+  }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage {
+    flex: 1; overflow: auto; padding: 16px;
+    background:
+      linear-gradient(45deg, #1c1814 25%, transparent 25%) 0 0/16px 16px,
+      linear-gradient(-45deg, #1c1814 25%, transparent 25%) 0 8px/16px 16px,
+      linear-gradient(45deg, transparent 75%, #1c1814 75%) 8px -8px/16px 16px,
+      linear-gradient(-45deg, transparent 75%, #1c1814 75%) -8px 0/16px 16px,
+      #242019;
+    display: flex; align-items: flex-start; justify-content: center;
+  }
+  #srcWrap { position: relative; display: inline-block; line-height: 0; }
+  #srcCanvas, #overlay { display: block; }
+  #overlay { position: absolute; inset: 0; cursor: crosshair; }
+  aside {
+    width: 320px; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .section h2 { font-size: 11px; margin: 0 0 8px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 11px; }
+  #previewWrap {
+    background:
+      conic-gradient(#444 25%, #555 0 50%, #444 0 75%, #555 0) 0 0/12px 12px;
+    border: 1px solid var(--line); min-height: 64px; display: flex;
+    align-items: center; justify-content: center;
+  }
+  #previewCanvas { max-width: 100%; max-height: 200px; image-rendering: pixelated; }
+  #list { flex: 1; overflow: auto; padding: 6px 12px; }
+  .item {
+    display: flex; align-items: center; gap: 8px; padding: 4px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .item.active { background: rgba(200,162,90,.12); }
+  .item .nm { flex: 1; cursor: pointer; }
+  .item .del { color: var(--muted); cursor: pointer; }
+  .item .del:hover { color: #e66; }
+  .coords { color: var(--muted); font-size: 10px; font-family: monospace; }
+  #status { color: var(--muted); font-size: 11px; }
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Asset Slicer</h1>
+  <label class="btn">Open image…<input type="file" id="file" accept="image/*" hidden /></label>
+  <button id="loadDefault">Load design/component.png</button>
+  <span class="sp"></span>
+  <label class="hint">Zoom</label>
+  <input type="range" id="zoom" min="0.2" max="4" step="0.1" value="1" />
+  <span id="zoomVal" class="hint">100%</span>
+</header>
+
+<main>
+  <div id="stage">
+    <div id="srcWrap">
+      <canvas id="srcCanvas"></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+  </div>
+
+  <aside>
+    <div class="section">
+      <h2>Current selection</h2>
+      <div class="row">
+        <input type="text" id="name" class="wide" placeholder="asset name e.g. paper-tape" />
+      </div>
+      <div class="row coords">
+        x <input type="number" id="x" /> y <input type="number" id="y" />
+        w <input type="number" id="w" /> h <input type="number" id="h" />
+      </div>
+      <h2 style="margin-top:10px">Background keying</h2>
+      <div class="row">
+        <span class="swatch" id="bgSwatch" title="click the source image to sample bg"></span>
+        <input type="text" id="bgHex" value="#fbf9f6" class="hint" style="width:7em" />
+        <span class="hint">tol</span>
+        <input type="range" id="tol" min="0" max="200" value="48" />
+        <span id="tolVal" class="hint">48</span>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="feather" checked /> feather edges (1px)</label>
+      </div>
+      <div class="row">
+        <button id="add">＋ Add to list</button>
+        <button id="exportOne">⤓ Export PNG</button>
+      </div>
+      <h2 style="margin-top:10px">Preview (transparent)</h2>
+      <div id="previewWrap"><canvas id="previewCanvas"></canvas></div>
+    </div>
+
+    <div class="section">
+      <h2>Selections <span id="status"></span></h2>
+      <div class="row">
+        <button id="exportAll">⤓ Export all PNGs</button>
+        <button id="saveJson">⤓ Manifest JSON</button>
+        <label class="btn">Import JSON<input type="file" id="importJson" accept="application/json" hidden /></label>
+      </div>
+    </div>
+    <div id="list"></div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+const srcCanvas = $("srcCanvas");
+const overlay = $("overlay");
+const sctx = srcCanvas.getContext("2d", { willReadFrequently: true });
+const octx = overlay.getContext("2d");
+const previewCanvas = $("previewCanvas");
+const pctx = previewCanvas.getContext("2d");
+
+/** @type {HTMLImageElement|null} */
+let img = null;
+let imgW = 0, imgH = 0;
+let zoom = 1;
+
+// Current drag selection in IMAGE coordinates.
+let sel = { x: 0, y: 0, w: 0, h: 0 };
+let drag = null; // {ax, ay} anchor in image coords
+
+/** @type {{name:string,x:number,y:number,w:number,h:number}[]} */
+let items = [];
+let activeIdx = -1;
+
+// ---------- image loading ----------
+function loadImage(src) {
+  const i = new Image();
+  i.crossOrigin = "anonymous";
+  i.onload = () => {
+    img = i; imgW = i.naturalWidth; imgH = i.naturalHeight;
+    srcCanvas.width = imgW; srcCanvas.height = imgH;
+    sctx.drawImage(img, 0, 0);
+    applyZoom();
+    setStatus(`loaded ${imgW}×${imgH}`);
+  };
+  i.onerror = () => setStatus("failed to load image");
+  i.src = src;
+}
+$("file").onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => loadImage(r.result);
+  r.readAsDataURL(f);
+};
+$("loadDefault").onclick = () => loadImage("../design/component.png");
+
+// ---------- zoom / display ----------
+function applyZoom() {
+  if (!img) return;
+  const w = Math.round(imgW * zoom), h = Math.round(imgH * zoom);
+  srcCanvas.style.width = overlay.style.width = w + "px";
+  srcCanvas.style.height = overlay.style.height = h + "px";
+  overlay.width = imgW; overlay.height = imgH; // overlay in image pixels
+  drawOverlay();
+}
+$("zoom").oninput = (e) => {
+  zoom = parseFloat(e.target.value);
+  $("zoomVal").textContent = Math.round(zoom * 100) + "%";
+  applyZoom();
+};
+
+// ---------- background sampling ----------
+function screenToImg(clientX, clientY) {
+  const r = overlay.getBoundingClientRect();
+  return {
+    x: Math.floor((clientX - r.left) / zoom),
+    y: Math.floor((clientY - r.top) / zoom),
+  };
+}
+overlay.onmousedown = (e) => {
+  if (!img) return;
+  if (e.shiftKey) { sampleBg(e); return; }
+  const p = screenToImg(e.clientX, e.clientY);
+  drag = { ax: p.x, ay: p.y };
+  sel.x = p.x; sel.y = p.y; sel.w = 0; sel.h = 0;
+};
+overlay.onmousemove = (e) => {
+  if (!drag) return;
+  const p = screenToImg(e.clientX, e.clientY);
+  sel.x = Math.min(drag.ax, p.x);
+  sel.y = Math.min(drag.ay, p.y);
+  sel.w = Math.abs(p.x - drag.ax);
+  sel.h = Math.abs(p.y - drag.ay);
+  drawOverlay();
+  syncSelFields();
+  updatePreview();
+};
+overlay.onmouseup = () => { drag = null; drawOverlay(); };
+function sampleBg(e) {
+  const p = screenToImg(e.clientX, e.clientY);
+  const d = sctx.getImageData(p.x, p.y, 1, 1).data;
+  const hex = "#" + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, "0")).join("");
+  $("bgHex").value = hex;
+  $("bgSwatch").style.background = hex;
+  updatePreview();
+}
+$("bgHex").oninput = () => { $("bgSwatch").style.background = $("bgHex").value; updatePreview(); };
+$("tol").oninput = (e) => { $("tolVal").textContent = e.target.value; updatePreview(); };
+$("feather").onchange = updatePreview;
+
+// sync the number fields with `sel`
+["x","y","w","h"].forEach(k => {
+  $(k).oninput = () => {
+    sel[k] = Math.max(0, parseInt($(k).value || "0", 10));
+    drawOverlay(); updatePreview();
+  };
+});
+function syncSelFields() {
+  $("x").value = sel.x; $("y").value = sel.y; $("w").value = sel.w; $("h").value = sel.h;
+}
+
+// ---------- overlay drawing ----------
+function drawOverlay() {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (sel.w > 0 && sel.h > 0) {
+    octx.strokeStyle = "#ffd54a";
+    octx.lineWidth = Math.max(1, 2 / zoom);
+    octx.strokeRect(sel.x + 0.5, sel.y + 0.5, sel.w, sel.h);
+  }
+  items.forEach((it, i) => {
+    octx.strokeStyle = i === activeIdx ? "#7cff7c" : "rgba(120,200,255,.7)";
+    octx.lineWidth = Math.max(1, (i === activeIdx ? 2 : 1) / zoom);
+    octx.strokeRect(it.x + 0.5, it.y + 0.5, it.w, it.h);
+  });
+}
+
+// ---------- crop + key ----------
+function hexToRgb(h) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(h.trim());
+  if (!m) return [251, 249, 246];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+/** Crop current sel, key out bg, return an ImageData (RGBA). */
+function renderKeyed() {
+  if (!img || sel.w <= 0 || sel.h <= 0) return null;
+  const x = Math.max(0, Math.floor(sel.x));
+  const y = Math.max(0, Math.floor(sel.y));
+  const w = Math.min(imgW - x, Math.floor(sel.w));
+  const h = Math.min(imgH - y, Math.floor(sel.h));
+  if (w <= 0 || h <= 0) return null;
+  const src = sctx.getImageData(x, y, w, h);
+  const out = sctx.createImageData(w, h);
+  const [br, bg, bb] = hexToRgb($("bgHex").value);
+  const tol = parseInt($("tol").value, 10);
+  const tol2 = tol * tol;
+  const feather = $("feather").checked;
+  const sd = src.data, od = out.data;
+  for (let i = 0; i < sd.length; i += 4) {
+    const dr = sd[i] - br, dg = sd[i + 1] - bg, db = sd[i + 2] - bb;
+    const dist2 = dr * dr + dg * dg + db * db;
+    let a;
+    if (dist2 <= tol2) a = 0;                 // bg → transparent
+    else if (feather && dist2 <= tol2 * 2.25) { // 1.5× band → semi
+      a = Math.round(255 * (Math.sqrt(dist2) - tol) / (tol * 0.5));
+      if (a > 255) a = 255; if (a < 0) a = 0;
+    } else a = 255;
+    od[i] = sd[i]; od[i + 1] = sd[i + 1]; od[i + 2] = sd[i + 2]; od[i + 3] = a;
+  }
+  return { data: out, w, h, x, y };
+}
+function updatePreview() {
+  const r = renderKeyed();
+  if (!r) { pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height); return; }
+  previewCanvas.width = r.w; previewCanvas.height = r.h;
+  pctx.putImageData(r.data, 0, 0);
+}
+
+// ---------- items / export ----------
+$("add").onclick = () => {
+  if (sel.w <= 0 || sel.h <= 0) { setStatus("drag a region first"); return; }
+  const name = ($("name").value || `asset-${items.length + 1}`).trim().replace(/\.png$/, "");
+  items.push({ name, x: sel.x, y: sel.y, w: sel.w, h: sel.h });
+  $("name").value = "";
+  activeIdx = items.length - 1;
+  renderList(); drawOverlay();
+  setStatus(`added "${name}" (${items.length} total)`);
+};
+function renderList() {
+  const el = $("list");
+  el.innerHTML = "";
+  items.forEach((it, i) => {
+    const row = document.createElement("div");
+    row.className = "item" + (i === activeIdx ? " active" : "");
+    row.innerHTML =
+      `<span class="nm">${it.name}</span>` +
+      `<span class="coords">${it.w}×${it.h}+${it.x},${it.y}</span>` +
+      `<span class="del" title="remove">✕</span>`;
+    row.querySelector(".nm").onclick = () => {
+      activeIdx = i;
+      sel = { x: it.x, y: it.y, w: it.w, h: it.h };
+      $("name").value = it.name;
+      syncSelFields(); drawOverlay(); updatePreview(); renderList();
+    };
+    row.querySelector(".del").onclick = () => {
+      items.splice(i, 1); if (activeIdx >= items.length) activeIdx = items.length - 1;
+      renderList(); drawOverlay();
+    };
+    el.appendChild(row);
+  });
+}
+function download(dataUrl, filename) {
+  const a = document.createElement("a");
+  a.href = dataUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function keyedToPng(r) {
+  const c = document.createElement("canvas");
+  c.width = r.w; c.height = r.h;
+  c.getContext("2d").putImageData(r.data, 0, 0);
+  return c.toDataURL("image/png");
+}
+$("exportOne").onclick = () => {
+  const r = renderKeyed();
+  if (!r) { setStatus("nothing to export"); return; }
+  const name = ($("name").value || `asset-${Date.now()}`).trim().replace(/\.png$/, "");
+  download(keyedToPng(r), name + ".png");
+  setStatus(`exported ${name}.png (${r.w}×${r.h})`);
+};
+$("exportAll").onclick = () => {
+  if (!items.length) { setStatus("no selections"); return; }
+  let i = 0;
+  const step = () => {
+    if (i >= items.length) { setStatus("exported all"); return; }
+    const it = items[i];
+    sel = { x: it.x, y: it.y, w: it.w, h: it.h };
+    const r = renderKeyed();
+    if (r) download(keyedToPng(r), it.name + ".png");
+    i++; setTimeout(step, 250); // stagger multi-download (browsers block bursts)
+  };
+  step();
+};
+$("saveJson").onclick = () => {
+  const manifest = {
+    source: img ? `${imgW}×${imgH}` : null,
+    background: $("bgHex").value,
+    tolerance: parseInt($("tol").value, 10),
+    feather: $("feather").checked,
+    selections: items,
+  };
+  download("data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest, null, 2)),
+           "asset-slices.json");
+};
+$("importJson").onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const m = JSON.parse(r.result);
+      items = Array.isArray(m.selections) ? m.selections : [];
+      if (m.background) { $("bgHex").value = m.background; $("bgSwatch").style.background = m.background; }
+      if (m.tolerance != null) { $("tol").value = m.tolerance; $("tolVal").textContent = m.tolerance; }
+      if (m.feather != null) $("feather").checked = m.feather;
+      renderList(); drawOverlay(); setStatus(`imported ${items.length} selections`);
+    } catch (err) { setStatus("bad JSON: " + err.message); }
+  };
+  r.readAsText(f);
+};
+function setStatus(s) { $("status").textContent = s ? "· " + s : ""; }
+
+// ---------- init ----------
+applyZoom();
+setStatus("open an image or load the default");
+</script>
+</body>
+</html>

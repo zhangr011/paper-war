@@ -22,8 +22,8 @@ func TestFogEnemyAppearsAndDisappears(t *testing.T) {
 	gs := NewGameSession()
 	gs.Lifecycle.Start()
 
-	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(float64(DefaultMapWidth) / 2), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth) / 2), fixed.FromFloat(float64(DefaultMapHeight) - 10), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(float64(DefaultMapWidth)/2), fixed.FromFloat(10.0), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 2, fixed.FromFloat(float64(DefaultMapWidth)/2), fixed.FromFloat(float64(DefaultMapHeight)-10), 1, component.UnitLightInfantry)
 	gs.Tick()
 
 	posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])

@@ -97,6 +97,16 @@
     .hidden { display: none; }
     .pillbar { display: flex; gap: 4px; margin: 4px 0 0; }
     .pillbar .seg { height: 8px; border-radius: 2px; }
+
+    .coll-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .coll-cell { text-align: center; padding: 4px 6px;
+                 border: 1px solid var(--border); border-radius: 4px;
+                 background: var(--bg); }
+    .coll-cell.dirty { border-color: var(--accent); }
+    .coll-cell svg { display: block; margin: 0 auto; }
+    .coll-label { font-size: 11px; color: var(--text); margin-top: 2px; }
+    .coll-val { font-size: 10px; color: var(--muted);
+                font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
@@ -190,6 +200,11 @@
         role-ratio target the adaptive recruiter aims for.
       </p>
     </div>
+  </div>
+
+  <div class="col" style="margin-top:8px">
+    <h2>Collision radius — to scale</h2>
+    <div id="collision-view"></div>
   </div>
 
   <div id="export-wrap" class="hidden">

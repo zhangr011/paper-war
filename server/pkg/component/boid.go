@@ -12,9 +12,6 @@ const (
 type BoidComponent struct {
 	SquadID       uint32
 	Role          BoidRole
-	SeparationW   int64
-	CohesionW     int64
-	AlignmentW    int64
 	AttractionW   int64
 	NeighborRange int64
 	// GarrisonedIn is the entity ID of the Stronghold this unit is inside, or

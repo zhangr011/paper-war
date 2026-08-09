@@ -61,9 +61,6 @@ func TestCommanderMovesTowardTarget_YAxis(t *testing.T) {
 	boidPool.Add(cmdEntity, component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleCommander,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(0.8),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})
@@ -82,9 +79,6 @@ func TestCommanderMovesTowardTarget_YAxis(t *testing.T) {
 		boidPool.Add(e, component.BoidComponent{
 			SquadID:       1,
 			Role:          component.RoleMelee,
-			SeparationW:   fixed.FromFloat(1.5),
-			CohesionW:     fixed.FromFloat(0.8),
-			AlignmentW:    fixed.FromFloat(1.0),
 			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(2.0),
 		})
@@ -159,9 +153,6 @@ func TestCommanderMovesTowardTarget_XAxis(t *testing.T) {
 	boidPool.Add(cmdEntity, component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleCommander,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(0.8),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(2.0),
 	})

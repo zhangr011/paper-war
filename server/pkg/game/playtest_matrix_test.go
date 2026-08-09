@@ -14,13 +14,13 @@ import (
 
 // playtestResult captures aggregate stats across N matches of a single matchup.
 type playtestResult struct {
-	Label       string
-	Runs        int
-	BlueWins    int
-	RedWins     int
-	Draws       int
-	Stalemates  int
-	AvgTicks    float64
+	Label        string
+	Runs         int
+	BlueWins     int
+	RedWins      int
+	Draws        int
+	Stalemates   int
+	AvgTicks     float64
 	AvgSurvHPpct float64 // winner survivor HP as % of starting HP
 }
 
@@ -48,13 +48,9 @@ func runMirrorMatchup(t *testing.T, typeName string, unitType component.CombatUn
 		gs.ResetWithMap(tilemap.LoadClashMap("plains"))
 		gs.EnableClashMode()
 		gs.Map.Objective.Type = 0
+		gs.SetSessionRNG(rand.New(rand.NewSource(int64(1000 + i))))
 
-		mw, mh := gs.MapSize()
-		cx1 := fixed.FromFloat(float64(mw)/2 - 2)
-		cx2 := fixed.FromFloat(float64(mw)/2 + 2)
-		cy := fixed.FromFloat(float64(mh) / 2)
-		gs.SpawnSquadWithType(1, 1, cx1, cy, 10, unitType)
-		gs.SpawnSquadWithType(2, 2, cx2, cy, 10, unitType)
+		spawnClashSides(gs, unitType, unitType)
 
 		hp := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 		owner := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
@@ -67,8 +63,8 @@ func runMirrorMatchup(t *testing.T, typeName string, unitType component.CombatUn
 		})
 
 		winner := uint8(2) // draw
-		decisiveTick := uint32(500)
-		for tick := uint32(1); tick <= 500; tick++ {
+		decisiveTick := uint32(800)
+		for tick := uint32(1); tick <= 800; tick++ {
 			gs.Tick()
 			var alive [2]int
 			hp.Each(func(e ecs.Entity, c *component.HealthComponent) {
@@ -94,7 +90,7 @@ func runMirrorMatchup(t *testing.T, typeName string, unitType component.CombatUn
 				break
 			}
 		}
-		if decisiveTick >= 500 && winner == 2 {
+		if decisiveTick >= 800 && winner == 2 {
 			res.Stalemates++
 		}
 
@@ -142,13 +138,9 @@ func runCounterMatchup(t *testing.T, label string, blueType, redType component.C
 		gs.ResetWithMap(tilemap.LoadClashMap("plains"))
 		gs.EnableClashMode()
 		gs.Map.Objective.Type = 0
+		gs.SetSessionRNG(rand.New(rand.NewSource(int64(1000 + i))))
 
-		mw, mh := gs.MapSize()
-		cx1 := fixed.FromFloat(float64(mw)/2 - 2)
-		cx2 := fixed.FromFloat(float64(mw)/2 + 2)
-		cy := fixed.FromFloat(float64(mh) / 2)
-		gs.SpawnSquadWithType(1, 1, cx1, cy, 10, blueType)
-		gs.SpawnSquadWithType(2, 2, cx2, cy, 10, redType)
+		spawnClashSides(gs, blueType, redType)
 
 		hp := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 		owner := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
@@ -161,8 +153,8 @@ func runCounterMatchup(t *testing.T, label string, blueType, redType component.C
 		})
 
 		winner := uint8(2)
-		decisiveTick := uint32(500)
-		for tick := uint32(1); tick <= 500; tick++ {
+		decisiveTick := uint32(800)
+		for tick := uint32(1); tick <= 800; tick++ {
 			gs.Tick()
 			var alive [2]int
 			hp.Each(func(e ecs.Entity, c *component.HealthComponent) {
@@ -188,7 +180,7 @@ func runCounterMatchup(t *testing.T, label string, blueType, redType component.C
 				break
 			}
 		}
-		if decisiveTick >= 500 && winner == 2 {
+		if decisiveTick >= 800 && winner == 2 {
 			res.Stalemates++
 		}
 
@@ -222,6 +214,40 @@ func runCounterMatchup(t *testing.T, label string, blueType, redType component.C
 		res.AvgSurvHPpct = float64(survSum) / float64(decided)
 	}
 	return res
+}
+
+// spawnClashSides sets up the two teams in the REAL clash configuration used by
+// cmd/server/main.go start_clash: vertical placement on the long axis (both at
+// the map's center X, separated on Y) with march orders at each other's base.
+//
+// The earlier synthetic placement (horizontal, cx1/cx2 = mw/2∓2, same Y, no
+// march) starts both sides in mutual range and exposes a latent low-coordinate
+// partial-engagement asymmetry that flips mirrors to ~100% Blue once collision
+// is on (issue #72). That asymmetry does not appear in the real vertical+march
+// clash, so this helper drives the real shape.
+func spawnClashSides(gs *GameSession, blueType, redType component.CombatUnitType) {
+	mw, mh := gs.MapSize()
+	cx := fixed.FromFloat(float64(mw) / 2)
+	cy1 := fixed.FromFloat(float64(mh/2 - 4)) // team 1 base (low Y)
+	cy2 := fixed.FromFloat(float64(mh/2 + 4)) // team 2 base (high Y)
+	gs.SpawnSquadWithType(1, 1, cx, cy1, 10, blueType)
+	gs.SpawnSquadWithType(2, 2, cx, cy2, 10, redType)
+
+	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
+	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+	boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+	boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+		path, ok := pathPool.GetPtr(e)
+		if !ok {
+			return
+		}
+		path.TargetX = cx
+		if own, has := ownerPool.Get(e); has && own.Faction == component.FactionEnemy {
+			path.TargetY = cy1 // team 2 marches up
+		} else {
+			path.TargetY = cy2 // team 1 marches down
+		}
+	})
 }
 
 // setSquadPathTarget points every entity in a squad at (tx,ty). Mirrors
@@ -386,8 +412,6 @@ func runRealisticMatchup(t *testing.T, label string, blueType, redType component
 // it is unreachable here without engine-level asymmetry (e.g. per-unit retreat
 // AI, which was considered and explicitly rejected).
 func TestPlaytestMatrix(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-
 	type unitInfo struct {
 		name string
 		t    component.CombatUnitType

@@ -70,7 +70,6 @@ func TestCombatUnitsDoNotSeparate(t *testing.T) {
 	combat := component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleRanged,
-		SeparationW:   fixed.FromFloat(1.5), // large so the red failure is unambiguous
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(1.0),
 	}

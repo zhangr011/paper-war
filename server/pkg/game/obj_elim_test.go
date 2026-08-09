@@ -1,9 +1,9 @@
 package game
 
 import (
-	"testing"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/fixed"
+	"testing"
 )
 
 func TestObjectiveEliminationInClash(t *testing.T) {

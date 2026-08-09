@@ -21,8 +21,12 @@ A Commander's recruitment blueprint. Defines slots per CombatUnitType (e.g., 8 L
 _Avoid_: composition, loadout, build
 
 **CombatUnit**:
-A non-Commander entity in a Squad. Has a CombatUnitType that determines weapon, armor, stats, and cost. Types are permanent — never convert. Movement uses attraction toward a concentric-ring formation slot centered on the commander (innermost ring first, via formation.DiscOffsets) and separation (from nearby units). The attraction target is `commanderPos + slotOffset`, so the cluster radius is set by the slot layout (ring spacing ~0.6 tile), not by boid separation/attraction weights. The total cost of fielded units cannot exceed the Commander's Leading Skill. Has a Level (max 6) that grows through kill points (exponential: 2, 4, 8, 16, 32, 64 cumulative). Persistent across matches — death is permanent (Permadeath).
+A non-Commander entity in a Squad. Has a CombatUnitType that determines weapon, armor, stats, cost, and collision radius. Types are permanent — never convert. The total cost of fielded units cannot exceed the Commander's Leading Skill. Has a Level (max 6) that grows through kill points (exponential: 2, 4, 8, 16, 32, 64 cumulative). Persistent across matches — death is permanent (Permadeath).
 _Avoid_: soldier, unit (ambiguous), troop
+
+**Collision**:
+Friendly CombatUnits are physical bodies that do not overlap — overlapping units are pushed apart each tick by a positional correction (not a repulsion force). Garrisoned units are excluded (they stack inside a Stronghold by design); attack-frozen units are immovable obstacles. Enemy units do not collide — combat is ranged. See ADR-0030.
+_Avoid_: separation (the removed force-based version), repulsion, physics body
 
 **CombatUnitType**:
 A named unit archetype that bundles weapon, armor, base stats, movement profile, and cost. Defines the Formation Template slots. v1 types: Light Infantry (Gun/Light/cost 1), Heavy Infantry (Cannon/Light/cost 2), Sniper (Sniper/Light/cost 1), Anti-Armor Infantry (Missile/Light/cost 2), Motor Gun (Gun/Heavy/cost 2), Motor Artillery (Cannon/Heavy/cost 4), Motor Missile (Missile/Heavy/cost 4). Type definitions live in code, not in the database.
@@ -50,6 +54,10 @@ _Avoid_: AoE, explosion
 **AttackGround**:
 A player command that targets a terrain tile instead of a unit. Terrain tiles have Building armor. Cannon and Missile units deal 25% of base damage to Building armor via the Damage Matrix. Gun and Sniper deal 0% — cannot damage terrain. Used to open new paths or cut off enemy routes.
 _Avoid_: attack terrain, siege
+
+**Range Tolerance**:
+The extra distance (1 tile) a CombatUnit may fire beyond its nominal Range when a nearby squadmate is already engaging — a spotter. Proximity-gated: the squadmate must be same-Squad and within SpotterRadius (~2 tiles), so a unit surged out of formation gets no benefit. The unit still picks its own target; the spotter only unlocks the overshoot. Keeps a mixed Squad firing together at contact instead of stringing out. Followers open fire with a short stagger (1-2 ticks) after their spotter — gated by the spotter's engagement tenure and varied per follower — so the Squad ripples into the fight rather than volleying at once. See ADR-0031.
+_Avoid_: range bonus, extended range, shared range
 
 **Leading Skill**:
 A Commander attribute that determines the maximum number of CombatUnits in that Commander's Squad. Starts at 2, grows through combat events (kill thresholds) both within and across matches. Maximum 50. This is a career-long persistent stat — losing a Commander to Permadeath destroys months of Leading Skill progression.
@@ -162,4 +170,4 @@ _Avoid_: win condition, game mode
 
 - "unit" was used to mean both **CombatUnit** (an entity) and "a game unit" (generic) — resolved: **CombatUnit** is the specific term; "unit" is only used informally.
 - "team" was used to mean both **Squad** and **Faction** — resolved: **Squad** is the command group, **Faction** is the side.
-- "formation" was used to describe both Squad arrangement and formation types (Line/Wedge/Circle/Scatter) — resolved: v1 has no formation switching, units hold a compact concentric-ring cluster centered on the commander (radius governed by formation slot layout, not boid weights). "Formation" refers only to the spatial arrangement.
+- "formation" was used to describe both Squad arrangement and formation types (Line/Wedge/Circle/Scatter) — resolved: v1 has no formation switching; the formation-slot system was removed. A Squad's arrangement is a compact cluster centered on the Commander, with friendly-unit spacing governed by Collision (ADR-0030), not slot geometry. "Formation" refers only to the informal spatial arrangement.

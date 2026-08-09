@@ -55,7 +55,7 @@ func TestFogActuallyFiltersEnemyOnExploredTile(t *testing.T) {
 
 	// Coordinates scaled to default map dimensions. P1 at center, P2 near
 	// the opposite short edge so the match stays in PhasePlaying.
-	centerX := float64(DefaultMapWidth) / 2 // 15 on a 30-wide map
+	centerX := float64(DefaultMapWidth) / 2  // 15 on a 30-wide map
 	centerY := float64(DefaultMapHeight) / 2 // 24 on a 48-tall map
 	p2Y := float64(DefaultMapHeight) - 4.0   // near bottom edge
 

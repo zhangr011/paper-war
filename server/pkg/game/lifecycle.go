@@ -22,8 +22,8 @@ type MatchLifecycle struct {
 	Ended    time.Time
 	FlushSec int // seconds after end to flush (default 30)
 
-	WinnerFaction  uint8 // set when match ends
-	WinReason      string
+	WinnerFaction   uint8 // set when match ends
+	WinReason       string
 	MatchResultSent bool // true once MsgMatchResult has been sent to clients
 
 	onStart func()

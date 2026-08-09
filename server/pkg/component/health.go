@@ -24,6 +24,12 @@ type AttackComponent struct {
 	AttackType    AttackType
 	GroundTargetX int64 // set by CmdAttackGround
 	GroundTargetY int64 // set by CmdAttackGround
+	// SpotterTenure counts this unit's consecutive ticks as an active spotter
+	// (target valid and within BASE Range, not garrisoned, HP>0). Followers gate
+	// their Range Tolerance unlock on the spotter's tenure so the Squad ripples
+	// into the fight instead of volleying at once. Reset to 0 whenever the unit
+	// stops qualifying, so each fresh contact re-staggers. ADR-0031.
+	SpotterTenure uint32
 }
 
 type ProjectileComponent struct {

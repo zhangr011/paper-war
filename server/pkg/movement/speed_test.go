@@ -51,9 +51,6 @@ func TestSpeedWithFixedFromFloatMoves(t *testing.T) {
 	boidPool.Add(e, component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleMelee,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(1.0),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
@@ -114,9 +111,6 @@ func TestSpeedDivisorSlowsMovement(t *testing.T) {
 	boidPool.Add(e, component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleMelee,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(1.0),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
@@ -196,9 +190,6 @@ func runSingleUnitStraightLineMove(t *testing.T, speed int64) int64 {
 	boidPool.Add(e, component.BoidComponent{
 		SquadID:       1,
 		Role:          component.RoleMelee,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(1.0),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
@@ -269,9 +260,6 @@ func TestSquadStaysWithCommander(t *testing.T) {
 	boidPool.Add(cmd, component.BoidComponent{
 		SquadID:       squadID,
 		Role:          component.RoleCommander,
-		SeparationW:   fixed.FromFloat(1.5),
-		CohesionW:     fixed.FromFloat(0.8),
-		AlignmentW:    fixed.FromFloat(1.0),
 		AttractionW:    fixed.FromFloat(2.0),
 		NeighborRange: fixed.FromFloat(3.0),
 	})
@@ -293,9 +281,6 @@ func TestSquadStaysWithCommander(t *testing.T) {
 		boidPool.Add(u, component.BoidComponent{
 			SquadID:       squadID,
 			Role:          component.RoleMelee,
-			SeparationW:   fixed.FromFloat(1.5),
-			CohesionW:     fixed.FromFloat(0.8),
-			AlignmentW:    fixed.FromFloat(1.0),
 			AttractionW:    fixed.FromFloat(2.0),
 			NeighborRange: fixed.FromFloat(3.0),
 		})

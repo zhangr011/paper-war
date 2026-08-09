@@ -66,10 +66,11 @@ Commander.
   whole Squad. The fix assumes the Commander leads toward the enemy — true for
   the AI (which drives its Commander at objectives) and for ordered players, but
   a Commander given no attack/move order will not engage.
-- Formation offsets remain dead; this centering is independent of the
-  `FormationRoleComponent` path. If formation offsets are ever wired up
-  (`CmdChangeFormation`), suppression will pull units to the Commander, not to
-  their formation slot — revisit then.
+- Formation offsets are now permanently gone — the formation system was deleted
+  (`0fa5710`) and friendly-unit spacing is hard positional collision (ADR-0030).
+  The earlier "revisit when formation offsets are wired up (`CmdChangeFormation`)"
+  caveat is closed; `FormationRoleComponent` and `CmdChangeFormation` no longer
+  exist.
 - Per-tick cost: one O(N) pass over the boid pool to accumulate per-squad
   centroid sums, plus the existing commander pass. The aura spatial query
   (3-tile radius) is *not* reused — it would miss surged units beyond aura range.

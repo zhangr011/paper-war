@@ -110,11 +110,11 @@ func TestGameLoopBasicHappyPath(t *testing.T) {
 
 	// Tick to process death
 	t.Logf("before tick: lifecycle phase=%d, gold=%d", gs.Lifecycle.Phase, gs.PlayerGold[playerID])
-	
+
 	// Verify enemy HP is 0 before tick
 	ehp, _ := healthPool.Get(enemyEntity)
 	t.Logf("enemy HP before tick: %d, entity=%d", ehp.HP, enemyEntity)
-	
+
 	gs.Tick()
 	t.Logf("after tick: gold=%d, deathSys bounties=%v", gs.PlayerGold[playerID], gs.deathSys.GoldBounties)
 

@@ -61,6 +61,15 @@ type AttackRecord struct {
 // median attack cooldown so the unit "plants to fire" between shots.
 const AttackFreezeTicks uint32 = 5
 
+// Range Tolerance constants (ADR-0031). A unit may fire RangeTolerance past its
+// base Range when a same-Squad spotter lies within SpotterRadius. Both are 12.4
+// fixed-point int64, matching ac.Range. Expressed via fixed.One (1<<12) so they
+// remain compile-time constants equal to fixed.FromFloat(1.0) / fixed.FromFloat(2.0).
+const (
+	RangeTolerance = fixed.One        // 1.0 tiles
+	SpotterRadius  = fixed.One * 2    // 2.0 tiles
+)
+
 func (s *CombatSystem) Name() string  { return "CombatSystem" }
 func (s *CombatSystem) Priority() int { return 80 }
 
@@ -100,6 +109,16 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 	// has already drained them into events. Issue #48.
 	s.AttackRecords = nil
 
+	// Range Tolerance spotter pre-pass (ADR-0031). Build the set of units
+	// currently engaging a valid target within their BASE Range — "spotters."
+	// Same-Squad squadmates within SpotterRadius of a spotter fire ~1 tile past
+	// their own Range this tick, but only once the spotter's engagement tenure
+	// meets the follower's per-unit stagger threshold (1-2 ticks) — the opening
+	// fire-stagger. This reuses last tick's resolved targeting state
+	// (ac.TargetID), so there is one tick of latency — intended and consistent
+	// with the aura spatial query. O(N) over the attack pool.
+	spotters := s.buildSpotterSet()
+
 	s.attackPool.Each(func(e ecs.Entity, ac *component.AttackComponent) {
 		if ac.Cooldown > 0 && tick-ac.LastAttack < uint32(ac.Cooldown) {
 			return
@@ -118,23 +137,40 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			}
 		}
 
+		// Effective range for this tick. Range Tolerance (ADR-0031): a unit may
+		// fire RangeTolerance past its base Range when a same-Squad spotter is
+		// within SpotterRadius AND that spotter's engagement tenure meets this
+		// unit's per-follower stagger threshold (1-2 ticks) — the opening fire-
+		// stagger. effRange feeds both target acquisition and the fire-range
+		// check so the overshoot actually lets the unit fire. Garrisoned units
+		// neither grant nor receive tolerance — they fire from a Stronghold, not
+		// the field formation.
+		effRange := ac.Range
+		if s.boidPool != nil {
+			if bc, ok := s.boidPool.Get(e); ok && bc.GarrisonedIn == 0 {
+				if s.hasNearbySpotter(pos, bc.SquadID, uint32(e), spotters) {
+					effRange = ac.Range + RangeTolerance
+				}
+			}
+		}
+
 		// Auto-acquire target using smart targeting with focus-fire on wounded enemies.
 		// Pass currentTarget for hysteresis — findTarget only switches to a new
 		// target if it's meaningfully better (lower priority tier, or same tier
 		// but wounded while current isn't). Prevents DPS waste from flip-flopping.
 		if ac.TargetID == 0 || !s.isTargetValid(e, ac, pos) {
-			ac.TargetID = s.findTarget(e, pos, ac.Range, weapon, 0)
-			// If no target in attack range, try chase range (2x attack range)
+			ac.TargetID = s.findTarget(e, pos, effRange, weapon, 0)
+			// If no target in attack range, try chase range (2x effective range)
 			// so units close the gap instead of standing idle.
 			if ac.TargetID == 0 {
-				chaseRange := ac.Range * 2
+				chaseRange := effRange * 2
 				ac.TargetID = s.findTarget(e, pos, chaseRange, weapon, 0)
 			}
 		} else {
 			// Already have a valid target — opportunistically switch to a
 			// meaningfully better one (e.g., a wounded enemy appeared in range).
 			// Hysteresis inside findTarget prevents frivolous switching.
-			newID := s.findTarget(e, pos, ac.Range, weapon, ac.TargetID)
+			newID := s.findTarget(e, pos, effRange, weapon, ac.TargetID)
 			if newID != 0 {
 				ac.TargetID = newID
 			}
@@ -180,16 +216,18 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		distSq := (dx*dx + dy*dy) >> 12
 		// Effective range gains +1 tile per elevation level the attacker holds
 		// over the target (peak vs low = +2). Shooting uphill never shortens
-		// range — the defender already keeps hill cover. ADR-0029.
-		effRange := ac.Range
+		// range — the defender already keeps hill cover. ADR-0029. effRange
+		// already carries the Range Tolerance unlock from above (ADR-0031) and
+		// is extended further by high ground here.
+		fireRange := effRange
 		if s.ElevationFn != nil {
 			ax, ay := int32(pos.X>>12), int32(pos.Y>>12)
 			tx, ty := int32(targetPos.X>>12), int32(targetPos.Y>>12)
 			if adv := int64(s.ElevationFn(ax, ay)) - int64(s.ElevationFn(tx, ty)); adv > 0 {
-				effRange = ac.Range + adv<<12 // +1 tile (FIXED_ONE) per level
+				fireRange = effRange + adv<<12 // +1 tile (FIXED_ONE) per level
 			}
 		}
-		rangeSq := (effRange * effRange) >> 12
+		rangeSq := (fireRange * fireRange) >> 12
 
 		if distSq > rangeSq {
 			// Target is out of attack range but still viable.
@@ -348,6 +386,120 @@ func (s *CombatSystem) isTargetValid(attacker ecs.Entity, ac *component.AttackCo
 	}
 	_ = targetPos // position existence verified above; range checked in main loop
 	return true
+}
+
+// spotterInfo carries a spotter's squad and consecutive-engagement tenure
+// through one tick of the Range Tolerance unlock check (ADR-0031 stagger).
+type spotterInfo struct {
+	SquadID uint32
+	// Tenure is the count of consecutive ticks this spotter has been engaging
+	// (as of this pre-pass). Followers compare it against their per-unit
+	// stagger threshold to decide when the tolerance unlock fires.
+	Tenure uint32
+}
+
+// buildSpotterSet computes the spotter set for Range Tolerance (ADR-0031) and
+// updates each unit's SpotterTenure. A unit is a spotter this tick iff: it has
+// a non-zero TargetID, that target is valid (alive, enemy, not a garrisoned
+// defender) AND within the unit's BASE Range (re-validated against current
+// positions), the unit is not garrisoned, and it is alive. Frozen units
+// (mid-swing) MAY be spotters — they are engaging and their position is valid,
+// so they are not excluded. While a unit qualifies, its ac.SpotterTenure is
+// incremented; the instant it stops qualifying, tenure resets to 0 — so each
+// fresh contact re-ripples the stagger naturally. Returns a map of entity
+// ID → spotterInfo. Reuses last tick's resolved ac.TargetID, so there is one
+// tick of latency — intended.
+//
+// The ac pointer handed to Each is the pool's backing storage (&p.data[i]),
+// the same canonical pointer GetPtr returns — mutating ac.SpotterTenure here
+// persists, matching how the main Tick loop mutates ac through Each.
+func (s *CombatSystem) buildSpotterSet() map[uint32]spotterInfo {
+	spotters := make(map[uint32]spotterInfo)
+	if s.boidPool == nil {
+		return spotters
+	}
+	s.attackPool.Each(func(e ecs.Entity, ac *component.AttackComponent) {
+		if !s.qualifiesAsSpotter(e, ac) {
+			ac.SpotterTenure = 0
+			return
+		}
+		ac.SpotterTenure++
+		bc, _ := s.boidPool.Get(e)
+		spotters[uint32(e)] = spotterInfo{
+			SquadID: bc.SquadID,
+			Tenure:  ac.SpotterTenure,
+		}
+	})
+	return spotters
+}
+
+// qualifiesAsSpotter reports whether unit e meets the spotter criteria THIS
+// tick — the conjunction evaluated by buildSpotterSet. Factored out so the
+// tenure pre-pass reads as a single predicate. Frozen units pass (engaging).
+func (s *CombatSystem) qualifiesAsSpotter(e ecs.Entity, ac *component.AttackComponent) bool {
+	if ac.TargetID == 0 {
+		return false
+	}
+	bc, ok := s.boidPool.Get(e)
+	if !ok || bc.GarrisonedIn != 0 {
+		return false
+	}
+	hp, ok := s.healthPool.Get(e)
+	if !ok || hp.HP <= 0 {
+		return false
+	}
+	pos, ok := s.posPool.Get(e)
+	if !ok {
+		return false
+	}
+	// isTargetValid checks alive / faction / garrisoned-target but NOT range —
+	// we re-check the BASE Range here against current positions.
+	if !s.isTargetValid(e, ac, pos) {
+		return false
+	}
+	targetPos, ok := s.posPool.Get(ecs.Entity(ac.TargetID))
+	if !ok {
+		return false
+	}
+	dx := targetPos.X - pos.X
+	dy := targetPos.Y - pos.Y
+	distSq := (dx*dx + dy*dy) >> 12
+	rangeSq := (ac.Range * ac.Range) >> 12
+	return distSq <= rangeSq
+}
+
+// spotterThreshold returns the per-follower stagger delay (in ticks) before
+// this unit may fire via Range Tolerance off a squadmate's spotter. Stable per
+// unit (derived from entity ID, no RNG) and either 1 or 2, so a Squad ripples
+// into the fight instead of volleying at once. ADR-0031 opening fire-stagger.
+// Deterministic by design — CombatSystem has no RNG; do not reach for math/rand.
+func spotterThreshold(entityID uint32) uint32 {
+	return 1 + (entityID % 2)
+}
+
+// hasNearbySpotter reports whether a same-Squad spotter lies within
+// SpotterRadius of the unit at pos AND whose SpotterTenure has reached this
+// unit's per-follower stagger threshold (ADR-0031 stagger). It reuses the same
+// spatial hash findTarget uses for target search (s.Sh.Query) — no second
+// broad-phase structure. selfID excludes the acquiring unit itself and selects
+// the stagger threshold; a spotter must be a squadmate. The spatial Query
+// already filters by radius, so no extra distance check.
+func (s *CombatSystem) hasNearbySpotter(pos component.PositionComponent, squadID uint32, selfID uint32, spotters map[uint32]spotterInfo) bool {
+	threshold := spotterThreshold(selfID)
+	ids := s.Sh.Query(pos.X, pos.Y, SpotterRadius)
+	for _, id := range ids {
+		if id == uint64(selfID) {
+			continue
+		}
+		info, ok := spotters[uint32(id)]
+		if !ok {
+			continue
+		}
+		if info.SquadID == squadID && info.Tenure >= threshold {
+			return true
+		}
+	}
+	return false
 }
 
 // findTarget implements smart auto-targeting with focus-fire on wounded enemies.

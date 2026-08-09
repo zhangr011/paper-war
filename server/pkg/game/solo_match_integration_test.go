@@ -56,8 +56,8 @@ func TestSoloMatchRunsToCompletion(t *testing.T) {
 	// Spawn player 1 (top) and player 2 / AI (bottom), matching cmd/server/main.go.
 	gs.SpawnTeamWithType(1, 1, fixed.FromFloat(22), fixed.FromFloat(3), 1, component.UnitLightInfantry)
 	gs.SpawnTeamWithType(1, 2, fixed.FromFloat(26), fixed.FromFloat(3), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 3, fixed.FromFloat(22), fixed.FromFloat(float64(DefaultMapHeight) - 3), 1, component.UnitLightInfantry)
-	gs.SpawnTeamWithType(2, 4, fixed.FromFloat(26), fixed.FromFloat(float64(DefaultMapHeight) - 3), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 3, fixed.FromFloat(22), fixed.FromFloat(float64(DefaultMapHeight)-3), 1, component.UnitLightInfantry)
+	gs.SpawnTeamWithType(2, 4, fixed.FromFloat(26), fixed.FromFloat(float64(DefaultMapHeight)-3), 1, component.UnitLightInfantry)
 	gs.PlayerGold[1] = 50
 	gs.PlayerGold[2] = 50
 

@@ -81,6 +81,11 @@ export const ATLAS_ROWS = Math.ceil(7 * STATES * DIRECTIONS * MAX_FRAMES_PER_SPR
 export const ATLAS_W = ATLAS_COLS * ATLAS_CELL;     // 1024
 export const ATLAS_H = ATLAS_ROWS * ATLAS_CELL;     // 576
 
+// URL of an optional hand-authored / AI-generated atlas override.  When a
+// PNG exists here it replaces the procedural sprites at startup (see
+// loadUnitAtlasImage).  docs/research/art-asset-pipeline.md.
+export const ATLAS_IMAGE_URL = 'assets/sprites/unit_atlas.png';
+
 // Frames per state — indexed by state 0..4
 //   idle: 2, idle2: 2, move: 4, attack: 3, die: 4
 export const FRAMES_PER_STATE = [2, 2, 4, 3, 4];
@@ -225,6 +230,18 @@ export function drawCell(ctx, ox, oy, unitType, state, dir, frame) {
 function px(ctx, x, y, w, h, color) {
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, h);
+}
+
+// Paper-cutout part: draws a 1px ink outline (the cutout's inked edge) one
+// pixel larger than the fill, then the fill on top — so the part reads as a
+// solid team-tinted shape (white fill → tint) with a crisp dark border.
+// Where adjacent parts overlap, fills merge into one connected silhouette
+// while the outer exposed edge keeps its ink line.  This is what gives the
+// "paper cutout" look without sacrificing the solid silhouette units need to
+// stay readable at 32×32 among hundreds of instances.
+function cutout(ctx, x, y, w, h, fill, outline) {
+  px(ctx, x - 1, y - 1, w + 2, h + 2, outline);
+  px(ctx, x, y, w, h, fill);
 }
 
 // Walk-cycle vertical bob for leg animation.
@@ -384,6 +401,9 @@ function drawDeathOverlay_MM(ctx, frame) {
 
 function drawLightInfantry(ctx, state, frame, drawBack = false) {
   const cx = 16;
+  const INK = '#2b2b2b';   // ink outline + rifle (dark team-tinted line)
+  const FILL = '#fff';     // body → takes team tint via shader multiply
+  const DETAIL = '#9a9a9a';
   let dy = 0;
   let headDx = 0;
   if (state === STATE_IDLE) dy = idleBob(frame);
@@ -392,43 +412,47 @@ function drawLightInfantry(ctx, state, frame, drawBack = false) {
   else if (state === STATE_ATTACK) dy = attackShift(frame);
   else if (state === STATE_DIE) { dy = dieOffset(frame); applyDieAlpha(ctx, state, frame); }
 
-  // Head
-  px(ctx, cx - 2 + headDx, 8 + dy, 4, 4, '#fff');
-  if (!drawBack) {
-    // Face detail — skip when viewing the back
-    px(ctx, cx - 1 + headDx, 9 + dy, 1, 1, '#888'); // eye
-  } else {
-    // Back of head: a small cap line
-    px(ctx, cx - 2 + headDx, 8 + dy, 4, 1, '#aaa');
-  }
-  // Body
-  px(ctx, cx - 3, 12 + dy, 6, 8, '#ddd');
-  // Legs (animate on move).  In die state legs are tucked under body.
+  // Ground shadow (soft, no outline).  Wider on death.
+  if (state === STATE_DIE) px(ctx, cx - 6, 26, 12, 2, '#4a4a4a');
+  else px(ctx, cx - 5, 26, 10, 2, '#4a4a4a');
+
+  // Legs (animate on move).  In die state legs are tucked under the body.
   if (state === STATE_MOVE) {
     const l0 = (frame === 0 || frame === 2) ? 0 : -2;
     const l1 = (frame === 1 || frame === 3) ? 0 : -2;
-    px(ctx, cx - 3, 20 + dy + l0, 2, 4, '#aaa');
-    px(ctx, cx + 1, 20 + dy + l1, 2, 4, '#aaa');
+    cutout(ctx, cx - 3, 20 + dy + l0, 2, 5, FILL, INK);
+    cutout(ctx, cx + 1, 20 + dy + l1, 2, 5, FILL, INK);
   } else if (state !== STATE_DIE) {
-    px(ctx, cx - 3, 20 + dy, 2, 4, '#bbb');
-    px(ctx, cx + 1, 20 + dy, 2, 4, '#bbb');
+    cutout(ctx, cx - 3, 20 + dy, 2, 5, FILL, INK);
+    cutout(ctx, cx + 1, 20 + dy, 2, 5, FILL, INK);
   }
-  // Rifle (horizontal, right side) — skip in die state
-  if (state !== STATE_DIE) {
-    const rifleColor = '#888';
-    if (state === STATE_ATTACK && frame === 1) {
-      // Muzzle flash
-      px(ctx, cx + 7, 13 + dy, 3, 2, '#fff');
-      px(ctx, cx + 9, 12 + dy, 2, 4, '#fff');
-    }
-    px(ctx, cx + 2, 14 + dy, 6, 2, rifleColor);
-  }
-  // Shadow under feet (smaller on die)
-  if (state === STATE_DIE) {
-    px(ctx, cx - 5, 26, 10, 1, '#444');
+
+  // Torso.
+  cutout(ctx, cx - 3, 12 + dy, 6, 8, FILL, INK);
+
+  // Forward arm (holds the rifle) — skip in die.
+  if (state !== STATE_DIE) cutout(ctx, cx + 2, 13 + dy, 2, 4, FILL, INK);
+
+  // Head + helmet (helmet cap is wider than the head, sits on top — its
+  // bottom corners read as a brim).
+  cutout(ctx, cx - 2 + headDx, 8 + dy, 4, 4, FILL, INK);
+  cutout(ctx, cx - 3 + headDx, 7 + dy, 6, 2, FILL, INK);
+  if (!drawBack) {
+    px(ctx, cx - 1 + headDx, 10 + dy, 1, 1, INK);   // eye
   } else {
-    px(ctx, cx - 4, 25, 8, 1, '#444');
+    px(ctx, cx - 3 + headDx, 8 + dy, 6, 1, DETAIL); // back-of-head stripe
   }
+
+  // Rifle (horizontal, right side) + muzzle flash on attack — skip in die.
+  if (state !== STATE_DIE) {
+    if (state === STATE_ATTACK && frame === 1) {
+      px(ctx, cx + 8, 13 + dy, 3, 2, '#fff');  // muzzle flash
+      px(ctx, cx + 10, 12 + dy, 2, 4, '#fff');
+    }
+    px(ctx, cx + 4, 14 + dy, 7, 2, INK);   // barrel
+    px(ctx, cx + 3, 14 + dy, 2, 3, INK);   // stock / grip
+  }
+
   if (state === STATE_DIE) ctx.globalAlpha = 1.0;
   // Issue #36: type-specific death debris (helmet pops off).
   if (state === STATE_DIE) drawDeathOverlay_LI(ctx, frame);
@@ -758,4 +782,67 @@ export function generateUnitAtlas() {
   }
 
   return canvas;
+}
+
+/**
+ * Optionally override the procedural atlas with a hand-authored or
+ * AI-generated PNG.  The image must be exactly ATLAS_W×ATLAS_H and pack
+ * sprites per the atlasCell() grid — use downloadUnitAtlasTemplate() to
+ * get a grid-correct starting point.  See docs/research/art-asset-pipeline.md.
+ *
+ * Async and non-fatal: on any error (file missing, wrong size, decode
+ * failure) it logs and leaves the procedural texture bound, so rendering
+ * always works.  A missing file is the normal state until art ships, so
+ * callers can fire this unconditionally after the procedural setUnitTexture.
+ *
+ * @param {object} renderer   Renderer instance (needs setUnitTexture)
+ * @param {string} [url]      override URL; defaults to ATLAS_IMAGE_URL
+ * @returns {Promise<void>}
+ */
+export async function loadUnitAtlasImage(renderer, url = ATLAS_IMAGE_URL) {
+  try {
+    const img = new Image();
+    // Same-origin asset; anonymous CORS keeps it a clean texImage2D source.
+    img.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('load failed'));
+      img.src = url;
+    });
+    if (img.naturalWidth !== ATLAS_W || img.naturalHeight !== ATLAS_H) {
+      throw new Error(
+        `image is ${img.naturalWidth}×${img.naturalHeight}, ` +
+        `expected ${ATLAS_W}×${ATLAS_H}`,
+      );
+    }
+    renderer.setUnitTexture(img, ATLAS_W, ATLAS_H);
+    console.info(`[unit_atlas] loaded external atlas ${url}`);
+  } catch (err) {
+    // Expected when no PNG ships yet — procedural atlas stays bound.
+    console.info(`[unit_atlas] using procedural atlas (no external override at ${url}: ${err.message})`);
+  }
+}
+
+/**
+ * Render the procedural atlas and trigger a PNG download of it.  The
+ * resulting 1024×576 PNG is a grid-correct template an artist (or an AI
+ * tool such as OpenPencil / Penpot) can paint over, then drop in at
+ * assets/sprites/unit_atlas.png to override the procedural sprites.
+ * Intended for ad-hoc console use: `downloadUnitAtlasTemplate()`.
+ */
+export function downloadUnitAtlasTemplate() {
+  const canvas = generateUnitAtlas();
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      console.error('[unit_atlas] toBlob failed — cannot export template');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'unit_atlas.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }, 'image/png');
 }

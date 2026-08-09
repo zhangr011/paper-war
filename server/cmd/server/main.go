@@ -728,6 +728,12 @@ func main() {
 	// hand-copied snapshot to drift (unlike the units editor's SOURCE_STATS).
 	http.HandleFunc("/editor/clash-maps", clashMapsJSON)
 
+	// 6d. CombatUnitTypeTable as JSON for the editors. The animation editor
+	// reads collision radius for its overlay; the units editor may later drop
+	// its SOURCE_STATS mirror in favour of this. Served straight from the Go
+	// table so neither editor holds a stale copy.
+	http.HandleFunc("/editor/unit-stats", unitStatsJSON)
+
 	// 7. Start server — Serve() registers /ws and calls http.ListenAndServe
 	addr := ":9091"
 	log.Printf("Paper War server starting on %s", addr)
@@ -853,6 +859,69 @@ func clashMapsJSON(w http.ResponseWriter, r *http.Request) {
 			snap.Elevation[i] = int(t.Elevation)
 		}
 		out[name] = snap
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// weaponName / armorName stringify the enum values for the editor JSON view.
+func weaponName(w component.WeaponType) string {
+	switch w {
+	case component.WeaponGun:
+		return "Gun"
+	case component.WeaponCannon:
+		return "Cannon"
+	case component.WeaponSniper:
+		return "Sniper"
+	case component.WeaponMissile:
+		return "Missile"
+	}
+	return "?"
+}
+
+func armorName(a component.ArmorType) string {
+	switch a {
+	case component.ArmorLight:
+		return "Light"
+	case component.ArmorHeavy:
+		return "Heavy"
+	case component.ArmorBuilding:
+		return "Building"
+	}
+	return "?"
+}
+
+// unitStatsJSON serializes CombatUnitTypeTable so the editors read one server
+// source instead of a hand-maintained mirror. Radius is converted from 12.4
+// fixed-point to tiles (float) — the field the animation editor's overlay
+// needs; the full table is returned so the units editor can later migrate to it.
+func unitStatsJSON(w http.ResponseWriter, r *http.Request) {
+	type statsOut struct {
+		Weapon      string  `json:"weapon"`
+		Armor       string  `json:"armor"`
+		Cost        int32   `json:"cost"`
+		HP          int32   `json:"hp"`
+		Damage      int32   `json:"damage"`
+		Range       int64   `json:"range"`
+		Cooldown    uint8   `json:"cooldown"`
+		RecruitCost int32   `json:"recruitCost"`
+		KillBounty  int32   `json:"killBounty"`
+		Radius      float64 `json:"radius"` // tiles
+	}
+	out := make(map[string]statsOut, len(component.CombatUnitTypeTable))
+	for t, s := range component.CombatUnitTypeTable {
+		out[component.CombatUnitTypeName(t)] = statsOut{
+			Weapon:      weaponName(s.Weapon),
+			Armor:       armorName(s.Armor),
+			Cost:        s.Cost,
+			HP:          s.HP,
+			Damage:      s.Damage,
+			Range:       s.Range,
+			Cooldown:    s.Cooldown,
+			RecruitCost: s.RecruitCost,
+			KillBounty:  s.KillBounty,
+			Radius:      fixed.ToFloat(s.Radius),
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)

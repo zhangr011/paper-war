@@ -483,14 +483,17 @@ export class Game {
         this.baseAlertActive = alertActive;
         const overlay = document.getElementById('base-alert-overlay');
         if (overlay) overlay.classList.toggle('active', alertActive);
-        // Play siren when alert first triggers
-        if (alertActive && this.audioStarted) {
+        // Play siren when alert first triggers (not after the match has ended)
+        if (alertActive && this.audioStarted && this.matchWinner === undefined) {
           this.sfx.baseAlert();
         }
       }
 
-      // Process combat events → SFX
-      if (this.audioStarted && snap.events && snap.events.length > 0) {
+      // Process combat events → SFX — but NOT after the match has ended.
+      // During the server's PhaseEnded flush window the connection layer keeps
+      // delivering event-bearing snapshots (the last tick's events, replayed);
+      // without this gate the battle keeps sounding after the result is shown.
+      if (this.audioStarted && this.matchWinner === undefined && snap.events && snap.events.length > 0) {
         const camWX = (this.camera.x + this.camera.viewW / 2) / TILE_WIDTH - this.camera.offsetX / TILE_WIDTH;
         const camWY = (this.camera.y + this.camera.viewH / 2) / TILE_HEIGHT - this.camera.offsetY / TILE_HEIGHT;
         this.sfx.processEvents(snap.events, camWX, camWY);

@@ -31,6 +31,17 @@ func setSymRect(m *GameMap, cx, y, hw, h int32, t component.TerrainType) {
 	}
 }
 
+// placeWall sets a Wall tile and gives it destructible HP (Phase 3). Walls are
+// breached by cannon/AoE splash via TerrainSystem.ProcessDestruction → Plain.
+func placeWall(m *GameMap, x, y int32) {
+	m.SetTerrain(x, y, component.TerrainWall)
+	t := m.TileAt(x, y)
+	if t != nil {
+		t.Health = wallHealth
+		t.MaxHealth = wallHealth
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ClashPlains: Open field. Few scattered trees. Fast ranged engagements.
 // v1.4: single central road connects the two bases. Scattered forests
@@ -166,8 +177,8 @@ func ClashRoad() *GameMap {
 	// Wall fortifications at center crossroads
 	for _, wy := range []int32{cmidY - 1, cmidY + 1} {
 		for dx := int32(-4); dx <= -3; dx++ {
-			m.SetTerrain(cmidX+dx, wy, component.TerrainWall)
-			m.SetTerrain(cmidX-dx-1, wy, component.TerrainWall)
+			placeWall(m, cmidX+dx, wy)
+			placeWall(m, cmidX-dx-1, wy)
 		}
 	}
 
@@ -267,7 +278,7 @@ func ClashStronghold() *GameMap {
 				}
 			}
 			if dist == wallR {
-				m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainWall)
+				placeWall(m, cmidX+dx, cmidY+dy)
 			}
 		}
 	}
@@ -283,7 +294,7 @@ func ClashStronghold() *GameMap {
 	// ringed by the wall above. The N-S road carves the gate below.
 	for dy := int32(-2); dy <= 2; dy++ {
 		for dx := int32(-2); dx <= 2; dx++ {
-			m.SetTerrain(cmidX+dx, cmidY+dy, component.TerrainWall)
+			placeWall(m, cmidX+dx, cmidY+dy)
 		}
 	}
 
@@ -368,6 +379,27 @@ func ClashHills() *GameMap {
 				if t != nil && t.TerrainType == component.TerrainHill {
 					m.SetTerrain(px, y, component.TerrainRoad)
 				}
+			}
+		}
+	}
+
+	// Ramps up the ridge faces flanking the central pass (Phase 1,
+	// terrain-starcraft-plan.md §1). The pass (cols cmidX-2..cmidX+2) stays
+	// at elevation 0 and remains the primary N-S route; these Ramp tiles
+	// replace the slope-Hill ring at the pass edge with a deliberate 2-tier
+	// cliff that only a Ramp permits crossing, giving units an authored
+	// high-ground route up to the peaks. Elevation 2 is set explicitly here —
+	// Ramp is not Hill, so DeriveElevation (run in LoadClashMap) leaves it
+	// untouched, preserving the cliff. Placed on both ridges (rows 7-8 and
+	// 23-24 = the peak rows) at cols cmidX-3 (13) and cmidX+3 (19), the ridge
+	// tiles immediately flanking the pass gap on each side.
+	rampRows := []int32{7, 8, 23, 24}
+	rampCols := []int32{cmidX - 3, cmidX + 3}
+	for _, ry := range rampRows {
+		for _, rx := range rampCols {
+			m.SetTerrain(rx, ry, component.TerrainRamp)
+			if t := m.TileAt(rx, ry); t != nil {
+				t.Elevation = 2
 			}
 		}
 	}

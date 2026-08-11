@@ -674,6 +674,12 @@ export class App {
       this.game.setMapTerrain(terrainData);
     };
 
+    // Set up creep overlay handler (Phase 4). Raw w*h bytes of CreepOwner
+    // (0/1/2). Game stores it for the terrain render tint pass.
+    this.connection.onCreepData = (creepData) => {
+      this.game.setCreepData(creepData);
+    };
+
     this.game.start();
   }
 }

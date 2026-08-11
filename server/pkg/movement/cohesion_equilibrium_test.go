@@ -501,7 +501,7 @@ func TestCohesionMarchMeasurement(t *testing.T) {
 			t.Logf("spawn tile (%d,%d) terrain=%d blockLOS=%v", tileX, tileY, tile.TerrainType, tile.BlockLOS)
 		}
 		lightProfile := component.StandardMovementProfiles()[0]
-		ff := gs.Cache.Get(28, 45, lightProfile)
+		ff := gs.Cache.Get(28, 45, lightProfile, 0)
 		dir := ff.GetDirection(tileX, tileY)
 		t.Logf("flow field target=(28,45) at spawn tile: dir=(%.3f,%.3f)",
 			fixed.ToFloat(dir.DX), fixed.ToFloat(dir.DY))

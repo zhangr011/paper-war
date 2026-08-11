@@ -7,8 +7,9 @@ import (
 )
 
 type cacheKey struct {
-	X, Y      int32
-	ProfileID uint8
+	X, Y         int32
+	ProfileID    uint8
+	CreepFaction uint8
 }
 
 type cacheEntry struct {
@@ -35,14 +36,19 @@ func NewCache(gm *tilemap.GameMap, maxSize int) *Cache {
 
 func (c *Cache) Size() int { return len(c.entries) }
 
-func (c *Cache) Get(targetX, targetY int32, profile *component.MovementProfile) *FlowField {
-	key := cacheKey{X: targetX, Y: targetY, ProfileID: profile.ID}
+// Get returns the cached flow field for (target, profile, creepFaction), or
+// computes + caches it. creepFaction keys the cache because the friendly-creep
+// discount changes the integrated costs, so each faction gets its own field
+// for the same target/profile (Phase 4). creepFaction=0 is the neutral field
+// used by validators/tests.
+func (c *Cache) Get(targetX, targetY int32, profile *component.MovementProfile, creepFaction uint8) *FlowField {
+	key := cacheKey{X: targetX, Y: targetY, ProfileID: profile.ID, CreepFaction: creepFaction}
 	if entry, ok := c.entries[key]; ok {
 		c.order.MoveToFront(entry.elem)
 		return entry.ff
 	}
 
-	ff := Compute(c.gm, targetX, targetY, profile)
+	ff := Compute(c.gm, targetX, targetY, profile, creepFaction)
 	elem := c.order.PushFront(key)
 	c.entries[key] = &cacheEntry{key: key, ff: ff, elem: elem}
 
@@ -59,10 +65,14 @@ func (c *Cache) Get(targetX, targetY int32, profile *component.MovementProfile) 
 }
 
 func (c *Cache) Invalidate(targetX, targetY int32, profile *component.MovementProfile) {
-	key := cacheKey{X: targetX, Y: targetY, ProfileID: profile.ID}
-	if entry, ok := c.entries[key]; ok {
-		c.order.Remove(entry.elem)
-		delete(c.entries, key)
+	// Invalidate all creep-faction variants for this (target, profile) since
+	// creep ownership changes invalidate both factions' fields.
+	for _, cf := range [3]uint8{0, 1, 2} {
+		key := cacheKey{X: targetX, Y: targetY, ProfileID: profile.ID, CreepFaction: cf}
+		if entry, ok := c.entries[key]; ok {
+			c.order.Remove(entry.elem)
+			delete(c.entries, key)
+		}
 	}
 }
 

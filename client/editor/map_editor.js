@@ -22,6 +22,7 @@ const TERRAIN_NAMES = [
   'Wall', 'Snow', 'Desert',
   '(reserved)', '(reserved)', '(reserved)', '(reserved)', '(reserved)', // 11-15 retired stronghold terrain (#54)
   'Rock', 'Brush',
+  'Ramp', // 18 — graded ramp; permits crossing a 2-tier cliff (Phase 1)
 ];
 // Go identifier for each terrain type, as used by clash_maps.go SetTerrain.
 // Indices must equal terrain ids, so retired stronghold slots (11-15) are kept
@@ -33,6 +34,7 @@ const TERRAIN_GO = [
   'component.TerrainSnow', 'component.TerrainDesert',
   '', '', '', '', '', // 11-15 reserved (stronghold → entity, #54)
   'component.TerrainRock', 'component.TerrainBrush',
+  'component.TerrainRamp',
 ];
 // Terrain ids retired from the enum (stronghold moved to entity, #54). Skipped
 // in the palette and in export.
@@ -59,6 +61,7 @@ const TERRAIN_COLORS = [
   [0.74, 0.44, 0.18],  // 15 Stronghold5
   [0.40, 0.38, 0.36],  // 16 Rock — stone gray (heavier than Wall)
   [0.34, 0.42, 0.20],  // 17 Brush — scrubby olive-green
+  [0.76, 0.64, 0.40],  // 18 Ramp — graded earth tone (distinct from Hill/Road)
 ];
 
 // hillShadeRGB — copied verbatim from client/src/main.js. Layer 0 = valley
@@ -91,9 +94,15 @@ const RUNTIME_SPAWNS = [
 // impassable. Used by the live connectivity check (mirrors isConnected in
 // map_validate.go) so the editor flags a clash map whose runtime spawns
 // can't reach each other before you export it.
+// Movement-profile terrain costs — copied verbatim from
+// server/pkg/component/profiles.go (StandardMovementProfiles). cost 0 =
+// impassable. Indices 0..18 line up with terrain ids (18 = Ramp, added Phase
+// 1). Slot 19 is unused (0). Used by the live connectivity check (mirrors
+// isConnected in map_validate.go) so the editor flags a clash map whose
+// runtime spawns can't reach each other before you export it.
 const PROFILE_COSTS = {
-  Light: [1,1,2,0,2,3,3,1,0,2,2,1,1,1,1,1],
-  Heavy: [1,1,0,0,3,4,4,1,0,3,2,1,1,1,1,1],
+  Light: [1,1,2,0,2,3,3,1,0,2,2,1,1,1,1,1,4,1,1,0],
+  Heavy: [1,1,0,0,3,4,4,1,0,3,2,1,1,1,1,1,5,2,1,0],
 };
 
 // Last connectivity result — { Light: bool, Heavy: bool }. render() reads
@@ -468,11 +477,14 @@ function generateGo() {
   }
   if (!wroteTerrain) lines.push('\t// (all Plain — no SetTerrain calls)');
   lines.push('');
-  lines.push('\t// Hill elevation layers (0=low, 1=mid, 2=peak).');
+  lines.push('\t// Elevation layers (Hill + Ramp; 0=low, 1=mid, 2=peak).');
   let wroteElev = false;
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
-      if (terrain[y * GRID + x] === 5 && elevation[y * GRID + x] > 0) {
+      const tt = terrain[y * GRID + x];
+      // Hill (5) carries its elevation for the hill shader; Ramp (18) carries
+      // it for the cliff-crossing edge rule (Phase 1). Both must export.
+      if ((tt === 5 || tt === 18) && elevation[y * GRID + x] > 0) {
         lines.push(`\tm.TileAt(${x}, ${y}).Elevation = ${elevation[y * GRID + x]}`);
         wroteElev = true;
       }

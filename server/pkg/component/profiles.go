@@ -7,7 +7,7 @@ func StandardMovementProfiles() []*MovementProfile {
 	return []*MovementProfile{
 		{ // Light profile (ID 0)
 			ID: 0,
-			TerrainCosts: [18]uint8{
+			TerrainCosts: [20]uint8{
 				1,  // Plain
 				1,  // Road
 				2,  // Shallow - passable
@@ -26,11 +26,13 @@ func StandardMovementProfiles() []*MovementProfile {
 				1,  // Stronghold5
 				4,  // Rock - passable but slow for Light (clambering over crags)
 				1,  // Brush - trivial for Light
+				1,  // Ramp - cheap, walkable by both; permits cliff crossing (Phase 1)
+				0,  // (unused slot 19)
 			},
 		},
 		{ // Heavy profile (ID 1)
 			ID: 1,
-			TerrainCosts: [18]uint8{
+			TerrainCosts: [20]uint8{
 				1,  // Plain
 				1,  // Road
 				0,  // Shallow - impassable for Heavy
@@ -49,6 +51,8 @@ func StandardMovementProfiles() []*MovementProfile {
 				1,  // Stronghold5
 				5,  // Rock - passable but very slow for Heavy (avoids cutting Heavy routes)
 				2,  // Brush - slower for Heavy
+				1,  // Ramp - cheap, walkable by both; permits cliff crossing (Phase 1)
+				0,  // (unused slot 19)
 			},
 		},
 	}

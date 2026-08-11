@@ -32,6 +32,12 @@ type FogGrid struct {
 	// The blocker tile itself is revealed (you see the wall/forest edge, not
 	// past it). nil = radius-only vision (pre-phase-2 behavior). Issue #55.
 	BlocksLOS func(x, y int32) bool
+	// ElevationAt returns the elevation band (0/1/2) of a tile for height-aware
+	// LOS (Phase 2 of terrain-starcraft-plan). nil = flat map; only BlocksLOS
+	// is consulted. When set, a viewer on elevation Ev sees OVER intermediate
+	// tiles strictly lower than Ev (low cover, low cliffs) — the only thing
+	// that still blocks a high-ground viewer is taller terrain.
+	ElevationAt func(x, y int32) uint8
 }
 
 func NewFogGrid(w, h int32) *FogGrid {
@@ -51,14 +57,18 @@ func (fg *FogGrid) Clear() {
 	}
 }
 
-// Reveal sets tiles within radius r around (cx, cy) to FogVisible.
+// Reveal sets tiles within radius r around (cx, cy) to FogVisible. The viewer
+// is assumed to be on low ground (elevation 0); callers that know the viewer's
+// elevation should use RevealRadius directly.
 func (fg *FogGrid) Reveal(cx, cy int32) {
-	fg.RevealRadius(cx, cy, VisionRadiusTiles)
+	fg.RevealRadius(cx, cy, VisionRadiusTiles, 0)
 }
 
 // RevealRadius sets tiles within the given radius around (cx, cy) to
-// FogVisible, gated by line-of-sight when fg.BlocksLOS is set.
-func (fg *FogGrid) RevealRadius(cx, cy, r int32) {
+// FogVisible, gated by height-aware line-of-sight when fg.BlocksLOS is set.
+// viewerElev is the elevation band of the viewer's tile; high ground sees over
+// low intermediate cover and low cliffs (Phase 2 of terrain-starcraft-plan).
+func (fg *FogGrid) RevealRadius(cx, cy, r int32, viewerElev uint8) {
 	for dy := -r; dy <= r; dy++ {
 		for dx := -r; dx <= r; dx++ {
 			if dx*dx+dy*dy > r*r {
@@ -68,7 +78,7 @@ func (fg *FogGrid) RevealRadius(cx, cy, r int32) {
 			if tx < 0 || tx >= fg.Width || ty < 0 || ty >= fg.Height {
 				continue
 			}
-			if fg.BlocksLOS != nil && !fg.hasLOS(cx, cy, tx, ty) {
+			if fg.BlocksLOS != nil && !fg.hasLOS(cx, cy, tx, ty, viewerElev) {
 				continue
 			}
 			fg.Visible[ty*fg.Width+tx] = FogVisible
@@ -80,7 +90,14 @@ func (fg *FogGrid) RevealRadius(cx, cy, r int32) {
 // any *intermediate* tile blocks LOS. Start and end tiles are never checked —
 // a viewer sees out of its own tile, and the target is visible even if it is
 // itself a blocker (you see the wall, not through it). Issue #55 phase 2.
-func (fg *FogGrid) hasLOS(x0, y0, x1, y1 int32) bool {
+//
+// Height rule (Phase 2): a viewer on elevation Ev is blocked by an
+// intermediate tile iff (a) that tile's elevation is strictly higher than Ev
+// (a taller cliff always walls off sight), or (b) the tile's terrain
+// BlocksLOS (Forest/Wall/Rock) AND it is at least as high as the viewer. The
+// net effect: high ground sees OVER low cover (Brush, low Forest) and low
+// cliffs; only same-or-higher terrain blockers still stop sight.
+func (fg *FogGrid) hasLOS(x0, y0, x1, y1 int32, viewerElev uint8) bool {
 	dx := x1 - x0
 	adx := dx
 	if adx < 0 {
@@ -102,7 +119,7 @@ func (fg *FogGrid) hasLOS(x0, y0, x1, y1 int32) bool {
 	err := adx - ady
 	x, y := x0, y0
 	for {
-		if !((x == x0 && y == y0) || (x == x1 && y == y1)) && fg.BlocksLOS(x, y) {
+		if !((x == x0 && y == y0) || (x == x1 && y == y1)) && fg.tileBlocksLOS(x, y, viewerElev) {
 			return false
 		}
 		if x == x1 && y == y1 {
@@ -120,7 +137,27 @@ func (fg *FogGrid) hasLOS(x0, y0, x1, y1 int32) bool {
 	}
 }
 
-// IsVisible returns true if the tile has been seen (explored or currently visible).
+// tileBlocksLOS reports whether an intermediate tile at (x,y) blocks the line
+// of sight of a viewer on elevation viewerElev. Phase 2 height rule:
+//   - A strictly taller tile (elev > viewerElev) always blocks — a higher
+//     cliff walls off sight regardless of what grows on top of it.
+//   - Otherwise, terrain blockers (Forest/Wall/Rock via BlocksLOS) block only
+//     when at least as high as the viewer (elev >= viewerElev). High ground
+//     sees over low cover and low cliffs.
+//   - With no elevation data (ElevationAt nil), terrain alone blocks — this
+//     preserves the pre-Phase-2 behavior for tests/callers that never opted in.
+func (fg *FogGrid) tileBlocksLOS(x, y int32, viewerElev uint8) bool {
+	if fg.ElevationAt != nil {
+		interElev := fg.ElevationAt(x, y)
+		if interElev > viewerElev {
+			return true // taller ground always walls off sight
+		}
+		// Viewer is at least as high as the tile: terrain blockers only block
+		// when the blocker is NOT strictly lower than the viewer.
+		return fg.BlocksLOS != nil && fg.BlocksLOS(x, y) && interElev >= viewerElev
+	}
+	return fg.BlocksLOS != nil && fg.BlocksLOS(x, y)
+}
 func (fg *FogGrid) IsVisible(tx, ty int32) bool {
 	if tx < 0 || tx >= fg.Width || ty < 0 || ty >= fg.Height {
 		return false

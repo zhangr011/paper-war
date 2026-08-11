@@ -13,6 +13,7 @@ import (
 	"github.com/user/paper-war/server/pkg/ai"
 	"github.com/user/paper-war/server/pkg/collision"
 	"github.com/user/paper-war/server/pkg/combat"
+	"github.com/user/paper-war/server/pkg/creep"
 	"github.com/user/paper-war/server/pkg/commander"
 	"github.com/user/paper-war/server/pkg/component"
 	"github.com/user/paper-war/server/pkg/ecs"
@@ -39,6 +40,7 @@ type GameSession struct {
 	// Systems (kept as references for command handling)
 	terrainSys         *terrain.TerrainSystem
 	commanderSys       *commander.CommanderSystem
+	creepSys           *creep.CreepSystem
 	movementSys        *movement.MovementSystem
 	collisionSys       *collision.CollisionSystem
 	combatSys          *combat.CombatSystem
@@ -188,6 +190,15 @@ func NewGameSession() *GameSession {
 	// 6. Create all systems, add to world
 	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, stdProfiles)
 	gs.commanderSys = &commander.CommanderSystem{Sh: gs.Sh}
+	// CreepSystem re-derives the per-tile CreepOwner overlay from alive
+	// commander positions every SpreadInterval ticks. The Light profile
+	// gates spread walkability (creep follows infantry-traversable ground).
+	// Phase 4 (terrain-starcraft-plan.md §4).
+	gs.creepSys = &creep.CreepSystem{
+		Gm:      gs.Map,
+		World:   gs.World,
+		Profile: stdProfiles[0],
+	}
 	gs.movementSys = &movement.MovementSystem{
 		Gm:       gs.Map,
 		Cache:    gs.Cache,
@@ -211,6 +222,7 @@ func NewGameSession() *GameSession {
 
 	gs.World.AddSystem(gs.terrainSys)
 	gs.World.AddSystem(gs.commanderSys)
+	gs.World.AddSystem(gs.creepSys)
 	gs.World.AddSystem(gs.movementSys)
 	gs.World.AddSystem(gs.collisionSys)
 	gs.World.AddSystem(gs.combatSys)
@@ -287,6 +299,11 @@ func NewGameSession() *GameSession {
 	return gs
 }
 
+// TickCount returns the current simulation tick counter (monotonic from match
+// start). Used by external callers (e.g. the server pump gating periodic
+// broadcasts like the creep overlay).
+func (gs *GameSession) TickCount() uint32 { return gs.tickCount }
+
 // Tick advances the game by one tick.
 func (gs *GameSession) Tick() {
 	if gs.Lifecycle.Phase != PhasePlaying {
@@ -309,6 +326,14 @@ func (gs *GameSession) Tick() {
 	}
 
 	gs.World.Tick(gs.tickCount)
+
+	// Creep re-derives its overlay every creep.SpreadInterval ticks; the
+	// flowfield cache encodes creep-faction discounts, so invalidate it on
+	// each spread tick to keep routing consistent with the current overlay.
+	// Full invalidation is cheap (≤64 small Dijkstra runs over ~1440 tiles).
+	if gs.tickCount%uint32(creep.SpreadInterval) == 0 && gs.Cache != nil {
+		gs.Cache.InvalidateAll()
+	}
 
 	// Deduct Gold from successful recruits
 	if gs.recruitSys != nil {
@@ -388,11 +413,14 @@ func (gs *GameSession) updateFog() {
 	ownerPool := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
 	healthPool := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
 
-	// Vision source: playerID + tile position + radius
+	// Vision source: playerID + tile position + radius + viewer elevation.
+	// viewerElev feeds height-aware LOS (Phase 2): a viewer on high ground sees
+	// over low cover and low cliffs that would blind a low-ground viewer.
 	type visionSrc struct {
 		pid          uint32
 		tileX, tileY int32
 		radius       int32
+		viewerElev   uint8
 	}
 	var sources []visionSrc
 
@@ -415,10 +443,11 @@ func (gs *GameSession) updateFog() {
 			return
 		}
 		sources = append(sources, visionSrc{
-			pid:    owner.PlayerID,
-			tileX:  int32(pos.X >> 12),
-			tileY:  int32(pos.Y >> 12),
-			radius: fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
+			pid:        owner.PlayerID,
+			tileX:      int32(pos.X >> 12),
+			tileY:      int32(pos.Y >> 12),
+			radius:     fog.VisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
+			viewerElev: gs.viewerElevationAt(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
@@ -438,21 +467,32 @@ func (gs *GameSession) updateFog() {
 			return
 		}
 		sources = append(sources, visionSrc{
-			pid:    owner.PlayerID,
-			tileX:  int32(pos.X >> 12),
-			tileY:  int32(pos.Y >> 12),
-			radius: fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
+			pid:        owner.PlayerID,
+			tileX:      int32(pos.X >> 12),
+			tileY:      int32(pos.Y >> 12),
+			radius:     fog.UnitVisionRadiusTiles + gs.elevationVisionBonus(int32(pos.X>>12), int32(pos.Y>>12)),
+			viewerElev: gs.viewerElevationAt(int32(pos.X >> 12), int32(pos.Y >> 12)),
 		})
 	})
 
 	// Single-pass: clear all grids, then reveal from every source.
-	// Vision is gated by terrain line-of-sight (BlockLOS) when a map is
-	// present — forests and walls block sight past them. Issue #55 phase 2.
+	// Vision is gated by height-aware line-of-sight when a map is present:
+	// Forest/Wall/Rock block sight past them at equal-or-higher elevation, and
+	// any taller cliff blocks regardless of terrain (Phase 2 of
+	// terrain-starcraft-plan). Issue #55 phase 2.
 	var blocksLOS func(x, y int32) bool
+	var elevationAt func(x, y int32) uint8
 	if gs.Map != nil {
 		blocksLOS = func(x, y int32) bool {
 			t := gs.Map.TileAt(x, y)
-			return t != nil && t.BlockLOS
+			return t != nil && component.BlocksLOS(t.TerrainType)
+		}
+		elevationAt = func(x, y int32) uint8 {
+			t := gs.Map.TileAt(x, y)
+			if t == nil {
+				return 0
+			}
+			return t.Elevation
 		}
 	}
 	for pid := range gs.FogSys.Grids {
@@ -461,8 +501,24 @@ func (gs *GameSession) updateFog() {
 	for _, s := range sources {
 		grid := gs.FogSys.GetOrCreateGrid(s.pid)
 		grid.BlocksLOS = blocksLOS
-		grid.RevealRadius(s.tileX, s.tileY, s.radius)
+		grid.ElevationAt = elevationAt
+		grid.RevealRadius(s.tileX, s.tileY, s.radius, s.viewerElev)
 	}
+}
+
+// viewerElevationAt returns the elevation band (0/1/2) of a viewer's tile, or
+// 0 off-map / when no map is present. Used by updateFog to thread height into
+// the fog's height-aware LOS (high ground sees over low cover). Phase 2 of
+// terrain-starcraft-plan.
+func (gs *GameSession) viewerElevationAt(tileX, tileY int32) uint8 {
+	if gs.Map == nil {
+		return 0
+	}
+	t := gs.Map.TileAt(tileX, tileY)
+	if t == nil {
+		return 0
+	}
+	return t.Elevation
 }
 
 // elevationVisionBonus returns the extra vision tiles a viewer on the given
@@ -572,6 +628,12 @@ func (gs *GameSession) configureAIStrategy(aiSys *ai.AISystem) {
 				return 0
 			}
 			return tile.Elevation
+		}
+		// Phase 3 — route AoE/splash tile damage to the terrain system so cannon
+		// and ground-attack splash destroy destructible doodads (Rock/Forest/Wall
+		// /Bridge). Mirrors the ElevationFn/TerrainFn seam.
+		if gs.terrainSys != nil {
+			gs.combatSys.TileDamageFn = gs.terrainSys.ProcessDestruction
 		}
 	}
 
@@ -1793,6 +1855,25 @@ func (gs *GameSession) GenerateSnapshot(playerID uint32, view network.Rect) []by
 		// Clean up snapshot generator's prevStates for dead entities
 		gs.SnapGen.ClearPrevStates(deadIDs)
 	}
+	// Phase 3 — attach terrain-change events from TerrainSystem. Each applied
+	// event becomes a 9-byte EventTerrainChange payload (tileX int32, tileY
+	// int32, newType uint8) that the client's existing decoder expects
+	// (connection.js). Drainined once per snapshot; the system refills it next
+	// tick as queued destructions are applied.
+	if gs.terrainSys != nil {
+		applied := gs.terrainSys.DrainApplied()
+		for _, te := range applied {
+			data := make([]byte, 9)
+			le := binary.LittleEndian
+			le.PutUint32(data[0:4], uint32(te.X))
+			le.PutUint32(data[4:8], uint32(te.Y))
+			data[8] = uint8(te.NewTerrain)
+			snap.Events = append(snap.Events, network.Event{
+				Type: network.EventTerrainChange,
+				Data: data,
+			})
+		}
+	}
 	// Attach attack-fire events from CombatSystem.  Each record is one
 	// attack resolution this tick; the client uses it to drive the attack
 	// animation as a one-shot per shot.  Reuses EventProjectile (declared
@@ -2047,6 +2128,18 @@ func (gs *GameSession) MapData() []byte {
 // MapSize returns the map dimensions.
 func (gs *GameSession) MapSize() (int32, int32) {
 	return gs.Map.Width, gs.Map.Height
+}
+
+// CreepData returns the per-tile CreepOwner overlay as a raw w*h byte array
+// (one byte per tile, value 0/1/2). Broadcast to clients at ~2Hz so they can
+// render the spreading faction terrain (Phase 4, terrain-starcraft-plan.md §4).
+// Wire format: prefix {0xFF, 0xFC} + this payload (see server/cmd/server/main.go).
+func (gs *GameSession) CreepData() []byte {
+	data := make([]byte, len(gs.Map.Tiles))
+	for i, tile := range gs.Map.Tiles {
+		data[i] = tile.CreepOwner
+	}
+	return data
 }
 func addComponent[T any](w *ecs.World, e ecs.Entity, comp T) {
 	pool := w.Pool(comp).(*ecs.ComponentPool[T])

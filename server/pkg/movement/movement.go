@@ -126,10 +126,27 @@ func (s *MovementSystem) Tick(w *ecs.World, tick uint32) {
 				if tileY >= s.Gm.Height {
 					tileY = s.Gm.Height - 1
 				}
+				// Creep-faction for this unit: friendly-creep tiles get a ×0.7
+				// movement discount in the flow field (Phase 4). Map the unit's
+				// owner faction to its 1-based creep index (Player→1, Enemy→2);
+				// any other faction (neutral) → 0 (no discount). The flow field
+				// is cached per (target, profile, creepFaction) so the two
+				// factions never share a discounted field.
+				creepFaction := uint8(0)
+				if s.ownerPool != nil {
+					if owner, ok := s.ownerPool.Get(e); ok {
+						switch owner.Faction {
+						case component.FactionPlayer:
+							creepFaction = 1
+						case component.FactionEnemy:
+							creepFaction = 2
+						}
+					}
+				}
 				ff := s.Cache.Get(
 				clamp32(int32(path.TargetX>>12), 0, s.Gm.Width-1),
 				clamp32(int32(path.TargetY>>12), 0, s.Gm.Height-1),
-				profile)
+				profile, creepFaction)
 				dir := ff.GetDirection(tileX, tileY)
 				flowW := fixed.FromFloat(2.5)
 				if hasVel && vel.Speed > flowW {

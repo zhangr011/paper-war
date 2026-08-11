@@ -32,6 +32,11 @@ type CombatSystem struct {
 	// adds +1 tile to effective attack range (high ground outranges low).
 	// ADR-0029. Nil → flat map, no bonus (preserves legacy test behavior).
 	ElevationFn func(x, y int32) uint8
+	// TileDamageFn forwards tile-position damage to the TerrainSystem so cannon
+	// / AoE splash destroys destructible doodads (Rock/Forest/Wall/Bridge).
+	// Set from session.go after the TerrainSystem is constructed. Nil → terrain
+	// is invulnerable (preserves legacy test behavior). Phase 3.
+	TileDamageFn func(x, y int32, dmg int32)
 	// StateLookup returns the AI state for a squad (0 if unknown or not
 	// AI-driven). Used to suppress auto-pursuit for squads in StateGuard
 	// so they hold ground instead of chasing out-of-range targets. Set
@@ -661,6 +666,18 @@ func (s *CombatSystem) collectSplash(targetPos component.PositionComponent, base
 	if splashDmg < 1 {
 		splashDmg = 1
 	}
+
+	// Phase 3 — AoE damages destructible terrain at the impact epicenter.
+	// This is the single hook covering both ground-attack splash (CmdAttackGround)
+	// and cannon target-splash: in StarCraft only siege/AoE breaches doodads, so
+	// direct fire is intentionally not routed here. Nil → terrain invulnerable
+	// (legacy tests). Damage applies once per splash event.
+	if s.TileDamageFn != nil {
+		tx := int32(targetPos.X >> fixed.FractionBits)
+		ty := int32(targetPos.Y >> fixed.FractionBits)
+		s.TileDamageFn(tx, ty, splashDmg)
+	}
+
 	for _, id := range ids {
 		if id == uint64(attacker) || id == uint64(primaryTarget) {
 			continue

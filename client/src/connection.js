@@ -53,6 +53,7 @@ export class Connection {
     this.onDisconnect = null; // () => void
     this.onTextMessage = null; // (msg: object) => void — JSON text messages
     this.onMapData = null;    // (terrainData: Uint8Array) => void
+    this.onCreepData = null;  // (creepData: Uint8Array) => void — Phase 4 creep overlay
 
     // Reconnection state (exponential back-off)
     this.reconnectDelay = 1000;
@@ -121,13 +122,20 @@ export class Connection {
           console.error('Failed to parse JSON:', e);
         }
       } else {
-        // Binary message — check for map data vs snapshot
+        // Binary message — dispatch on the 2-byte prefix.
         const view = new DataView(event.data);
         if (view.byteLength >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xFD) {
           // Map terrain data (prefix 0xFF 0xFD)
           const terrainData = new Uint8Array(event.data, 2);
           if (this.onMapData) {
             this.onMapData(terrainData);
+          }
+        } else if (view.byteLength >= 2 && view.getUint8(0) === 0xFF && view.getUint8(1) === 0xFC) {
+          // Creep overlay (prefix 0xFF 0xFC) — raw w*h bytes, one CreepOwner
+          // (0/1/2) per tile. Broadcast at ~2Hz. Phase 4.
+          const creepData = new Uint8Array(event.data, 2);
+          if (this.onCreepData) {
+            this.onCreepData(creepData);
           }
         } else {
           // Snapshot data or server message — handleMessage handles both

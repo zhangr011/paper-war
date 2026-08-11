@@ -24,7 +24,12 @@ func (f *FlowField) GetDirection(x, y int32) Direction {
 	return f.Directions[y*f.Width+x]
 }
 
-func Compute(gm *tilemap.GameMap, targetX, targetY int32, profile *component.MovementProfile) *FlowField {
+// Compute builds the flow field toward (targetX,targetY). creepFaction is the
+// moving unit's creep-faction index (1/2; 0 = neutral) used to apply the
+// friendly-creep movement discount via EdgeWalkableFor (Phase 4). A flow field
+// computed for one faction MUST NOT be reused for the other — the caller
+// (pathfinding.Cache) keys entries by faction to enforce this.
+func Compute(gm *tilemap.GameMap, targetX, targetY int32, profile *component.MovementProfile, creepFaction uint8) *FlowField {
 	w, h := gm.Width, gm.Height
 	size := int(w * h)
 	costs := make([]uint32, size)
@@ -48,8 +53,12 @@ func Compute(gm *tilemap.GameMap, targetX, targetY int32, profile *component.Mov
 			if nx < 0 || nx >= w || ny < 0 || ny >= h {
 				continue
 			}
-			mc := gm.CostAt(nx, ny, profile)
-			if mc == 0 {
+			// Gate the step on both terrain cost and the elevation-cliff rule
+			// (EdgeWalkableFor). A 2-tier cliff is impassable unless one of the
+			// two tiles is a Ramp. Phase 1 (terrain-starcraft-plan.md §1).
+			// creepFaction applies the friendly-creep ×0.7 discount (Phase 4).
+			walkable, mc := gm.EdgeWalkableFor(cur.x, cur.y, nx, ny, profile, creepFaction)
+			if !walkable {
 				continue
 			}
 			newCost := cur.cost + uint32(mc)
@@ -74,6 +83,12 @@ func Compute(gm *tilemap.GameMap, targetX, targetY int32, profile *component.Mov
 			for _, d := range dirs8 {
 				nx, ny := x+d[0], y+d[1]
 				if nx < 0 || nx >= w || ny < 0 || ny >= h {
+					continue
+				}
+				// The descent must follow a walkable edge — a cliff blocks the
+				// step even if the neighbor has lower cost. Without this gate
+				// the flow would direct units off cliffs toward cheaper tiles.
+				if walkable, _ := gm.EdgeWalkableFor(x, y, nx, ny, profile, creepFaction); !walkable {
 					continue
 				}
 				ni := ny*w + nx

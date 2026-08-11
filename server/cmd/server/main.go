@@ -543,6 +543,19 @@ func main() {
 			}
 		}
 
+		// Creep overlay broadcast (~2Hz = every 5 ticks at 10Hz). Raw w*h
+		// bytes, one CreepOwner (0/1/2) per tile, prefixed 0xFF 0xFC. Cheap
+		// (~1.4 KB for 30×48). Phase 4 (terrain-starcraft-plan.md §4). Built
+		// once per tick and fanned out to every in-game client.
+		if gs.TickCount()%5 == 0 {
+			creepMsg := append([]byte{0xFF, 0xFC}, gs.CreepData()...)
+			for _, cid := range hub.ClientIDs() {
+				if hub.GetClientInGame(cid) {
+					hub.SendToClient(cid, creepMsg)
+				}
+			}
+		}
+
 		// Send GoldUpdate messages for any changed gold values
 		for pid, gold := range gs.GetGoldUpdates() {
 			for _, cid := range hub.ClientIDs() {

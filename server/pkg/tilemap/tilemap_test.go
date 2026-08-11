@@ -428,3 +428,32 @@ func TestGenerateMapSeedStored(t *testing.T) {
 		t.Errorf("Seed = %d, want 42", gm.Seed)
 	}
 }
+
+// TestCostAtForFriendlyCreepDiscount verifies the Phase 4 friendly-creep
+// movement discount: a Forest tile (base cost 2 for Light) owned by the
+// moving unit's creep faction costs less (×0.7, floored at 1) than the
+// neutral cost, while an enemy/neutral observer pays the base cost.
+func TestCostAtForFriendlyCreepDiscount(t *testing.T) {
+	gm := NewTestMap(3, 3, func(x, y int32) component.TerrainType {
+		return component.TerrainForest
+	})
+	profile := component.StandardMovementProfiles()[0] // Light: Forest cost 2
+	gm.TileAt(1, 1).CreepOwner = 1
+
+	base := gm.CostAt(1, 1, profile) // neutral observer — no discount
+	if base != 2 {
+		t.Fatalf("neutral Forest cost = %d, want 2", base)
+	}
+	friend := gm.CostAtFor(1, 1, profile, 1) // friendly creep faction 1
+	if friend >= base {
+		t.Errorf("friendly-creep cost = %d, want < base %d", friend, base)
+	}
+	if friend < 1 {
+		t.Errorf("friendly-creep cost = %d, want floor >= 1", friend)
+	}
+	// Enemy faction (2) gets no discount on faction-1 creep.
+	enemy := gm.CostAtFor(1, 1, profile, 2)
+	if enemy != base {
+		t.Errorf("enemy-creep cost = %d, want base %d", enemy, base)
+	}
+}

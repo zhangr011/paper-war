@@ -207,6 +207,7 @@ const TERRAIN_COLORS = [
   { r: 0.74, g: 0.44, b: 0.18 }, // 15 Stronghold L5
   { r: 0.40, g: 0.38, b: 0.36 }, // 16 Rock — stone gray (heavy cover, blocks LOS)
   { r: 0.34, g: 0.42, b: 0.20 }, // 17 Brush — scrubby olive-green (light cover)
+  { r: 0.76, g: 0.64, b: 0.40 }, // 18 Ramp — graded earth tone (warm sand-rut, distinct from Hill/Road); permits cliff crossing
 ];
 
 // Terrain types that should participate in the patchwork brightness variation.
@@ -290,6 +291,7 @@ export class Game {
     this.mapHeight = MAP_HEIGHT;
     this.terrainData = null; // Uint8Array from server (terrain types)
     this.elevationData = null; // Uint8Array from server (hill layer 0/1/2 — see issue #49)
+    this.creepData = null; // Uint8Array of CreepOwner (0/1/2) per tile — Phase 4 overlay
     this.minimapTerrainCanvas = null; // offscreen canvas for cached minimap terrain
     this.strongholds = []; // live stronghold entities [{x,y,level,faction,hp,max_hp,garrison}] from server (#54)
 
@@ -432,6 +434,24 @@ export class Game {
 
     this.buildMinimapTerrain();
     this.centerCameraOnPlayerStart();
+  }
+
+  // Store the latest creep overlay grid from the server. Raw w*h bytes, one
+  // CreepOwner (0/1/2) per tile. Read by buildTerrainTiles to tint creep
+  // tiles. Phase 4 (terrain-starcraft-plan.md §4).
+  setCreepData(data) {
+    // Copy into a stable Uint8Array sized to the current map so the render
+    // pass can index it safely even if a frame straddles a resize.
+    const expected = this.mapWidth * this.mapHeight;
+    if (!data || data.length !== expected) {
+      // Size mismatch (e.g. before map terrain arrives) — hold what we can.
+      this.creepData = null;
+      return;
+    }
+    if (!this.creepData || this.creepData.length !== expected) {
+      this.creepData = new Uint8Array(expected);
+    }
+    this.creepData.set(data);
   }
 
   centerCameraOnPlayerStart() {
@@ -1484,6 +1504,25 @@ export class Game {
           g = color.g;
           b = color.b;
           tileType = 0;
+        }
+
+        // Creep overlay tint (Phase 4). Subtly tint owned tiles toward the
+        // faction color so spreading creep reads as a colored sheen on the
+        // terrain without obscuring the base type. Faction 1 → cool blue,
+        // Faction 2 → warm red, matching teamTint's team identity. Low alpha
+        // blend keeps terrain legible under the overlay.
+        if (this.creepData) {
+          const cidx = ty * mw + tx;
+          const owner = this.creepData[cidx];
+          if (owner === 1) {
+            r = r * 0.78 + 0.10;
+            g = g * 0.88;
+            b = Math.min(1, b * 0.9 + 0.28);
+          } else if (owner === 2) {
+            r = Math.min(1, r * 0.9 + 0.32);
+            g = g * 0.82;
+            b = b * 0.72;
+          }
         }
 
         const t = this._pooledPush(tiles);

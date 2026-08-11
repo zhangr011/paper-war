@@ -104,7 +104,7 @@ func TestRevealCircle(t *testing.T) {
 
 func TestRevealRadius(t *testing.T) {
 	fg := NewFogGrid(64, 64)
-	fg.RevealRadius(32, 32, 6)
+	fg.RevealRadius(32, 32, 6, 0)
 	// Center should be visible
 	if !fg.IsCurrentlyVisible(32, 32) {
 		t.Error("center should be visible with radius 6")
@@ -212,7 +212,7 @@ func TestRevealRadiusLOSBlocks(t *testing.T) {
 	// far-right tiles.
 	wall := func(x, y int32) bool { return x == 10 && y >= 2 && y <= 12 }
 	fg.BlocksLOS = wall
-	fg.RevealRadius(5, 7, 10)
+	fg.RevealRadius(5, 7, 10, 0)
 
 	// Near side and the wall itself: visible.
 	if !fg.IsCurrentlyVisible(8, 7) {
@@ -237,7 +237,7 @@ func TestRevealRadiusLOSBlocks(t *testing.T) {
 // don't opt into LOS.
 func TestRevealRadiusNoBlockerWhenNil(t *testing.T) {
 	fg := NewFogGrid(24, 24)
-	fg.RevealRadius(5, 7, 6)
+	fg.RevealRadius(5, 7, 6, 0)
 	if !fg.IsCurrentlyVisible(11, 7) {
 		t.Error("radius-only reveal should reach (11,7)")
 	}
@@ -248,20 +248,89 @@ func TestHasLOSCorners(t *testing.T) {
 	fg := NewFogGrid(16, 16)
 	fg.BlocksLOS = func(x, y int32) bool { return x == 8 && y == 8 } // single blocker
 	// Adjacent to viewer: always LOS (no intermediate tile).
-	if !fg.hasLOS(5, 5, 6, 5) {
+	if !fg.hasLOS(5, 5, 6, 5, 0) {
 		t.Error("adjacent tile should always have LOS")
 	}
 	// Line passing through (8,8): blocked.
-	if fg.hasLOS(4, 4, 12, 12) {
+	if fg.hasLOS(4, 4, 12, 12, 0) {
 		t.Error("line through blocker (8,8) should be blocked")
 	}
 	// The blocker tile itself: visible (end tile not checked).
-	if !fg.hasLOS(7, 7, 8, 8) {
+	if !fg.hasLOS(7, 7, 8, 8, 0) {
 		t.Error("blocker tile as target should be visible")
 	}
 	// Line clearing the blocker: open.
-	if !fg.hasLOS(4, 5, 12, 5) {
+	if !fg.hasLOS(4, 5, 12, 5, 0) {
 		t.Error("horizontal line clearing the blocker should have LOS")
+	}
+}
+
+// TestRevealRadiusHeightAwareLOS verifies Phase 2 height-aware LOS: a peak
+// viewer (Elevation 2) at (5,7) sees a target tile PAST a low Forest at (8,7)
+// that would blind a low-ground (Elevation 0) viewer at the same position.
+// The forest's own tile is always revealed (you see the trees), and high
+// ground looks over it; low ground does not. terrain-starcraft-plan Phase 2.
+func TestRevealRadiusHeightAwareLOS(t *testing.T) {
+	const (
+		viewerX, viewerY = int32(5), int32(7)
+		forestX, forestY = int32(8), int32(7) // intermediate blocker on the row
+		targetX, targetY = int32(11), int32(7) // beyond the forest, same row
+	)
+	// Forest blocks LOS at low elevation; everything else is open.
+	forest := func(x, y int32) bool { return x == forestX && y == forestY }
+	// Low forest (elevation 0) everywhere except the viewer's tile.
+	elevAt := func(x, y int32) uint8 { return 0 }
+
+	run := func(viewerEv uint8) bool {
+		fg := NewFogGrid(24, 24)
+		fg.BlocksLOS = forest
+		fg.ElevationAt = elevAt
+		fg.RevealRadius(viewerX, viewerY, 10, viewerEv)
+		return fg.IsCurrentlyVisible(targetX, targetY)
+	}
+
+	// Low-ground viewer (0): the same-level forest blocks sight past it.
+	if run(0) {
+		t.Error("low-ground viewer should NOT see past a low Forest")
+	}
+	// Peak viewer (2): looks over the low forest; target tile visible.
+	if !run(2) {
+		t.Error("peak viewer should see past a low Forest (height-aware LOS)")
+	}
+	// Slope viewer (1): also higher than the low forest → sees past.
+	if !run(1) {
+		t.Error("slope viewer should see past a low Forest (height-aware LOS)")
+	}
+
+	// Sanity: the forest tile itself is always revealed (you see the canopy).
+	fg := NewFogGrid(24, 24)
+	fg.BlocksLOS = forest
+	fg.ElevationAt = elevAt
+	fg.RevealRadius(viewerX, viewerY, 10, 0)
+	if !fg.IsCurrentlyVisible(forestX, forestY) {
+		t.Error("the forest blocker tile itself should always be visible")
+	}
+}
+
+// TestRevealRadiusHeightAwareLOSCliff verifies that a taller cliff (not
+// terrain) blocks sight regardless of cover: a peak viewer whose ray crosses
+// an intermediate tile at an even higher elevation (3 — out of band, but the
+// rule is strict->) loses LOS past it.
+func TestRevealRadiusHeightAwareLOSCliff(t *testing.T) {
+	fg := NewFogGrid(24, 24)
+	// No terrain blockers; pure elevation rule.
+	fg.BlocksLOS = func(_, _ int32) bool { return false }
+	// Ridge at x=8 on row 7 one band TALLER than the viewer.
+	fg.ElevationAt = func(x, y int32) uint8 {
+		if x == 8 && y == 7 {
+			return 3
+		}
+		return 0
+	}
+	// Viewer at elevation 2 should still be blocked by the 3-high ridge.
+	fg.RevealRadius(5, 7, 10, 2)
+	if fg.IsCurrentlyVisible(11, 7) {
+		t.Error("peak viewer should be blocked by an even-taller ridge")
 	}
 }
 
@@ -273,6 +342,6 @@ func BenchmarkRevealRadiusLOS(b *testing.B) {
 	fg.BlocksLOS = func(x, y int32) bool { return (x+y)%7 == 0 }
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		fg.RevealRadius(15, 24, 12) // one commander's vision
+		fg.RevealRadius(15, 24, 12, 0) // one commander's vision
 	}
 }

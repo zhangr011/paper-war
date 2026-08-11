@@ -46,6 +46,13 @@ const (
 	bridgeHealth     = 200
 	bridgeEdgeMargin = 2 // narrows within this of a map edge are skipped (no corner bridges with no water to span)
 
+	// Destructible doodad health (Phase 3 — destructible terrain). Bridges keep
+	// bridgeHealth above; these cover the scatter/clash doodads that combat AoE
+	// can destroy via TerrainSystem.ProcessDestruction.
+	rockHealth   int32 = 300
+	forestHealth int32 = 200
+	wallHealth   int32 = 400
+
 	// Spawns
 	spawnClearRadius = 3 // 6x6 clearing (radius 3)
 	spawnSearchDepth = 12 // max rows inward from edge
@@ -438,6 +445,13 @@ func applyForest(gm *GameMap, p *perlin.Perlin, w, h int32) float64 {
 			x := int32(e.idx % int(w))
 			y := int32(e.idx / int(w))
 			gm.SetTerrain(x, y, component.TerrainForest)
+			// Phase 3 — destructible: forest has HP so cannon/AoE splash can
+			// fell trees (TerrainSystem.ProcessDestruction).
+			t := gm.TileAt(x, y)
+			if t != nil {
+				t.Health = forestHealth
+				t.MaxHealth = forestHealth
+			}
 		}
 	}
 
@@ -461,6 +475,10 @@ func applyScatter(gm *GameMap, r *rand.Rand, w, h int32) {
 			case component.TerrainHill:
 				if r.Float64() < rockFraction {
 					gm.SetTerrain(x, y, component.TerrainRock)
+					// Phase 3 — destructible: rocks have HP so cannon/AoE
+					// splash can clear them (TerrainSystem.ProcessDestruction).
+					tile.Health = rockHealth
+					tile.MaxHealth = rockHealth
 				}
 			case component.TerrainPlain:
 				if r.Float64() < brushFraction {

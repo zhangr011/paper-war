@@ -19,6 +19,11 @@ const (
 	// Rock/Brush (16/17) stable and TerrainCosts indices unchanged.
 	TerrainRock  TerrainType = 16 // heavy cover, blocks LOS, Heavy-impassable crags
 	TerrainBrush TerrainType = 17 // light cover, no LOS block (concealment only)
+	// TerrainRamp permits a ground step across a 2-tier elevation cliff
+	// (|Δelevation| ≥ 2). Cheap walkable terrain (cost 1 for both profiles)
+	// that does NOT block LOS and does NOT conceal — purely a pathfinding
+	// edge rule. See tilemap.EdgeWalkable. Phase 1 (terrain-starcraft-plan).
+	TerrainRamp TerrainType = 18
 )
 
 // BlocksLOS reports whether a tile of this terrain blocks line-of-sight
@@ -53,7 +58,7 @@ func Conceals(t TerrainType) bool {
 
 type MovementProfile struct {
 	ID           uint8
-	TerrainCosts [18]uint8
+	TerrainCosts [20]uint8
 }
 
 type MovementComponent struct {

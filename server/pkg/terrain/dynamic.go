@@ -18,6 +18,12 @@ type TerrainSystem struct {
 
 	events    []TerrainEvent
 	profiles  []*component.MovementProfile
+
+	// applied holds the terrain changes applied this tick. The snapshot
+	// builder drains it into EventTerrainChange wire events so clients update
+	// live terrain. Reset each Tick after the snapshot encoder has consumed it.
+	// Mirrors the DeathRecords/AttackRecords pattern in combat. Phase 3.
+	applied []TerrainEvent
 }
 
 func NewTerrainSystem(gm *tilemap.GameMap, cache *pathfinding.Cache, profiles []*component.MovementProfile) *TerrainSystem {
@@ -26,6 +32,18 @@ func NewTerrainSystem(gm *tilemap.GameMap, cache *pathfinding.Cache, profiles []
 		Cache:    cache,
 		profiles: profiles,
 	}
+}
+
+// DrainApplied returns the terrain changes applied this tick and clears the
+// buffer. The session's snapshot builder calls this between ticks to emit
+// EventTerrainChange wire events. Phase 3.
+func (s *TerrainSystem) DrainApplied() []TerrainEvent {
+	if len(s.applied) == 0 {
+		return nil
+	}
+	out := s.applied
+	s.applied = nil
+	return out
 }
 
 func (s *TerrainSystem) Name() string  { return "TerrainSystem" }
@@ -51,7 +69,10 @@ func (s *TerrainSystem) Tick(w *ecs.World, tick uint32) {
 		tile := s.Gm.TileAt(evt.X, evt.Y)
 		if tile != nil {
 			tile.Health = 0
+			tile.MaxHealth = 0
 		}
+		// Record so the snapshot builder can emit EventTerrainChange (Phase 3).
+		s.applied = append(s.applied, evt)
 	}
 
 	s.events = s.events[:0]
@@ -80,6 +101,10 @@ func (s *TerrainSystem) getDestroyedTerrain(tt component.TerrainType) component.
 	case component.TerrainBridge:
 		return component.TerrainDeep
 	case component.TerrainWall:
+		return component.TerrainPlain
+	case component.TerrainRock:
+		return component.TerrainPlain
+	case component.TerrainForest:
 		return component.TerrainPlain
 	default:
 		return component.TerrainPlain

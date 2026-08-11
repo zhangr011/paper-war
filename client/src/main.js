@@ -317,6 +317,16 @@ export class Game {
     this.music = new Music(this.audioEngine);
     this.audioStarted = false;
 
+    // Start audio on the first user gesture ANYWHERE on the page (browser
+    // autoplay policy requires a gesture to start an AudioContext). Without
+    // this, audio stays dormant until the user happens to left-click the
+    // battlefield canvas (selecting a squad) — every other interaction
+    // (recruit, tactics, keys, minimap, lobby) is silent until then. See
+    // initAudio(): only onLeftClick/toggleMute/toggleBuildMode init'd audio.
+    this._kickAudio = () => this.initAudio();
+    window.addEventListener('pointerdown', this._kickAudio);
+    window.addEventListener('keydown', this._kickAudio);
+
     // --- Particle system (issue #37) ---
     // Pool-allocated combat-juice particles (muzzle flash, impact sparks,
     // dust puffs, death smoke). Driven by snap.events in onMessage; updated
@@ -984,6 +994,11 @@ export class Game {
     if (this.audioStarted) return;
     if (!this.audioEngine.init()) return;
     this.audioStarted = true;
+    // Audio is started — the global gesture kickers have done their job.
+    if (this._kickAudio) {
+      window.removeEventListener('pointerdown', this._kickAudio);
+      window.removeEventListener('keydown', this._kickAudio);
+    }
     this.ambient.start();
 
     // Update mute button state
@@ -1202,6 +1217,12 @@ export class Game {
     this.running = false;
     this.connection.disconnect();
     this.ambient.stop();
+    // Detach the first-gesture audio kicker if it never fired.
+    if (this._kickAudio) {
+      window.removeEventListener('pointerdown', this._kickAudio);
+      window.removeEventListener('keydown', this._kickAudio);
+      this._kickAudio = null;
+    }
     // Clear particle pool so leftover effects don't render in the next match.
     this.particles.reset();
   }

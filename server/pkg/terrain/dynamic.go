@@ -34,6 +34,18 @@ func NewTerrainSystem(gm *tilemap.GameMap, cache *pathfinding.Cache, profiles []
 	}
 }
 
+// Reset repoints the system at a new map/cache and drops any queued or
+// applied events left over from the prior map. GameSession.ResetWithMap calls
+// this so the instance the scheduler ticks stays consistent with the new map —
+// reconstructing a fresh TerrainSystem there would leave the scheduler ticking
+// the old instance, so queued doodad-conversion events would never drain.
+func (s *TerrainSystem) Reset(gm *tilemap.GameMap, cache *pathfinding.Cache) {
+	s.Gm = gm
+	s.Cache = cache
+	s.events = nil
+	s.applied = nil
+}
+
 // DrainApplied returns the terrain changes applied this tick and clears the
 // buffer. The session's snapshot builder calls this between ticks to emit
 // EventTerrainChange wire events. Phase 3.

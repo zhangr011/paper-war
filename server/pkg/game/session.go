@@ -864,9 +864,20 @@ func (gs *GameSession) ResetWithMap(m *tilemap.GameMap) {
 	gs.Map = m
 	gs.Cache = pathfinding.NewCache(gs.Map, 64)
 
-	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, nil)
+	// Mutate terrainSys in place rather than reconstructing it. The scheduler
+	// (gs.World) holds the original instance registered in NewGameSession; a
+	// fresh NewTerrainSystem here would not be ticked, so queued doodad-
+	// conversion events (ProcessDestruction → QueueEvent) would never drain
+	// and destructible Walls/Rocks/Forest would never convert in a live match.
+	// Same in-place pattern as movementSys below.
+	gs.terrainSys.Reset(gs.Map, gs.Cache)
 	gs.movementSys.Gm = gs.Map
 	gs.movementSys.Cache = gs.Cache
+	// creepSys re-derives the CreepOwner overlay onto its Gm from commander
+	// positions, and gs.CreepData() reads gs.Map — a stale Gm here (left over
+	// from NewGameSession) means creep silently never appears on the live map.
+	// Same stale-instance trap as terrainSys above.
+	gs.creepSys.Gm = gs.Map
 
 	gs.tickCount = 0
 	gs.SnapGen = network.NewSnapshotGenerator()
@@ -917,10 +928,16 @@ func (gs *GameSession) ResetWithSeed(seed int64) {
 	gs.Map = tilemap.GenerateMap(DefaultMapWidth, DefaultMapHeight, seed)
 	gs.Cache = pathfinding.NewCache(gs.Map, 64)
 
-	// Update system references
-	gs.terrainSys = terrain.NewTerrainSystem(gs.Map, gs.Cache, nil)
+	// Update system references. Mutate terrainSys in place (Reset) rather than
+	// reconstructing it — the scheduler holds the original instance from
+	// NewGameSession, so a fresh NewTerrainSystem here would never be ticked
+	// and destructible-doodad conversions would never drain. creepSys.Gm must
+	// track the new map too, or the creep overlay is derived onto a stale map.
+	// Same wiring as ResetWithMap.
+	gs.terrainSys.Reset(gs.Map, gs.Cache)
 	gs.movementSys.Gm = gs.Map
 	gs.movementSys.Cache = gs.Cache
+	gs.creepSys.Gm = gs.Map
 
 	// Reset tick counter and snapshot generator
 	gs.tickCount = 0

@@ -853,7 +853,7 @@ type clashMapSnapshot struct {
 // as JSON so client/editor/map.html can load them as editable snapshots.
 // Reads straight from LoadClashMap, so the editor never holds a stale copy.
 func clashMapsJSON(w http.ResponseWriter, r *http.Request) {
-	names := []string{"plains", "forest", "road", "river", "stronghold", "hills"}
+	names := []string{"plains", "forest", "road", "river", "stronghold", "hills", "hills_validation"}
 	out := make(map[string]clashMapSnapshot, len(names))
 	for _, name := range names {
 		gm := tilemap.LoadClashMap(name)

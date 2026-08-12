@@ -407,6 +407,74 @@ func ClashHills() *GameMap {
 	return m
 }
 
+// ClashHillsValidation is a terrain-rich fixture for end-to-end validation of
+// the StarCraft-style terrain systems — cliffs, Ramps, the high-ground range
+// bonus, destructible doodads, and Creep spread. Registered as
+// "hills_validation" and exposed to the editor, but INTENTIONALLY excluded
+// from the "random" clash rotation below, so it never skews balance data: it
+// is shaped for deterministic coverage of terrain behaviours, not for fair
+// play. See docs/terrain-readability-plan.md Phase 0.
+//
+// Builds on the ClashHills ridge + central-pass + Ramp skeleton (so cliff and
+// high-ground behaviours fire the same way) and adds destructible doodads
+// with HP across the valley mid-line so Phase 3 doodad conversion is
+// observable on a real match.
+func ClashHillsValidation() *GameMap {
+	m := clashMap()
+
+	// Two full-width Hill ridges with central passes — the cliff + high-ground
+	// skeleton. DeriveElevation (run in LoadClashMap) grades each ridge into
+	// peak(2)/slope(1); the pass carves Plains (Elevation 0) back through it,
+	// so peak↔plain adjacencies at the pass edge are Δ2 cliffs.
+	ridges := [][2]int32{{6, 9}, {22, 25}}
+	for _, r := range ridges {
+		for y := r[0]; y <= r[1]; y++ {
+			for x := int32(0); x < cw; x++ {
+				m.SetTerrain(x, y, component.TerrainHill)
+			}
+		}
+		for y := r[0]; y <= r[1]; y++ {
+			for dx := int32(-2); dx <= 2; dx++ {
+				m.SetTerrain(cmidX+dx, y, component.TerrainPlain)
+			}
+		}
+	}
+
+	// Ramps up the ridge faces flanking each pass (Elevation 2 set explicit —
+	// Ramp is not Hill, so DeriveElevation leaves it, preserving the authored
+	// Δ2 cliff crossing). Same placement as ClashHills.
+	rampRows := []int32{7, 8, 23, 24}
+	rampCols := []int32{cmidX - 3, cmidX + 3}
+	for _, ry := range rampRows {
+		for _, rx := range rampCols {
+			m.SetTerrain(rx, ry, component.TerrainRamp)
+			if t := m.TileAt(rx, ry); t != nil {
+				t.Elevation = 2
+			}
+		}
+	}
+
+	// Destructible doodads across the valley mid-line (row cmidY), between the
+	// two clash spawns — armies marching the central axis meet these. Walls
+	// (placeWall → HP 400) are breached by cannon/AoE via ProcessDestruction →
+	// Plain; Rocks (HP 300) are heavy cover that also converts. Phase 3
+	// (terrain-starcraft-plan.md §3). The wall is 3 tiles wide and Rocks sit
+	// at cmidX±5, leaving the rest of row cmidY open so the map stays
+	// connected without relying on the breach.
+	for _, rx := range []int32{cmidX - 1, cmidX, cmidX + 1} {
+		placeWall(m, rx, cmidY)
+	}
+	for _, rx := range []int32{cmidX - 5, cmidX + 5} {
+		m.SetTerrain(rx, cmidY, component.TerrainRock)
+		if t := m.TileAt(rx, cmidY); t != nil {
+			t.Health = rockHealth
+			t.MaxHealth = rockHealth
+		}
+	}
+
+	return m
+}
+
 // LoadClashMap returns a pre-designed clash map by name.
 // Returns nil if the name is not recognized.
 func LoadClashMap(name string) *GameMap {
@@ -424,6 +492,8 @@ func LoadClashMap(name string) *GameMap {
 		m = ClashStronghold()
 	case "hills":
 		m = ClashHills()
+	case "hills_validation":
+		m = ClashHillsValidation()
 	case "random":
 		maps := []func()*GameMap{
 			ClashPlains, ClashForest, ClashRoad,

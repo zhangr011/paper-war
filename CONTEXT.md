@@ -116,12 +116,20 @@ One cell in a Map. Has a Terrain Type and, for hills, an Elevation band. Some ti
 _Avoid_: cell, grid square
 
 **Terrain Type**:
-The classification of a Tile — Plain, Road, Shallow, Deep, Forest, Hill, Swamp, Bridge, Wall, Snow, Desert. Determines movement cost per Movement Profile and, for some, destructibility. (Strongholds were once terrain types but are now Buildings — see Stronghold.)
+The classification of a Tile — Plain, Road, Shallow, Deep, Forest, Hill, Swamp, Bridge, Wall, Snow, Desert, Ramp. Determines movement cost per Movement Profile and, for some, destructibility. Ramp is the only terrain that permits crossing a 2-tier Cliff. (Strongholds were once terrain types but are now Buildings — see Stronghold.)
 _Avoid_: tile type, ground
 
 **Elevation**:
-The discrete hill-layer band of a Hill Tile: low, mid, or peak. Visual only — affects rendering, not movement or combat.
+The discrete hill-layer band of a Hill Tile: low, mid, or peak. Three bands only. Not cosmetic — an attacker on a higher band than its target gains +1 tile of effective Range per elevation level, and a viewer on a higher band sees over intermediate tiles lower than a blocker (height-aware LOS). Cliff bands also block movement in pathfinding. See ADR-0029.
 _Avoid_: height, altitude
+
+**Cliff**:
+A vertical step between two adjacent Tiles whose Elevation differs by 2 or more bands. Impassable to ground units unless one of the two tiles is Ramp terrain; a cliff taller than the viewer also walls off line of sight. The StarCraft-style terrain feature that creates chokepoints and makes Ramp placement tactically load-bearing.
+_Avoid_: ledge, drop, escarpment
+
+**Creep**:
+A faction-owned overlay on a Tile (CreepOwner = faction 1 or 2; 0 = unclaimed) that does not replace the Terrain Type. A ground unit whose faction matches the tile's CreepOwner pays a reduced movement cost (×0.7); enemy creep is neutral, not punishing. Spreads from owned sources and is rendered as a faction-colored tint. Distinct from Terrain Type — it is an overlay, not a terrain classification.
+_Avoid_: territory, supply line, slime
 
 **Building**:
 A structure entity placed on a Map with HP and an owning Faction (or neutral). Two kinds: player-built defensive structures (Watchtower, Barricade, Turret, placed via the build system for gold) and Strongholds (pre-placed, capturable). Buildings have Building armor — only Cannon and Missile damage them.

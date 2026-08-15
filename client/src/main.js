@@ -1494,8 +1494,13 @@ export class Game {
 
           // Hill-layer shading — discrete 3-layer model (issue #49).
           // See hillShadeRGB: layer 0 valley-shadow, 1 mid, 2 peak.
-          if (hasElevation && tileType === 5) {
-            [r, g, b] = hillShadeRGB(r, g, b, this.elevationData[idx]);
+          // Any terrain (not just Hill): elevation is authored on arbitrary
+          // tiles now (ADR-0033 editor); the tint is a no-op at layer 1.
+          if (hasElevation) {
+            const layer = this.elevationData[idx];
+            if (layer !== 1) {
+              [r, g, b] = hillShadeRGB(r, g, b, layer);
+            }
           }
         } else {
           // Fallback: simple checkerboard (no texture shader path)

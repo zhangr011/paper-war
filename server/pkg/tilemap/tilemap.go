@@ -4,9 +4,10 @@ import "github.com/user/paper-war/server/pkg/component"
 
 type Tile struct {
 	TerrainType component.TerrainType
-	// Elevation is a discrete hill-layer band, only meaningful when
-	// TerrainType == TerrainHill. Values: 0 = low (implicit for non-hill
-	// tiles), 1 = mid (hill slope), 2 = peak (rocky summit). Issue #49.
+	// Elevation is a discrete hill-layer band, authored on ANY terrain
+	// (ADR-0033): a Δ2 step between adjacent tiles is a cliff (impassable
+	// unless a Ramp sits on either end — EdgeWalkableFor), regardless of the
+	// tiles' terrain types. Values: 0 = low, 1 = mid, 2 = peak. Issue #49.
 	Elevation uint8
 	BlockLOS  bool
 	Health    int32

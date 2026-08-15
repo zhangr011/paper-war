@@ -216,51 +216,6 @@ void main() {
         n += crack * 0.12;
       }
       // layer 1 (slope): base relief only — the slope face catches the light.
-
-      // Cross-tile directional relief: sample the 4 neighbor elevations to
-      // derive a slope normal, then Lambertian-shade against the top-left
-      // light. Turns the flat per-tile tint into real 3D relief — a hill
-      // tile reads bright on its north/west face and dark on the south/east,
-      // so ridge lines and valleys become legible instead of every hill
-      // tile looking identical. Flat tiles (no gradient) contribute ~0.
-      float eN = 0.0, eS = 0.0, eW = 0.0, eE = 0.0;
-      ivec2 cN = tcE + ivec2(0, -1), cS = tcE + ivec2(0, 1);
-      ivec2 cW = tcE + ivec2(-1, 0), cE = tcE + ivec2(1, 0);
-      if (cN.x >= 0 && cN.y >= 0 && cN.x < dimE.x && cN.y < dimE.y)
-        eN = float(texelFetch(u_elevationTex, cN, 0).x);
-      if (cS.x >= 0 && cS.y >= 0 && cS.x < dimE.x && cS.y < dimE.y)
-        eS = float(texelFetch(u_elevationTex, cS, 0).x);
-      if (cW.x >= 0 && cW.y >= 0 && cW.x < dimE.x && cW.y < dimE.y)
-        eW = float(texelFetch(u_elevationTex, cW, 0).x);
-      if (cE.x >= 0 && cE.y >= 0 && cE.x < dimE.x && cE.y < dimE.y)
-        eE = float(texelFetch(u_elevationTex, cE, 0).x);
-      // Central-difference slope (elevation is discrete 0/1/2, so this is a
-      // step function — stylized but reads clearly as relief).
-      float dzx = (eE - eW) * 0.5;
-      float dzy = (eS - eN) * 0.5;
-      vec3 norm = normalize(vec3(-dzx, -dzy, 1.0));
-      vec3 toLight = normalize(vec3(-0.5, -0.5, 0.8));
-      float lambert = clamp(dot(norm, toLight), 0.0, 1.0);
-      // Flat baseline lambert ≈ 0.75 (z-dominant normal); remap to ~0 there.
-      n += (lambert - 0.75) * 0.5;
-
-      // Cliff-edge ambient occlusion: where this tile sits higher than a
-      // neighbor, the lip facing that drop-off falls into contact shadow.
-      // Each elevation step then reads as a physical raised ledge with a
-      // shaded cliff face, not just a flat color band. Scales by the height
-      // difference (a peak→plain 2-step cliff shadows harder than a slope
-      // edge). Reuses the neighbor elevations fetched for the slope term.
-      float cl = float(layer);
-      float ledge = 0.0;
-      float dropS = cl - eS;
-      if (dropS > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.y) * dropS);
-      float dropN = cl - eN;
-      if (dropN > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.y) * dropN);
-      float dropE = cl - eE;
-      if (dropE > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.x) * dropE);
-      float dropW = cl - eW;
-      if (dropW > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.x) * dropW);
-      n -= ledge * 0.18;
     }
   } else if (t == 7) {
     // Bridge: plank lines every 8 px + grain.
@@ -379,6 +334,63 @@ void main() {
     vec2 cell = floor(px * 0.7) + seedOff;
     float grain = hash21(cell) * 2.0 - 1.0;
     n = grain * 0.15;
+  }
+
+  // --- Elevation relief for ANY terrain (ADR-0033 era) ---
+  // Cross-tile slope Lambertian + cliff-edge ledge AO, applied after the
+  // terrain-type chain so elevation on non-Hill terrain (a raised plateau of
+  // Plains, a Road climbing a ramp) renders with the same 3D relief as hills.
+  // Previously nested in the Hill branch; the terms are relational (depend on
+  // neighbor elevations, not terrain type) so they generalize cleanly. Both
+  // are exact no-ops on flat ground: lambert remaps to 0 at the z-dominant
+  // baseline and ledge requires a positive drop — flat maps render unchanged.
+  if (u_elevationTexValid == 1) {
+    vec2 tilePosR = v_worldPos / u_tileSize;
+    ivec2 tcR = ivec2(floor(tilePosR));
+    ivec2 dimR = textureSize(u_elevationTex, 0);
+    float layerR = 0.0;
+    if (tcR.x >= 0 && tcR.y >= 0 && tcR.x < dimR.x && tcR.y < dimR.y) {
+      layerR = float(texelFetch(u_elevationTex, tcR, 0).x);
+    }
+    float eN = 0.0, eS = 0.0, eW = 0.0, eE = 0.0;
+    ivec2 cN = tcR + ivec2(0, -1), cS = tcR + ivec2(0, 1);
+    ivec2 cW = tcR + ivec2(-1, 0), cE = tcR + ivec2(1, 0);
+    if (cN.x >= 0 && cN.y >= 0 && cN.x < dimR.x && cN.y < dimR.y)
+      eN = float(texelFetch(u_elevationTex, cN, 0).x);
+    if (cS.x >= 0 && cS.y >= 0 && cS.x < dimR.x && cS.y < dimR.y)
+      eS = float(texelFetch(u_elevationTex, cS, 0).x);
+    if (cW.x >= 0 && cW.y >= 0 && cW.x < dimR.x && cW.y < dimR.y)
+      eW = float(texelFetch(u_elevationTex, cW, 0).x);
+    if (cE.x >= 0 && cE.y >= 0 && cE.x < dimR.x && cE.y < dimR.y)
+      eE = float(texelFetch(u_elevationTex, cE, 0).x);
+    // Early-out: flat tile with flat neighbours contributes nothing (keeps
+    // the common flat-plain case at zero shader cost beyond the fetches).
+    if (layerR > 0.0 || eN > 0.0 || eS > 0.0 || eW > 0.0 || eE > 0.0) {
+      // Central-difference slope (elevation is discrete 0/1/2, so this is a
+      // step function — stylized but reads clearly as relief).
+      float dzx = (eE - eW) * 0.5;
+      float dzy = (eS - eN) * 0.5;
+      vec3 norm = normalize(vec3(-dzx, -dzy, 1.0));
+      vec3 toLight = normalize(vec3(-0.5, -0.5, 0.8));
+      float lambert = clamp(dot(norm, toLight), 0.0, 1.0);
+      // Flat baseline lambert ≈ 0.75 (z-dominant normal); remap to ~0 there.
+      n += (lambert - 0.75) * 0.5;
+
+      // Cliff-edge ambient occlusion: where this tile sits higher than a
+      // neighbor, the lip facing that drop-off falls into contact shadow.
+      // Each elevation step reads as a raised ledge with a shaded cliff face,
+      // not a flat color band. Scales by the height difference.
+      float ledge = 0.0;
+      float dropS = layerR - eS;
+      if (dropS > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.y) * dropS);
+      float dropN = layerR - eN;
+      if (dropN > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.y) * dropN);
+      float dropE = layerR - eE;
+      if (dropE > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, v_texcoord.x) * dropE);
+      float dropW = layerR - eW;
+      if (dropW > 0.0) ledge = max(ledge, smoothstep(0.65, 1.0, 1.0 - v_texcoord.x) * dropW);
+      n -= ledge * 0.18;
+    }
   }
 
   // Cast shadows from raised terrain (light from NW → shadows fall SE).

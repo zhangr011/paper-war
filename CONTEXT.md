@@ -104,7 +104,7 @@ The board a match is played on: a 2D grid of Tiles with Spawn positions and an O
 _Avoid_: board, level, scenario
 
 **Clash Map**:
-A Map used by the spectator/balance harness. Terrain-only in live use — its Spawns and Objective are overridden at runtime. Hand-authored as Go source.
+A Map used by the spectator/balance harness. Terrain-only in live use — its Spawns and Objective are overridden at runtime. Authored in the map editor and stored as JSON under `server/data/clash_maps/` (ADR-0033); the legacy Go-source definitions are retired.
 _Avoid_: test map, arena
 
 **Match Map**:

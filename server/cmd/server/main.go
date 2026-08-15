@@ -735,11 +735,16 @@ func main() {
 	http.HandleFunc("/editor/ai", aiProxy)
 
 	// 6c. Snapshot data for the Clash Map editor (client/editor/map.html).
-	// Returns the six hand-authored clash maps as JSON so the editor can
-	// load them as editable starting points. Serializes straight from
-	// clash_maps.go, so it stays in sync with the Go source — no
-	// hand-copied snapshot to drift (unlike the units editor's SOURCE_STATS).
+	// Lists the saved JSON clash maps (server/data/clash_maps) — the same
+	// files LoadClashMap reads (ADR-0033) — so the editor never holds a
+	// stale copy.
 	http.HandleFunc("/editor/clash-maps", clashMapsJSON)
+
+	// 6c-2. Save endpoint for the Clash Map editor (ADR-0033). POST body:
+	// {name, w, h, terrain, elevation}. Writes data/clash_maps/<name>.json
+	// atomically; the saved map becomes loadable (start_clash) immediately —
+	// no rebuild or restart. Dev tool: no auth, same posture as /editor/ai.
+	http.HandleFunc("/editor/clash-maps/save", clashMapSave)
 
 	// 6d. CombatUnitTypeTable as JSON for the editors. The animation editor
 	// reads collision radius for its overlay; the units editor may later drop
@@ -849,11 +854,12 @@ type clashMapSnapshot struct {
 	Elevation []int `json:"elevation"`
 }
 
-// clashMapsJSON serializes the six hand-authored clash maps (clash_maps.go)
-// as JSON so client/editor/map.html can load them as editable snapshots.
-// Reads straight from LoadClashMap, so the editor never holds a stale copy.
+// clashMapsJSON serializes the saved clash maps (server/data/clash_maps,
+// ADR-0033) as JSON so client/editor/map.html can load them as editable
+// snapshots. Reads the same files LoadClashMap reads, so the editor never
+// holds a stale copy.
 func clashMapsJSON(w http.ResponseWriter, r *http.Request) {
-	names := []string{"plains", "forest", "road", "river", "stronghold", "hills", "hills_validation"}
+	names := tilemap.ClashMapNames()
 	out := make(map[string]clashMapSnapshot, len(names))
 	for _, name := range names {
 		gm := tilemap.LoadClashMap(name)
@@ -875,6 +881,37 @@ func clashMapsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
+}
+
+// clashMapSave is the editor's save endpoint (ADR-0033). The name is validated
+// by tilemap.ValidClashMapName (path-traversal guard); the payload is validated
+// by the loader's own checks, so anything loadable is exactly what was saved.
+func clashMapSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Name      string `json:"name"`
+		W         int32  `json:"w"`
+		H         int32  `json:"h"`
+		Terrain   []int  `json:"terrain"`
+		Elevation []int  `json:"elevation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name, err := tilemap.SaveClashMapJSON(body.Name, &tilemap.ClashMapFile{
+		W: body.W, H: body.H, Terrain: body.Terrain, Elevation: body.Elevation,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("clash map saved: %s (%dx%d)", name, body.W, body.H)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": name})
 }
 
 // weaponName / armorName stringify the enum values for the editor JSON view.

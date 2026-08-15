@@ -733,6 +733,34 @@ class SpriteBatch {
   }
 
   /**
+   * Push one flat-colored triangle with arbitrary corners. The primitive
+   * rings and other non-axis-aligned overlays are built from (the
+   * existing quad helpers only cover rectangles). Same vertex layout as
+   * pushQuad's triangles; full white-texture UVs; tileType 0 (no texture).
+   */
+  pushTriangle(x1, y1, x2, y2, x3, y3, r, g, b, a) {
+    if (this.vertexCount + 3 > MAX_BATCH_VERTICES) {
+      this.flush();
+    }
+    const o = this.vertexCount * VERTEX_FLOATS;
+    const buf = this.buffer;
+    // Three vertices, full-texture UVs (white pixel → flat color).
+    buf[o] = x1; buf[o + 1] = y1; buf[o + 2] = 0; buf[o + 3] = 0;
+    buf[o + 4] = r; buf[o + 5] = g; buf[o + 6] = b; buf[o + 7] = a;
+    buf[o + 8] = 0; buf[o + 9] = 0;
+
+    buf[o + 10] = x2; buf[o + 11] = y2; buf[o + 12] = 0; buf[o + 13] = 1;
+    buf[o + 14] = r; buf[o + 15] = g; buf[o + 16] = b; buf[o + 17] = a;
+    buf[o + 18] = 0; buf[o + 19] = 0;
+
+    buf[o + 20] = x3; buf[o + 21] = y3; buf[o + 22] = 1; buf[o + 23] = 1;
+    buf[o + 24] = r; buf[o + 25] = g; buf[o + 26] = b; buf[o + 27] = a;
+    buf[o + 28] = 0; buf[o + 29] = 0;
+
+    this.vertexCount += 3;
+  }
+
+  /**
    * Push a textured terrain quad.  Same as pushColorQuad but with tileType and
    * seed passed through so the fragment shader applies the appropriate noise
    * pattern.  Used by drawTerrain for textured pixel-art tiles.
@@ -1420,6 +1448,31 @@ export class Renderer {
         e.b,
         e.a !== undefined ? e.a : 1.0,
       );
+    }
+  }
+
+  /**
+   * Batch range rings (terrain-readability Phase 1 / ADR-0029): thin annuli
+   * showing a selected unit's effective attack range. Rings are pre-computed
+   * triangle lists (flat x,y vertex pairs, 3 per triangle — see
+   * range_ring.js ringTriangles) so this method does no per-frame math, just
+   * the camera translate and the pushTriangle loop.
+   * @param {Array<{cx:number, cy:number, verts:number[], r:number, g:number, b:number, a:number}>} rings
+   * @param {{ x:number, y:number }} camera
+   */
+  drawRings(rings, camera) {
+    const batch = this.effectsBatch;
+    for (let i = 0; i < rings.length; i++) {
+      const ring = rings[i];
+      const v = ring.verts;
+      for (let j = 0; j < v.length; j += 6) {
+        batch.pushTriangle(
+          v[j] - camera.x, v[j + 1] - camera.y,
+          v[j + 2] - camera.x, v[j + 3] - camera.y,
+          v[j + 4] - camera.x, v[j + 5] - camera.y,
+          ring.r, ring.g, ring.b, ring.a,
+        );
+      }
     }
   }
 

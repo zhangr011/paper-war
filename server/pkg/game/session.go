@@ -275,13 +275,20 @@ func NewGameSession() *GameSession {
 	// squads in StateGuard hold ground instead of auto-pursuing. Both
 	// AI systems (primary + clash) are queried; whichever owns the
 	// squad returns the state, the other returns 0.
+	//
+	// A MoveDisabled AI reports 0 ("not AI-driven"): the StateGuard/
+	// StateApproach pursue-skip in combat.go assumes the AI is moving the
+	// squad itself, but a MoveDisabled AI issues no CmdMove — honoring its
+	// state would leave out-of-range squads frozen (no fire, no pursuit)
+	// and deadlock clash standoffs. Clash mode marches armies via explicit
+	// path orders instead, and combat pursue then reinforces closing.
 	gs.combatSys.StateLookup = func(squadID uint32) uint8 {
-		if gs.AISys != nil {
+		if gs.AISys != nil && !gs.AISys.MoveDisabled {
 			if st, ok := gs.AISys.States[squadID]; ok {
 				return st.State
 			}
 		}
-		if gs.AISys2 != nil {
+		if gs.AISys2 != nil && !gs.AISys2.MoveDisabled {
 			if st, ok := gs.AISys2.States[squadID]; ok {
 				return st.State
 			}

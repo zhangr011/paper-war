@@ -301,11 +301,11 @@ func TestCombatOutOfRange(t *testing.T) {
 
 // TestCombatElevationRangeBonus — high ground extends attack range. A unit
 // with range 5 cannot hit a target 6 tiles away at equal elevation, but the
-// same attacker on a peak (Elevation 2) over a low target (0) gains +2 tiles
-// of range and connects. ADR-0029.
+// same attacker on a peak (Elevation 2) over a low target (0) gains the flat
+// +1 tile of range and connects at distance 5.5. ADR-0029.
 func TestCombatElevationRangeBonus(t *testing.T) {
-	// range 5, target at distance 6 → out of base range.
-	const dist = 6.0
+	// range 5, target at distance 5.5 → out of base range.
+	const dist = 5.5
 
 	run := func(attackerElev, targetElev uint8) int32 {
 		em, w, sh, posPool, healthPool, attackPool, boidPool, utPool := setupCombatWorld()
@@ -335,13 +335,17 @@ func TestCombatElevationRangeBonus(t *testing.T) {
 		return hp.HP
 	}
 
-	// Equal elevation (0 vs 0): distance 6 > range 5 → no damage.
+	// Equal elevation (0 vs 0): distance 5.5 > range 5 → no damage.
 	if hp := run(0, 0); hp != 100 {
 		t.Errorf("equal-elevation HP=%d, want 100 (no height bonus, out of range)", hp)
 	}
-	// Peak over low (2 vs 0): +2 range → effective 7 ≥ 6 → damage applied.
+	// Peak over low (2 vs 0): flat +1 → effective 6 ≥ 5.5 → damage applied.
 	if hp := run(2, 0); hp == 100 {
 		t.Errorf("peak-over-low HP=%d, want <100 (height advantage should extend range)", hp)
+	}
+	// Mid over low (1 vs 0): any advantage grants the same flat +1.
+	if hp := run(1, 0); hp == 100 {
+		t.Errorf("slope-over-low HP=%d, want <100 (any height advantage should extend range)", hp)
 	}
 	// Shooting uphill (0 vs 2): no bonus, still out of range → no damage.
 	if hp := run(0, 2); hp != 100 {

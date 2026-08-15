@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/user/paper-war/server/pkg/component"
@@ -13,13 +14,13 @@ import (
 // high ground, the other tries to move onto it.
 //
 // Defender (player 2) sits on a peak platform (Elevation 2); attacker (player
-// 1) starts on low ground ~7 tiles out and is ordered onto the hilltop. The
-// defender's LightInfantry base range 5 becomes effective 7 from high ground
-// (ADR-0029), so it fires on the approaching attacker; the attacker's range 5
-// (shooting uphill, no bonus) can't reach the defender at distance 7 until it
-// closes. So during the approach the hill holder punishes the assault while
-// taking no return fire — the high-ground advantage, exercised through a real
-// gs.Tick() loop with movement.
+// 1) starts on low ground ~6 tiles out and is ordered onto the hilltop. The
+// defender's LightInfantry base range 3 becomes effective 4 from high ground
+// (flat +1, ADR-0029), so it fires on the approaching attacker; the attacker's
+// range 3 (shooting uphill, no bonus) can't reach the defender at distance 6
+// until it closes. So during the approach the hill holder punishes the assault
+// while taking no return fire — the high-ground advantage, exercised through a
+// real gs.Tick() loop with movement.
 //
 // Both factions are present so Elimination doesn't end the match at tick 1
 // (the trap that mimics a movement stall in single-faction tests).
@@ -45,10 +46,17 @@ func TestLiveHillAssault(t *testing.T) {
 		gs.AISys.MoveDisabled = true
 		gs.AISys.RecruitDisabled = true
 	}
+	// Pin spawn jitter: the session RNG is time-seeded in tests, and the
+	// 1-tile high-ground window (flat +1 on a 3-range unit) is narrow enough
+	// that ±0.3-tile jitter can flip either assertion. Deterministic setup →
+	// deterministic scenario (the same pin TestClashModeBalance uses).
+	gs.SetSessionRNG(rand.New(rand.NewSource(7)))
 
-	// Defender on the peak; attacker 7 tiles west on low ground.
+	// Defender on the peak; attacker 6 tiles west on low ground. Beyond the
+	// defender's effective 4 plus formation spread, so the assault closes
+	// under fire it cannot return until near the top.
 	gs.SpawnSquadWithType(2, 2, fixed.FromFloat(19.0), fixed.FromFloat(12.0), 5, component.UnitLightInfantry)
-	gs.SpawnSquadWithType(1, 1, fixed.FromFloat(12.0), fixed.FromFloat(12.0), 5, component.UnitLightInfantry)
+	gs.SpawnSquadWithType(1, 1, fixed.FromFloat(13.0), fixed.FromFloat(12.0), 5, component.UnitLightInfantry)
 
 	// Order the attacker onto the hilltop (combat pursue will reinforce this).
 	pathPool := gs.World.Pool(component.PathfindingComponent{}).(*ecs.ComponentPool[component.PathfindingComponent])
@@ -61,7 +69,7 @@ func TestLiveHillAssault(t *testing.T) {
 	})
 
 	const squadHP = int32(600 + 5*100) // commander (6×100) + 5 LI (100 each)
-	startRawX := int64(fixed.FromFloat(12.0))
+	startRawX := int64(fixed.FromFloat(13.0))
 
 	sumHP := func(faction uint8) int32 {
 		var sum int32
@@ -113,7 +121,7 @@ func TestLiveHillAssault(t *testing.T) {
 	attHP := sumHP(component.FactionPlayer)
 	defHP := sumHP(component.FactionEnemy)
 
-	// 2. The defender held the hill and took no return fire (attacker, range 5
+	// 2. The defender held the hill and took no return fire (attacker, range 3
 	//    shooting uphill, could not reach it at the approach distance).
 	if defHP < squadHP {
 		t.Errorf("defender HP=%d, want %d (should be undamaged on high ground while the assault is out of range)", defHP, squadHP)

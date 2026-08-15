@@ -28,8 +28,8 @@ type CombatSystem struct {
 	MapW, MapH     int32
 	TerrainFn    func(x, y int32) component.TerrainType // tile terrain lookup
 	// ElevationFn returns the Hill elevation band (0/1/2) of a tile, 0 off-map
-	// or when no map is present. Each level of height advantage over the target
-	// adds +1 tile to effective attack range (high ground outranges low).
+	// or when no map is present. Any height advantage over the target adds a
+	// flat +1 tile to effective attack range (high ground outranges low).
 	// ADR-0029. Nil → flat map, no bonus (preserves legacy test behavior).
 	ElevationFn func(x, y int32) uint8
 	// TileDamageFn forwards tile-position damage to the TerrainSystem so cannon
@@ -159,23 +159,38 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 			}
 		}
 
+		// High-ground acquisition extension (ADR-0029): the fire check below
+		// grants +1 tile for any height advantage, but acquisition previously
+		// used only base(+tolerance) range — targets sitting in the bonus band
+		// were never acquired, so the bonus only fired against targets first
+		// caught via chase range. Query out to the max fire range (base + the
+		// flat +1, when the attacker stands on ANY raised ground) so targets
+		// the unit can actually hit are acquirable; the per-target bonus is
+		// still applied exactly at the fire check.
+		acqRange := effRange
+		if s.ElevationFn != nil {
+			if s.ElevationFn(int32(pos.X>>12), int32(pos.Y>>12)) > 0 {
+				acqRange = effRange + fixed.One
+			}
+		}
+
 		// Auto-acquire target using smart targeting with focus-fire on wounded enemies.
 		// Pass currentTarget for hysteresis — findTarget only switches to a new
 		// target if it's meaningfully better (lower priority tier, or same tier
 		// but wounded while current isn't). Prevents DPS waste from flip-flopping.
 		if ac.TargetID == 0 || !s.isTargetValid(e, ac, pos) {
-			ac.TargetID = s.findTarget(e, pos, effRange, weapon, 0)
+			ac.TargetID = s.findTarget(e, pos, acqRange, weapon, 0)
 			// If no target in attack range, try chase range (2x effective range)
 			// so units close the gap instead of standing idle.
 			if ac.TargetID == 0 {
-				chaseRange := effRange * 2
+				chaseRange := acqRange * 2
 				ac.TargetID = s.findTarget(e, pos, chaseRange, weapon, 0)
 			}
 		} else {
 			// Already have a valid target — opportunistically switch to a
 			// meaningfully better one (e.g., a wounded enemy appeared in range).
 			// Hysteresis inside findTarget prevents frivolous switching.
-			newID := s.findTarget(e, pos, effRange, weapon, ac.TargetID)
+			newID := s.findTarget(e, pos, acqRange, weapon, ac.TargetID)
 			if newID != 0 {
 				ac.TargetID = newID
 			}
@@ -219,17 +234,18 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		dx := targetPos.X - pos.X
 		dy := targetPos.Y - pos.Y
 		distSq := (dx*dx + dy*dy) >> 12
-		// Effective range gains +1 tile per elevation level the attacker holds
-		// over the target (peak vs low = +2). Shooting uphill never shortens
-		// range — the defender already keeps hill cover. ADR-0029. effRange
-		// already carries the Range Tolerance unlock from above (ADR-0031) and
-		// is extended further by high ground here.
+		// Effective range gains a flat +1 tile when the attacker holds ANY
+		// elevation advantage over the target (peak over low no longer adds
+		// +2 — too strong next to the halved base ranges). Shooting uphill
+		// never shortens range — the defender already keeps hill cover.
+		// ADR-0029. effRange already carries the Range Tolerance unlock from
+		// above (ADR-0031) and is extended further by high ground here.
 		fireRange := effRange
 		if s.ElevationFn != nil {
 			ax, ay := int32(pos.X>>12), int32(pos.Y>>12)
 			tx, ty := int32(targetPos.X>>12), int32(targetPos.Y>>12)
-			if adv := int64(s.ElevationFn(ax, ay)) - int64(s.ElevationFn(tx, ty)); adv > 0 {
-				fireRange = effRange + adv<<12 // +1 tile (FIXED_ONE) per level
+			if s.ElevationFn(ax, ay) > s.ElevationFn(tx, ty) {
+				fireRange = effRange + fixed.One // +1 tile, any height advantage
 			}
 		}
 		rangeSq := (fireRange * fireRange) >> 12

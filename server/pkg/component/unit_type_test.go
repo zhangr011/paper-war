@@ -30,13 +30,13 @@ func TestCombatUnitStats(t *testing.T) {
 		RecruitCost int32
 		KillBounty  int32
 	}{
-		{UnitLightInfantry, WeaponGun, ArmorLight, 1, 100, 15, 5, 3, 15, 12},
-		{UnitHeavyInfantry, WeaponCannon, ArmorLight, 2, 60, 25, 7, 5, 25, 20},
-		{UnitSniper, WeaponSniper, ArmorLight, 1, 30, 20, 8, 12, 50, 40},
-		{UnitAntiArmorInfantry, WeaponMissile, ArmorLight, 2, 60, 35, 8, 6, 30, 24},
-		{UnitMotorGun, WeaponGun, ArmorHeavy, 2, 120, 15, 5, 2, 25, 20},
-		{UnitMotorArtillery, WeaponCannon, ArmorHeavy, 4, 150, 40, 7, 5, 50, 40},
-		{UnitMotorMissile, WeaponMissile, ArmorHeavy, 4, 130, 50, 9, 7, 60, 48},
+		{UnitLightInfantry, WeaponGun, ArmorLight, 1, 100, 15, 3, 3, 15, 12},
+		{UnitHeavyInfantry, WeaponCannon, ArmorLight, 2, 60, 25, 4, 5, 25, 20},
+		{UnitSniper, WeaponSniper, ArmorLight, 1, 30, 20, 4, 12, 50, 40},
+		{UnitAntiArmorInfantry, WeaponMissile, ArmorLight, 2, 60, 35, 4, 6, 30, 24},
+		{UnitMotorGun, WeaponGun, ArmorHeavy, 2, 120, 15, 3, 2, 25, 20},
+		{UnitMotorArtillery, WeaponCannon, ArmorHeavy, 4, 150, 40, 4, 5, 50, 40},
+		{UnitMotorMissile, WeaponMissile, ArmorHeavy, 4, 130, 50, 5, 7, 60, 48},
 	}
 
 	for _, tt := range tests {

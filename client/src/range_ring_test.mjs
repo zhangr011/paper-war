@@ -53,28 +53,28 @@ test('UNIT_RANGES matches server CombatUnitTypeTable (drift guard)', () => {
 
 test('flat ground: base ring only (max === base)', () => {
   const r = effectiveRange(0, 0);
-  assert.deepEqual(r, { base: 5, max: 5 });
+  assert.deepEqual(r, { base: 3, max: 3 });
 });
 
 test('mid elevation (1): +1 tile envelope', () => {
   const r = effectiveRange(1, 1);
-  assert.deepEqual(r, { base: 7, max: 8 });
+  assert.deepEqual(r, { base: 4, max: 5 });
 });
 
-test('peak elevation (2): +2 tile envelope (ADR-0029 TestLiveHillAssault case)', () => {
-  // LightInfantry base 5 → effective 7 from a peak: the exact numbers the
+test('peak elevation (2): still flat +1 (ADR-0029 TestLiveHillAssault case)', () => {
+  // LightInfantry base 3 → effective 4 from a peak: the exact numbers the
   // hill-assault integration test exercises server-side.
   const r = effectiveRange(0, 2);
-  assert.deepEqual(r, { base: 5, max: 7 });
+  assert.deepEqual(r, { base: 3, max: 4 });
 });
 
 test('negative elevation clamps to base (uphill never shortens)', () => {
   const r = effectiveRange(2, -3);
-  assert.deepEqual(r, { base: 8, max: 8 });
+  assert.deepEqual(r, { base: 4, max: 4 });
 });
 
-test('unknown unit type falls back to 5 (LightInfantry)', () => {
-  assert.equal(effectiveRange(99, 1).base, 5);
+test('unknown unit type falls back to 3 (LightInfantry)', () => {
+  assert.equal(effectiveRange(99, 1).base, 3);
 });
 
 // --- elevationAt -----------------------------------------------------------------

@@ -499,7 +499,7 @@ func TestAIEnemyCompositionTracking(t *testing.T) {
 // ============================================================================
 
 // Test that the AI engages at the squad's actual weapon range, not hardcoded 5.0.
-// A squad with Snipers (range 8) should hold at range 8 and fire.
+// A squad with Snipers (range 4) should hold at range 4 and fire.
 func TestAIRangeAwareEngagement(t *testing.T) {
 	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
 
@@ -511,7 +511,7 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 	boidPool.Add(aiCmd, component.BoidComponent{SquadID: 1, Role: component.RoleCommander})
 
-	// AI sniper unit (range 8) in the squad
+	// AI sniper unit (range 4) in the squad
 	sniper := em.Create()
 	posPool.Add(sniper, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(30)})
 	ownerPool.Add(sniper, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
@@ -520,7 +520,7 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 	boidPool.Add(sniper, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
 
 	// Second sniper so the squad is ranged-dominant (2 ranged > 1 melee cmd)
-	// and CommitRange = MaxRange (8). ADR-0027 brought back commit-range
+	// and CommitRange = MaxRange (4). ADR-0027 brought back commit-range
 	// checks; without a second ranged unit, CommitRange falls back to 5.
 	sniper2 := em.Create()
 	posPool.Add(sniper2, component.PositionComponent{X: fixed.FromFloat(20), Y: fixed.FromFloat(30)})
@@ -529,9 +529,9 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 	unitTypePool.Add(sniper2, component.UnitTypeComponent{Type: component.UnitSniper})
 	boidPool.Add(sniper2, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
 
-	// Enemy at distance 7 tiles — within sniper range (8) but beyond old hardcoded 5
+	// Enemy at distance 3.5 tiles — within sniper range (4) but beyond old hardcoded 5
 	enemy := em.Create()
-	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(27), Y: fixed.FromFloat(30)})
+	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(23.5), Y: fixed.FromFloat(30)})
 	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy, component.HealthComponent{HP: 100, MaxHP: 100})
 
@@ -540,12 +540,12 @@ func TestAIRangeAwareEngagement(t *testing.T) {
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
 
-	// Should have issued an attack command (enemy is within squad max range 8)
+	// Should have issued an attack command (enemy is within squad max range 4)
 	attackCmds := filterCmds(cmds, CmdAttack)
 	if len(attackCmds) == 0 {
-		t.Fatal("expected attack command when enemy within squad max range (8 tiles for sniper)")
+		t.Fatal("expected attack command when enemy within squad max range (4 tiles for sniper)")
 	}
-	t.Logf("sniper squad engaged at distance 7 tiles (range 8) — v1 would have approached instead")
+	t.Logf("sniper squad engaged at distance 3.5 tiles (range 4) — v1 would have approached instead")
 }
 
 // Test target prioritization: AI prefers enemy commander over a closer combat unit.
@@ -755,13 +755,13 @@ func TestAISquadAssessment(t *testing.T) {
 	unitTypePool.Add(cmd, component.UnitTypeComponent{Type: component.UnitLightInfantry})
 	boidPool.Add(cmd, component.BoidComponent{SquadID: 1, Role: component.RoleCommander})
 
-	// Squad member: Sniper (range 8)
+	// Squad member: Sniper (range 4)
 	sniper := em.Create()
 	healthPool.Add(sniper, component.HealthComponent{HP: 30, MaxHP: 30})
 	unitTypePool.Add(sniper, component.UnitTypeComponent{Type: component.UnitSniper})
 	boidPool.Add(sniper, component.BoidComponent{SquadID: 1, Role: component.RoleRanged})
 
-	// Squad member: MotorArtillery (range 7, heavy armor).
+	// Squad member: MotorArtillery (range 4, heavy armor).
 	// BoidComponent.Role only distinguishes commander from non-commander;
 	// the tactical role is derived from UnitType via the unitRole map.
 	arty := em.Create()
@@ -782,10 +782,10 @@ func TestAISquadAssessment(t *testing.T) {
 	if a.TotalHP != 280 {
 		t.Errorf("TotalHP = %d, want 280", a.TotalHP)
 	}
-	// MaxRange should be 8 (Sniper) = fixed.FromFloat(8.0)
-	expectedMax := fixed.FromFloat(8.0)
+	// MaxRange should be 4 (Sniper) = fixed.FromFloat(4.0)
+	expectedMax := fixed.FromFloat(4.0)
 	if a.MaxRange != expectedMax {
-		t.Errorf("MaxRange = %d, want %d (Sniper range 8)", a.MaxRange, expectedMax)
+		t.Errorf("MaxRange = %d, want %d (Sniper range 4)", a.MaxRange, expectedMax)
 	}
 	if a.Strength != 4 { // 1 (LI) + 1 (Sniper) + 2 (Heavy armor Arty)
 		t.Errorf("Strength = %d, want 4", a.Strength)
@@ -794,7 +794,7 @@ func TestAISquadAssessment(t *testing.T) {
 		t.Errorf("expected ranged dominant (2 ranged vs 1 melee), got ranged=%d melee=%d",
 			a.RangedCount, a.MeleeCount)
 	}
-	// CommitRange for ranged-dominant squad should be max range (8)
+	// CommitRange for ranged-dominant squad should be max range (4)
 	commit := a.CommitRange()
 	if commit != expectedMax {
 		t.Errorf("CommitRange = %d, want %d for ranged-dominant squad", commit, expectedMax)
@@ -832,16 +832,16 @@ func TestAIGuardOnEnemyDetected(t *testing.T) {
 	em, _, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool := setupTestWorld()
 
 	// AI commander standing at (30, 30), full HP. No squad — melee-dominant,
-	// so CommitRange is DefaultEngageRange (5 tiles).
+	// so CommitRange is DefaultEngageRange (2.5 tiles).
 	aiCmd := em.Create()
 	posPool.Add(aiCmd, component.PositionComponent{X: fixed.FromFloat(30), Y: fixed.FromFloat(30)})
 	cmdPool.Add(aiCmd, component.CommanderComponent{SquadID: 1, IsAlive: true})
 	ownerPool.Add(aiCmd, component.OwnerComponent{PlayerID: 2, Faction: component.FactionEnemy})
 	healthPool.Add(aiCmd, component.HealthComponent{HP: 200, MaxHP: 200})
 
-	// Enemy commander within CommitRange (3 tiles, < 5).
+	// Enemy commander within CommitRange (2 tiles, < 2.5).
 	enemy := em.Create()
-	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(33), Y: fixed.FromFloat(30)})
+	posPool.Add(enemy, component.PositionComponent{X: fixed.FromFloat(32), Y: fixed.FromFloat(30)})
 	cmdPool.Add(enemy, component.CommanderComponent{SquadID: 2, IsAlive: true})
 	ownerPool.Add(enemy, component.OwnerComponent{PlayerID: 1, Faction: component.FactionPlayer})
 	healthPool.Add(enemy, component.HealthComponent{HP: 200, MaxHP: 200})
@@ -944,7 +944,7 @@ func TestAIApproachOutOfRangeEnemy(t *testing.T) {
 	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
 		setupSquadWithCommander(t, 30, 30)
 
-	// Enemy 15 tiles away — beyond CommitRange (5). Along the X axis for easy math.
+	// Enemy 15 tiles away — beyond CommitRange (2.5). Along the X axis for easy math.
 	enemy := addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 45, 30)
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
@@ -956,8 +956,8 @@ func TestAIApproachOutOfRangeEnemy(t *testing.T) {
 	if len(moveCmds) == 0 {
 		t.Fatal("expected a CmdMove closing on the enemy")
 	}
-	// The move target must be at CommitRange (5) from the enemy, not on the
-	// enemy tile. Enemy at x=45, squad at x=30 → closing target ≈ x=40.
+	// The move target must be at CommitRange (2.5) from the enemy, not on the
+	// enemy tile. Enemy at x=45, squad at x=30 → closing target ≈ x=42.5.
 	tx := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetX)
 	ty := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetY)
 	if ty != 30 {
@@ -966,8 +966,8 @@ func TestAIApproachOutOfRangeEnemy(t *testing.T) {
 	if tx <= 30 || tx >= 45 {
 		t.Errorf("expected target between squad and enemy (30<x<45), got x=%.2f", tx)
 	}
-	if math.Abs(tx-40) > 0.5 {
-		t.Errorf("expected target ≈ 40 (enemy 45 − CommitRange 5), got x=%.2f", tx)
+	if math.Abs(tx-42.5) > 0.5 {
+		t.Errorf("expected target ≈ 42.5 (enemy 45 − CommitRange 2.5), got x=%.2f", tx)
 	}
 	// Anchor must be recorded at the squad's current position on first detection.
 	if sys.States[1].EngageEnemyID != uint32(enemy) {
@@ -985,7 +985,7 @@ func TestAIGuardInRangeEnemy(t *testing.T) {
 	em, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool, sys, _ :=
 		setupSquadWithCommander(t, 30, 30)
 
-	addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 33, 30) // 3 tiles, within CommitRange 5
+	addEnemyAt(em, cmdPool, posPool, ownerPool, healthPool, 32, 30) // 2 tiles, within CommitRange 2.5
 
 	cmds := sys.Update(1, cmdPool, posPool, ownerPool, healthPool, unitTypePool, boidPool)
 

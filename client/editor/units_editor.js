@@ -61,13 +61,13 @@ const AI_GOLD_FLOOR = 15;
 
 // Source-of-truth snapshot of CombatUnitTypeTable (unit_type.go:50).
 const SOURCE_STATS = {
-  LightInfantry:     { Weapon: 'Gun',     Armor: 'Light', Cost: 1, HP: 100, Damage: 15, Range: 5, Cooldown: 3,  RecruitCost: 15, KillBounty: 12, Radius: 0.22 },
-  HeavyInfantry:     { Weapon: 'Cannon',  Armor: 'Light', Cost: 2, HP: 60,  Damage: 25, Range: 7, Cooldown: 5,  RecruitCost: 25, KillBounty: 20, Radius: 0.25 },
-  Sniper:            { Weapon: 'Sniper',  Armor: 'Light', Cost: 1, HP: 30,  Damage: 20, Range: 8, Cooldown: 12, RecruitCost: 50, KillBounty: 40, Radius: 0.22 },
-  AntiArmorInfantry: { Weapon: 'Missile', Armor: 'Light', Cost: 2, HP: 60,  Damage: 35, Range: 8, Cooldown: 6,  RecruitCost: 30, KillBounty: 24, Radius: 0.24 },
-  MotorGun:          { Weapon: 'Gun',     Armor: 'Heavy', Cost: 2, HP: 120, Damage: 15, Range: 5, Cooldown: 2,  RecruitCost: 25, KillBounty: 20, Radius: 0.35 },
-  MotorArtillery:    { Weapon: 'Cannon',  Armor: 'Heavy', Cost: 4, HP: 150, Damage: 40, Range: 7, Cooldown: 5,  RecruitCost: 50, KillBounty: 40, Radius: 0.40 },
-  MotorMissile:      { Weapon: 'Missile', Armor: 'Heavy', Cost: 4, HP: 130, Damage: 50, Range: 9, Cooldown: 7,  RecruitCost: 60, KillBounty: 48, Radius: 0.38 },
+  LightInfantry:     { Weapon: 'Gun',     Armor: 'Light', Cost: 1, HP: 100, Damage: 15, Range: 3, Cooldown: 3,  RecruitCost: 15, KillBounty: 12, Radius: 0.22 },
+  HeavyInfantry:     { Weapon: 'Cannon',  Armor: 'Light', Cost: 2, HP: 60,  Damage: 25, Range: 4, Cooldown: 5,  RecruitCost: 25, KillBounty: 20, Radius: 0.25 },
+  Sniper:            { Weapon: 'Sniper',  Armor: 'Light', Cost: 1, HP: 30,  Damage: 20, Range: 4, Cooldown: 12, RecruitCost: 50, KillBounty: 40, Radius: 0.22 },
+  AntiArmorInfantry: { Weapon: 'Missile', Armor: 'Light', Cost: 2, HP: 60,  Damage: 35, Range: 4, Cooldown: 6,  RecruitCost: 30, KillBounty: 24, Radius: 0.24 },
+  MotorGun:          { Weapon: 'Gun',     Armor: 'Heavy', Cost: 2, HP: 120, Damage: 15, Range: 3, Cooldown: 2,  RecruitCost: 25, KillBounty: 20, Radius: 0.35 },
+  MotorArtillery:    { Weapon: 'Cannon',  Armor: 'Heavy', Cost: 4, HP: 150, Damage: 40, Range: 4, Cooldown: 5,  RecruitCost: 50, KillBounty: 40, Radius: 0.40 },
+  MotorMissile:      { Weapon: 'Missile', Armor: 'Heavy', Cost: 4, HP: 130, Damage: 50, Range: 5, Cooldown: 7,  RecruitCost: 60, KillBounty: 48, Radius: 0.38 },
 };
 
 // Source-of-truth snapshot of damageMatrix (unit_type.go:89).

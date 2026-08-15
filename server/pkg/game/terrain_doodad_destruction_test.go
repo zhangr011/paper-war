@@ -50,12 +50,12 @@ func TestLiveDoodadDestruction(t *testing.T) {
 	}
 
 	// Target: LightInfantry commander (player 2) ON the Forest at (10,2).
-	// Attacker: HeavyInfantry commander (player 1, Cannon, range 7) at (5,2) —
-	// distance 5. Both in range (LI range 5, HI range 7), so neither pursues
+	// Attacker: HeavyInfantry commander (player 1, Cannon, range 4) at (7,2) —
+	// distance 3. Both in range (LI range 3, HI range 4), so neither pursues
 	// and the target stays planted on the Forest. The cannon's collectSplash
 	// damages the Forest at the target's tile each shot.
 	gs.SpawnSquadWithType(2, 2, fixed.FromFloat(10.0), fixed.FromFloat(2.0), 0, component.UnitLightInfantry)
-	gs.SpawnSquadWithType(1, 1, fixed.FromFloat(5.0), fixed.FromFloat(2.0), 0, component.UnitHeavyInfantry)
+	gs.SpawnSquadWithType(1, 1, fixed.FromFloat(7.0), fixed.FromFloat(2.0), 0, component.UnitHeavyInfantry)
 
 	// HI cooldown 5 → first shot ~tick 5; one 12-dmg splash converts the 10-HP Forest.
 	for i := 0; i < 20; i++ {

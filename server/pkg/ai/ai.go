@@ -68,7 +68,10 @@ const (
 	// older sightings are presumed stale and fall through to push/patrol.
 	// Tunable. See plan docs/plans/ai-hunt-seek.md.
 	HuntMemoryTicks uint32 = 300
-	DefaultEngageRange         = 5.0 // fallback when squad composition unknown
+	// DefaultEngageRange is the fallback commit distance when squad composition
+	// is unknown, and the floor CommitRange clamps to for melee-dominant squads.
+	// Halved alongside CombatUnitTypeTable ranges (was 5.0 when LI range was 5).
+	DefaultEngageRange = 2.5
 
 	// ADR-0027 — bounded engagement anti-kite guards.
 	MaxPursuitDist     = 8.0  // tiles: max distance a squad will chase from its engagement anchor

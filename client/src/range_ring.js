@@ -2,26 +2,26 @@
 //
 // Readability cue (terrain-readability-plan.md Phase 1 / ADR-0029): when a
 // unit is selected, draw its effective attack range so the high-ground
-// advantage is visible at a glance. Effective range vs a target at elevation
-// `tgt` is base + max(0, attackerElev − tgt) — the ring therefore shows:
+// advantage is visible at a glance. Effective range vs any lower target is
+// base + 1 — the server grants a flat +1 tile for ANY height advantage, not
+// +1 per level — so the ring shows:
 //   inner ring = base range (what the unit reaches on level ground),
-//   outer ring = base + attackerElev (max reach vs a low-ground target).
+//   outer ring = base + 1 (max reach vs a lower-ground target).
 // On flat ground (elev 0) the two coincide, so only one ring is drawn.
 
 // Base attack ranges per CombatUnitType (0-6), in tiles.
 // ⚠ Hand-mirrored from server/pkg/component/unit_type.go CombatUnitTypeTable
-// (LI=5, HI=7, Sniper=8, AAI=8, MG=5, MA=7, MM=9). Same mirroring pattern as
+// (LI=3, HI=4, Sniper=4, AAI=4, MG=3, MA=4, MM=5). Same mirroring pattern as
 // UNIT_MAX_HP in main.js. range_ring_test.mjs drift-guards this against the
 // Go source by regexing the literals.
-export const UNIT_RANGES = [5, 7, 8, 8, 5, 7, 9];
+export const UNIT_RANGES = [3, 4, 4, 4, 3, 4, 5];
 
 // effectiveRange returns the ring radius in tiles for a selected unit:
-// base range, or base + attackerElev when standing on raised ground
-// (the max the +1/level bonus can add; the server grants per-target
-// adv = max(0, attackerElev − targetElev), so this is the outer envelope).
+// base range, or base + 1 when standing on ANY raised ground (the server
+// grants a flat +1 tile for any height advantage over the target).
 export function effectiveRange(unitType, attackerElev) {
-  const base = UNIT_RANGES[unitType] ?? 5;
-  const bonus = Math.max(0, attackerElev | 0);
+  const base = UNIT_RANGES[unitType] ?? 3;
+  const bonus = (attackerElev | 0) > 0 ? 1 : 0;
   return { base, max: base + bonus };
 }
 

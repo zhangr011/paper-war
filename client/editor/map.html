@@ -47,13 +47,23 @@
     .col { background: var(--panel); border: 1px solid var(--border);
            border-radius: 4px; padding: 10px; }
 
-    /* Paint canvas */
-    #canvas {
+    /* Paint canvas + cursor overlay (stacked) */
+    #canvas-wrap { position: relative; display: inline-block; }
+    #canvas, #overlay {
       display: block;
       background: #000;
       border: 1px solid var(--border);
       cursor: crosshair;
       image-rendering: pixelated;
+    }
+    #overlay {
+      position: absolute; inset: 0;
+      pointer-events: none;      /* gestures pass through to the paint canvas */
+      background: transparent;
+    }
+    #gl-canvas {
+      position: absolute; inset: 0;
+      pointer-events: none;      /* editing stays on the 2D canvas below */
     }
 
     /* Terrain + elevation palettes */
@@ -70,6 +80,15 @@
 
     .elev-palette { display: flex; gap: 4px; }
     .elev-palette .swatch { min-width: 64px; }
+
+    /* Minimap */
+    #minimap {
+      display: block;
+      background: #000;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      image-rendering: pixelated;
+    }
 
     select, input[type=text] {
       background: var(--bg); color: var(--text);
@@ -91,17 +110,16 @@
 <body>
   <h1>Paper War — Clash Map Editor</h1>
   <p class="info">
-    Dev tool for authoring <b>Clash Maps</b> — the hand-authored 32×32 maps in
-    <code>server/pkg/tilemap/clash_maps.go</code> used by the spectator/balance
-    harness (<code>start_clash</code>). Read-only against game code: paint a map,
-    export Go source to paste back. Spawns and objective are forced at runtime
-    (<code>main.go:348,377-389</code>), so this editor authors terrain + hill
-    elevation only. See ADR-0022 + issue #53.
+    Dev tool for authoring <b>Clash Maps</b> — saved as JSON data files under
+    <code>server/data/clash_maps/</code> (ADR-0033) and loadable by
+    <code>start_clash</code> immediately after Save. Spawns and objective are
+    forced at runtime (<code>main.go</code>), so this editor authors terrain +
+    elevation only. See ADR-0022 / ADR-0033.
   </p>
   <p class="info">
-    Preview is structure-only (flat colors + hill elevation shade, reusing the
-    client's terrain palette). Load the exported map in clash mode to judge
-    final art — this is <b>not</b> the textured-terrain shader.
+    Edit view is structure-only (flat colors + elevation shade). Toggle
+    <b>Art</b> (Tab) to preview with the game's actual WebGL terrain shader —
+    water, cliff ledges, hill relief — sharing the same zoom/pan.
   </p>
 
   <div class="row">
@@ -117,17 +135,38 @@
     <span style="flex:1"></span>
     <label>Map name:</label>
     <input type="text" id="map-name" value="Custom" style="width:140px" />
-    <button id="show-go-btn">Show Go source</button>
-    <button id="copy-go-btn">Copy Go source</button>
+    <button id="save-btn" title="POSTs to the server — loadable via start_clash immediately">Save</button>
+    <button id="download-btn" title="Backup JSON to disk">Download JSON</button>
     <span class="info" id="status" style="margin-left:8px"></span>
   </div>
 
   <div class="row">
     <label>Tool:</label>
-    <button id="tool-terrain" class="active">Terrain</button>
-    <button id="tool-elevation">Elevation</button>
+    <button id="tool-terrain" class="active" title="T">Terrain</button>
+    <button id="tool-elevation" title="E — paints the tier on any terrain">Elevation</button>
+    <button id="tool-ramp" title="A — drag along a cliff edge; elevation auto-grades">Ramp</button>
+    <label style="margin-left:12px">Mode:</label>
+    <button id="mode-paint" class="active" title="B — drag to paint">Paint</button>
+    <button id="mode-rect" title="R — drag a rectangle, commit on release">Rect</button>
+    <button id="mode-fill" title="F — click to flood the connected region">Fill</button>
+    <button id="mode-eyedropper" title="I — click to pick terrain+elevation (or alt-click anytime)">Pick</button>
+    <label style="margin-left:12px">Brush:</label>
+    <select id="brush-size" title="[ and ] to cycle">
+      <option value="1">1×1</option>
+      <option value="2">2×2</option>
+      <option value="3">3×3</option>
+      <option value="5">5×5</option>
+    </select>
+    <select id="brush-shape">
+      <option value="square">square</option>
+      <option value="circle">circle</option>
+    </select>
     <label style="margin-left:12px">Mirror (horizontal):</label>
     <button id="mirror-btn" class="active">On</button>
+    <button id="zoom-in-btn" title="+ — zoom in (wheel works too)">Zoom +</button>
+    <button id="zoom-out-btn" title="− — zoom out">Zoom −</button>
+    <button id="grid-btn" class="active" title="G — toggle tile grid">Grid</button>
+    <button id="art-btn" title="Tab — toggle the game's WebGL shader preview over the flat edit view">Art</button>
     <span class="info" style="margin-left:12px">
       Spawn markers (forced at runtime): <span style="color:#6fa3d6">●</span> team1 (16,12)
       <span style="color:#d6a36f">●</span> team2 (16,20)
@@ -138,25 +177,37 @@
   <div class="columns">
     <div class="col">
       <h2>Canvas — 32×32</h2>
-      <canvas id="canvas" width="512" height="512"></canvas>
+      <div id="canvas-wrap">
+        <canvas id="canvas" width="512" height="512"></canvas>
+        <canvas id="gl-canvas" class="hidden" width="512" height="512"></canvas>
+        <canvas id="overlay" width="512" height="512"></canvas>
+      </div>
     </div>
 
     <div class="col">
       <h2 id="palette-title">Terrain palette</h2>
       <div id="terrain-palette" class="palette"></div>
 
-      <h2 id="elev-title" class="hidden">Elevation (hill layers)</h2>
+      <h2 id="elev-title" class="hidden">Elevation (any terrain)</h2>
       <div id="elev-palette" class="elev-palette hidden"></div>
       <p class="info hidden" id="elev-info">
-        Paints the discrete hill layer (0=low, 1=mid, 2=peak) on Hill tiles.
-        Only visible on Hill terrain; exported as <code>Elevation</code>.
+        Paints the tier (0=low, 1=mid, 2=peak) on <b>any</b> terrain. Saved as
+        <code>Elevation</code>. A Δ2 step between neighbouring tiles is a cliff
+        — impassable unless crossed by a Ramp.
+      </p>
+      <p class="info hidden" id="ramp-info">
+        <b>Ramp</b>: drag along a cliff edge to connect two tiers. Each ramp
+        tile auto-grades to one tier below its highest neighbour, turning a
+        2-tier cliff into two walkable 1-tier steps. Brush size applies.
+      </p>
+
+      <h2>Minimap</h2>
+      <canvas id="minimap" width="128" height="128" title="Click or drag to pan"></canvas>
+      <p class="info">
+        Wheel = zoom at cursor · space/middle/right-drag = pan · +/- zoom ·
+        G grid · [ ] brush size · B/R/F/I modes · alt-click pick.
       </p>
     </div>
-  </div>
-
-  <div id="export-wrap" class="hidden">
-    <h2>Go source — paste into server/pkg/tilemap/clash_maps.go</h2>
-    <textarea class="export" id="export-text" readonly></textarea>
   </div>
 
   <script type="module" src="map_editor.js"></script>

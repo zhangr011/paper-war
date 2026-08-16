@@ -285,7 +285,7 @@ func TestFrozenSquadDeadlock(t *testing.T) {
 
 	// Configuration 3: Flat map, movement-enabled AI
 	//
-	// TODO(#new-deadlock): this configuration currently VIOLATES the invariant
+	// TODO(#74): this configuration currently VIOLATES the invariant
 	// and is excluded from the run — a real freeze, distinct from the
 	// MoveDisabled class fixed in f1040fb. With AI movement ENABLED, both
 	// squads settle at 3.0-3.6 tiles apart (both StateApproach), nobody moves,

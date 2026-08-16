@@ -462,6 +462,22 @@ func (as *AISystem) Update(
 					// commitRange from the enemy (toward the squad), NOT
 					// the enemy tile — stops the squad from overrunning
 					// into melee and lets ranged squads hover at max range.
+					//
+					// stopRange is one tile SHORT of commitRange: movement
+					// navigates by flow field, which is quantized to whole
+					// tiles and yields zero force on the destination tile —
+					// a unit stops as soon as it ENTERS that tile, up to a
+					// full tile short of the exact point. Aiming a tile
+					// closer keeps the parked squad inside fire range even
+					// at worst-case quantization, so a spotter qualifies
+					// and the Range-Tolerance unlock (ADR-0031) can fire.
+					// Without this the squads park at base range +0.1..1.0:
+					// nobody in base range, no spotter, no tolerance, and
+					// the standoff deadlocks (issue #74).
+					stopRange := commitRange - fixed.One
+					if stopRange < fixed.FromFloat(0.5) {
+						stopRange = fixed.FromFloat(0.5)
+					}
 					dirX := pos.X - bestEnemyX
 					dirY := pos.Y - bestEnemyY
 					// bestDist is raw (dx*dx + dy*dy) in fixed² units; shift
@@ -472,8 +488,8 @@ func (as *AISystem) Update(
 					if dist > 0 {
 						ux := fixed.Div(dirX, dist)
 						uy := fixed.Div(dirY, dist)
-						tx = bestEnemyX + fixed.Mul(ux, commitRange)
-						ty = bestEnemyY + fixed.Mul(uy, commitRange)
+						tx = bestEnemyX + fixed.Mul(ux, stopRange)
+						ty = bestEnemyY + fixed.Mul(uy, stopRange)
 					} else {
 						tx = bestEnemyX
 						ty = bestEnemyY

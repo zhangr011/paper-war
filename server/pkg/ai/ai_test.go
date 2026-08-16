@@ -956,8 +956,10 @@ func TestAIApproachOutOfRangeEnemy(t *testing.T) {
 	if len(moveCmds) == 0 {
 		t.Fatal("expected a CmdMove closing on the enemy")
 	}
-	// The move target must be at CommitRange (2.5) from the enemy, not on the
-	// enemy tile. Enemy at x=45, squad at x=30 → closing target ≈ x=42.5.
+	// The move target must be one tile SHORT of CommitRange (2.5) from the
+	// enemy — the flow field's tile quantization makes units stop up to a
+	// full tile early, so the AI aims closer to keep the parked squad in
+	// fire range (issue #74). Enemy at x=45, squad at x=30 → target ≈ x=43.5.
 	tx := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetX)
 	ty := fixed.ToFloat(moveCmds[len(moveCmds)-1].TargetY)
 	if ty != 30 {
@@ -966,8 +968,8 @@ func TestAIApproachOutOfRangeEnemy(t *testing.T) {
 	if tx <= 30 || tx >= 45 {
 		t.Errorf("expected target between squad and enemy (30<x<45), got x=%.2f", tx)
 	}
-	if math.Abs(tx-42.5) > 0.5 {
-		t.Errorf("expected target ≈ 42.5 (enemy 45 − CommitRange 2.5), got x=%.2f", tx)
+	if math.Abs(tx-43.5) > 0.5 {
+		t.Errorf("expected target ≈ 43.5 (enemy 45 − CommitRange 2.5 + 1-tile quantization slack), got x=%.2f", tx)
 	}
 	// Anchor must be recorded at the squad's current position on first detection.
 	if sys.States[1].EngageEnemyID != uint32(enemy) {

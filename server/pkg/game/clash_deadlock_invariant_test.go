@@ -285,18 +285,13 @@ func TestFrozenSquadDeadlock(t *testing.T) {
 
 	// Configuration 3: Flat map, movement-enabled AI
 	//
-	// TODO(#74): this configuration currently VIOLATES the invariant
-	// and is excluded from the run — a real freeze, distinct from the
-	// MoveDisabled class fixed in f1040fb. With AI movement ENABLED, both
-	// squads settle at 3.0-3.6 tiles apart (both StateApproach), nobody moves,
-	// nobody fires, for 100+ tick windows (seed 44, ticks 401-500: units at
-	// delta 0.00, no attack). The AI's Approach move to CommitRange (2.5) from
-	// the enemy apparently doesn't execute or its arrival check considers
-	// ~3 tiles "arrived", while combat pursue is skipped because StateApproach
-	// is honored (the AI CAN move here, so the skip is correct) — the AI just
-	// doesn't finish closing. See the issue filed from this finding. Re-enable
-	// this configuration when that deadlock is fixed.
-	moveEnabledDeadlock := config{
+	// Was excluded with a TODO when the invariant first caught the AI-approach
+	// deadlock (issue #74): squads parked at 3.0-3.6 tiles, nobody in base
+	// range, no spotter, no fire. Fixed by aiming the Approach stop point one
+	// tile short of CommitRange to absorb flow-field tile quantization
+	// (the destination tile yields zero flow force, so units stop up to a
+	// full tile short of the exact point). Re-armed as the regression config.
+	runInvariantTest(t, config{
 		name: "flat_movement_enabled",
 		setupMap: func() *tilemap.GameMap {
 			m := tilemap.NewGameMap(30, 48)
@@ -313,8 +308,7 @@ func TestFrozenSquadDeadlock(t *testing.T) {
 			gs.SpawnSquadWithType(2, 2, fixed.FromFloat(22.0), fixed.FromFloat(20.0), 5, component.UnitLightInfantry)
 		},
 		seed: 44,
-	}
-	_ = moveEnabledDeadlock // excluded — see TODO above
+	})
 
 	// Configuration 4: Hills map, movement-enabled AI
 	runInvariantTest(t, config{

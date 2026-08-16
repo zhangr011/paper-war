@@ -10,7 +10,6 @@ package movement_test
 //   cd server && go test ./pkg/movement/ -run TestCohesionEquilibriumMeasurement -v
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -225,8 +224,8 @@ func TestCohesionEquilibriumMeasurement(t *testing.T) {
 	// ---------- 0. Verify spawned weights the sim actually sees ----------
 	verifySpawnedWeights(t)
 
-	// ---------- 1. BASELINE: current committed weights (AttractionW=2.0) ----------
-	t.Log("=== BASELINE: committed weights (AttractionW=2.0, NeighborRange=1.0).")
+	// ---------- 1. BASELINE: current committed weights ----------
+	t.Log("=== BASELINE: committed weights (AttractionW=6.0, NeighborRange=1.0 combat/2.0 commander).")
 	t.Log("    Equilibrium checkpoints (tick 100/300/500) shown per N to confirm plateau.")
 	t.Log("")
 	t.Log("N   | mean   | median | P90    | max    | <=0.5  | <=1.0  | <=1.5  | <=2.0  | minSpace")
@@ -260,10 +259,10 @@ func verifySpawnedWeights(t *testing.T) {
 	velPool := gs.World.Pool(component.VelocityComponent{}).(*ecs.ComponentPool[component.VelocityComponent])
 
 	expectedCombat := map[string]float64{
-		"AttractionW": 2.0, "NeighborRange": 2.0,
+		"AttractionW": 6.0, "NeighborRange": 1.0,
 	}
 	expectedCmd := map[string]float64{
-		"AttractionW": 2.0, "NeighborRange": 2.0,
+		"AttractionW": 6.0, "NeighborRange": 2.0,
 	}
 
 	t.Log("=== SPAWNED WEIGHTS (sim-actual) ===")
@@ -281,19 +280,18 @@ func verifySpawnedWeights(t *testing.T) {
 			"AttractionW":    fixed.ToFloat(bc.AttractionW),
 			"NeighborRange": fixed.ToFloat(bc.NeighborRange),
 		}
-		discrepancy := ""
 		for k, want := range exp {
 			got := actual[k]
 			if math.Abs(got-want) > 5e-3 { // fixed-point resolution ≈ 1/4096 ≈ 2.4e-4
-				discrepancy += fmt.Sprintf(" MISMATCH %s: got %.3f want %.3f", k, got, want)
+				t.Errorf("MISMATCH %s for %s: got %.3f want %.3f", k, label, got, want)
 			}
 		}
 		speed := 0.0
 		if v, ok := velPool.Get(e); ok {
 			speed = fixed.ToFloat(v.Speed)
 		}
-		t.Logf("  [%s] FormW=%.2f NbrRange=%.2f speed(tiles/tick)=%.4f%s",
-			label, actual["AttractionW"], actual["NeighborRange"], speed, discrepancy)
+		t.Logf("  [%s] FormW=%.2f NbrRange=%.2f speed(tiles/tick)=%.4f",
+			label, actual["AttractionW"], actual["NeighborRange"], speed)
 	})
 	t.Log("")
 }
@@ -506,17 +504,13 @@ func TestCohesionMarchMeasurement(t *testing.T) {
 		t.Logf("flow field target=(28,45) at spawn tile: dir=(%.3f,%.3f)",
 			fixed.ToFloat(dir.DX), fixed.ToFloat(dir.DY))
 
-		// ⚠ KNOWN ISSUE — see long note below. Summary:
+		// ⚠ KNOWN ISSUE — see note below. Summary:
 		// The production path `gs.Tick()` was observed stalling the commander
-		// after the first tick (it moves 0.02 tile once, then stops). The
-		// stall is in a POST-tick hook of gs.Tick() — updateFog / runAI /
-		// objective / gold reconciliation — NOT in MovementSystem itself:
-		// calling `gs.World.Tick(tick)` directly (same systems, same order,
-		// minus the post-tick hooks) produces a clean march of ~0.02 tile
-		// every tick. The harness below therefore drives the world tick
-		// directly so the MARCH regime is actually exercised and the
-		// formation-deformation measurement is meaningful. The gs.Tick()
-		// stall is a separate production bug worth filing — see the report.
+		// after the first tick (it moves 0.02 tile once, then stops).
+		// This mystery was resolved in issue #71: the stall was actually
+		// match-end by elimination (ObjectiveSystem transitioned to PhaseEnded),
+		// not a movement bug. The harness below drives the world tick directly
+		// so the MARCH regime is exercised without early match termination.
 		t.Logf("==================== MARCH (N=%d) target=(28,45) spawn=(%.1f,%.1f) ====================", N, spawnCmdX, spawnCmdY)
 		t.Logf("    [driven via gs.World.Tick — see KNOWN ISSUE note above]")
 		t.Log("tick | cmdTrav | cmdSpd  | cmdRel: mean/med/P90/max/minSp   | centRel: mean/med/P90/max | cmd→cent")

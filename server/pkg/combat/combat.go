@@ -178,19 +178,22 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		// Pass currentTarget for hysteresis — findTarget only switches to a new
 		// target if it's meaningfully better (lower priority tier, or same tier
 		// but wounded while current isn't). Prevents DPS waste from flip-flopping.
+		// baseRange is the un-extended band: candidates beyond it are only
+		// acquirable through the high-ground extension, which findTarget gates
+		// on actual elevation advantage (see findTarget).
 		if ac.TargetID == 0 || !s.isTargetValid(e, ac, pos) {
-			ac.TargetID = s.findTarget(e, pos, acqRange, weapon, 0)
+			ac.TargetID = s.findTarget(e, pos, acqRange, effRange, weapon, 0)
 			// If no target in attack range, try chase range (2x effective range)
 			// so units close the gap instead of standing idle.
 			if ac.TargetID == 0 {
 				chaseRange := acqRange * 2
-				ac.TargetID = s.findTarget(e, pos, chaseRange, weapon, 0)
+				ac.TargetID = s.findTarget(e, pos, chaseRange, effRange*2, weapon, 0)
 			}
 		} else {
 			// Already have a valid target — opportunistically switch to a
 			// meaningfully better one (e.g., a wounded enemy appeared in range).
 			// Hysteresis inside findTarget prevents frivolous switching.
-			newID := s.findTarget(e, pos, acqRange, weapon, ac.TargetID)
+			newID := s.findTarget(e, pos, acqRange, effRange, weapon, ac.TargetID)
 			if newID != 0 {
 				ac.TargetID = newID
 			}
@@ -539,7 +542,16 @@ func (s *CombatSystem) hasNearbySpotter(pos component.PositionComponent, squadID
 // lower priority tier, or wounded while the current target isn't. This
 // prevents DPS waste from frivolous flip-flopping between near-equivalent
 // targets while still allowing the squad to converge on newly-wounded enemies.
-func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionComponent, range_ int64, weapon component.WeaponType, currentTarget uint32) uint32 {
+//
+// range_ is the outer acquisition radius (possibly extended by high ground);
+// baseRange is the un-extended band. Candidates in the extended band
+// (range_ > baseRange) are only acquirable when the attacker outranks them in
+// elevation — mirroring the fire check's attacker>target rule. The old blanket
+// extension (any attacker on raised ground) let hill units lock onto
+// equal-elevation targets they could never hit, planting them at the edge of
+// the engagement band while the low-ground army walked into contact
+// ("the team on the hill lost the clash", 2026-08). ADR-0029.
+func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionComponent, range_ int64, baseRange int64, weapon component.WeaponType, currentTarget uint32) uint32 {
 	ids := s.Sh.Query(pos.X, pos.Y, range_)
 	selfID := uint64(attacker)
 
@@ -600,6 +612,20 @@ func (s *CombatSystem) findTarget(attacker ecs.Entity, pos component.PositionCom
 		dx := tp.X - pos.X
 		dy := tp.Y - pos.Y
 		ds := (dx*dx + dy*dy) >> 12
+
+		// High-ground acquisition gate: a candidate beyond baseRange is only
+		// acquirable through the elevation extension, which (like the fire
+		// check) requires the attacker to actually outrank the candidate.
+		// Equal- or higher-elevation candidates beyond baseRange are skipped.
+		if range_ > baseRange && ds > (baseRange*baseRange)>>12 {
+			if s.ElevationFn != nil {
+				ae := s.ElevationFn(int32(pos.X>>12), int32(pos.Y>>12))
+				te := s.ElevationFn(int32(tp.X>>12), int32(tp.Y>>12))
+				if ae <= te {
+					continue
+				}
+			}
+		}
 
 		// Determine priority
 		priority := 5 // any enemy

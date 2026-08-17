@@ -120,12 +120,24 @@ The classification of a Tile — Plain, Road, Shallow, Deep, Forest, Hill, Swamp
 _Avoid_: tile type, ground
 
 **Elevation**:
-The discrete hill-layer band of a Hill Tile: low, mid, or peak. Three bands only. Not cosmetic — an attacker on a higher band than its target gains +1 tile of effective Range per elevation level, and a viewer on a higher band sees over intermediate tiles lower than a blocker (height-aware LOS). Cliff bands also block movement in pathfinding. See ADR-0029.
+The discrete hill-layer band of a Hill Tile: low, mid, or peak. Three bands only. Not cosmetic — an attacker holding any higher band than its target gains a flat +1 tile of effective Range (any advantage, not per level), and a viewer on a higher band sees over intermediate tiles lower than a blocker (height-aware LOS). Cliff bands also block movement in pathfinding. See ADR-0029, ADR-0034.
 _Avoid_: height, altitude
 
 **Cliff**:
 A vertical step between two adjacent Tiles whose Elevation differs by 2 or more bands. Impassable to ground units unless one of the two tiles is Ramp terrain; a cliff taller than the viewer also walls off line of sight. The StarCraft-style terrain feature that creates chokepoints and makes Ramp placement tactically load-bearing.
 _Avoid_: ledge, drop, escarpment
+
+**High Ground**:
+The combat benefit of standing on a higher Elevation band than the target: a flat +1 tile of attack Range, Hill terrain cover, and (for vision) farther sight. A fire-platform concept — it applies while a unit HOLDS the ground. Not a damage bonus (explicitly out of scope, ADR-0029) and not a guarantee of winning; the holder is favored, not safe. See ADR-0029.
+_Avoid_: superiority advantage, elevation buff, high ground supremacy
+
+**Ramp**:
+The one Terrain Type that permits crossing a Cliff. A transition strip, not a fighting platform: a unit standing on a Ramp gets no High Ground benefits (no Range bonus, no acquisition extension). Authored at the LOWER band of the ridge it serves, so a ridge defender outranges a climber mid-crossing. Exempt from the Uphill Cost — the Ramp is the fast, channeled route. See ADR-0034.
+_Avoid_: slope, stair, bridge
+
+**Uphill Cost**:
+The movement-cost surcharge for stepping onto a higher Elevation band (+1 per band, on top of terrain cost). Makes high ground approached slowly, buying the holder extra outranged shots during an assault. Downhill and level steps are free; Ramp tiles are exempt. Cost only — it never makes an edge impassable. See ADR-0034.
+_Avoid_: climb penalty, slope tax
 
 **Creep**:
 A faction-owned overlay on a Tile (CreepOwner = faction 1 or 2; 0 = unclaimed) that does not replace the Terrain Type. A ground unit whose faction matches the tile's CreepOwner pays a reduced movement cost (×0.7); enemy creep is neutral, not punishing. Spreads from owned sources and is rendered as a faction-colored tint. Distinct from Terrain Type — it is an overlay, not a terrain classification.
@@ -179,3 +191,4 @@ _Avoid_: win condition, game mode
 - "unit" was used to mean both **CombatUnit** (an entity) and "a game unit" (generic) — resolved: **CombatUnit** is the specific term; "unit" is only used informally.
 - "team" was used to mean both **Squad** and **Faction** — resolved: **Squad** is the command group, **Faction** is the side.
 - "formation" was used to describe both Squad arrangement and formation types (Line/Wedge/Circle/Scatter) — resolved: v1 has no formation switching; the formation-slot system was removed. A Squad's arrangement is a compact cluster centered on the Commander, with friendly-unit spacing governed by Collision (ADR-0030), not slot geometry. "Formation" refers only to the informal spatial arrangement.
+- "superiority advantage" and "coattack" were used during the 2026-08-16 hill-clash investigation to mean several things — resolved: the combat benefit of holding higher ground is **High Ground** (range/cover/vision, no damage bonus); squads firing together is the **Range Tolerance** fire-stagger (ADR-0031); taxing the approach is the **Uphill Cost** (ADR-0034).

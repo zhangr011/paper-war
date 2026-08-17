@@ -25,8 +25,11 @@ func TestClashHillsValidation_Features(t *testing.T) {
 		t.Fatalf("fixture is %dx%d, want 32x32", m.Width, m.Height)
 	}
 
-	// Ramps flank each pass at Elevation 2 — the authored Δ2 cliff crossing.
-	// Ramp is not Hill, so DeriveElevation must leave these at 2.
+	// Ramps flank each pass at the LOWER band (Elevation 1) of the e2 ridge
+	// they serve — the ADR-0034 authoring convention: a climber mid-ramp sits
+	// one band under the ridge, so the ridge defender outranges (+1) the
+	// crossing for its whole length. Ramp is not Hill, so DeriveElevation
+	// must leave these as authored.
 	rampCells := [][2]int32{
 		{13, 7}, {19, 7}, {13, 8}, {19, 8},
 		{13, 23}, {19, 23}, {13, 24}, {19, 24},
@@ -39,8 +42,8 @@ func TestClashHillsValidation_Features(t *testing.T) {
 		if tl.TerrainType != component.TerrainRamp {
 			t.Errorf("ramp %v: terrain=%d, want Ramp(18)", c, tl.TerrainType)
 		}
-		if tl.Elevation != 2 {
-			t.Errorf("ramp %v: elevation=%d, want 2 (DeriveElevation must not touch Ramp)", c, tl.Elevation)
+		if tl.Elevation != 1 {
+			t.Errorf("ramp %v: elevation=%d, want 1 (lower band of the served ridge, ADR-0034)", c, tl.Elevation)
 		}
 	}
 

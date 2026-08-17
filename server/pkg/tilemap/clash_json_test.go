@@ -42,8 +42,9 @@ func TestClashJSONLoadable(t *testing.T) {
 	if err != nil || m == nil {
 		t.Fatalf("hills_validation: %v %v", m, err)
 	}
-	if tl := m.TileAt(13, 7); tl == nil || tl.TerrainType != component.TerrainRamp || tl.Elevation != 2 {
-		t.Errorf("ramp (13,7): want Ramp/2")
+	// Ramp authored at the lower band of its ridge (ADR-0034 convention).
+	if tl := m.TileAt(13, 7); tl == nil || tl.TerrainType != component.TerrainRamp || tl.Elevation != 1 {
+		t.Errorf("ramp (13,7): want Ramp/1")
 	}
 	if tl := m.TileAt(16, 16); tl == nil || tl.TerrainType != component.TerrainWall || tl.Health != wallHealth {
 		t.Errorf("wall (16,16): want Wall HP %d", wallHealth)

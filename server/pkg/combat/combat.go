@@ -169,7 +169,11 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		// still applied exactly at the fire check.
 		acqRange := effRange
 		if s.ElevationFn != nil {
-			if s.ElevationFn(int32(pos.X>>12), int32(pos.Y>>12)) > 0 {
+			// Ramp is a transition strip, not a fighting platform: a unit
+			// mid-climb on a Ramp grants no high-ground benefits (ADR-0034).
+			onRamp := s.TerrainFn != nil &&
+				s.TerrainFn(int32(pos.X>>12), int32(pos.Y>>12)) == component.TerrainRamp
+			if s.ElevationFn(int32(pos.X>>12), int32(pos.Y>>12)) > 0 && !onRamp {
 				acqRange = effRange + fixed.One
 			}
 		}
@@ -247,7 +251,11 @@ func (s *CombatSystem) Tick(w *ecs.World, tick uint32) {
 		if s.ElevationFn != nil {
 			ax, ay := int32(pos.X>>12), int32(pos.Y>>12)
 			tx, ty := int32(targetPos.X>>12), int32(targetPos.Y>>12)
-			if s.ElevationFn(ax, ay) > s.ElevationFn(tx, ty) {
+			// Ramp is a transition strip, not a fighting platform — a climber
+			// standing on a Ramp never gains the +1, even when its authored
+			// elevation tops the target's (ADR-0034).
+			onRamp := s.TerrainFn != nil && s.TerrainFn(ax, ay) == component.TerrainRamp
+			if s.ElevationFn(ax, ay) > s.ElevationFn(tx, ty) && !onRamp {
 				fireRange = effRange + fixed.One // +1 tile, any height advantage
 			}
 		}

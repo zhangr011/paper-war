@@ -92,3 +92,19 @@ not a sound regression gate for this feature; the deterministic coverage lives
 in `pkg/component` (`TestConceals`), `pkg/combat`
 (`TestCombatElevationRangeBonus`), and the existing `pkg/fog`/`pkg/tilemap`
 suites.
+
+## Amendment (2026-08-16): flat +1, and Ramp grants nothing
+
+Two corrections to Decision 2 as implemented:
+
+1. **The range bonus is a flat +1 for ANY elevation advantage, not +1 per
+   level.** Peak-over-low (Δ2) was tuned down to +1 shortly after this ADR
+   was accepted — next to halved base ranges (Light Infantry range 3), +2 is
+   two-thirds of an entire engagement range. `TestLiveHighGroundRangeBonus`
+   and `TestCombatElevationRangeBonus` codify flat +1.
+2. **A unit standing on Ramp terrain gets no elevation benefits at all** — no
+   range bonus, no acquisition extension. A Ramp is a transition strip, not a
+   fighting platform (ADR-0034). Acquisition additionally requires the
+   attacker to actually outrank the target (`findTarget` extended band),
+   fixing the hill-standoff inversion where high-ground units locked onto
+   equal-elevation targets they could never hit and were out-shot ~2:1.

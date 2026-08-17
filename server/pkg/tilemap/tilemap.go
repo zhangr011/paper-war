@@ -169,5 +169,20 @@ func (m *GameMap) EdgeWalkableFor(x1, y1, x2, y2 int32, profile *component.Movem
 			return false, 0
 		}
 	}
+	// Uphill assault tax (ADR-0034): each elevation band climbed costs
+	// +UphillStepCost on top of the destination terrain cost — high ground is
+	// approached slowly, giving the holder more outranged shots during the
+	// climb. Downhill and level steps are free. Ramp tiles are exempt: a Ramp
+	// is the channeled, fast route across a cliff, distinct from an open
+	// slope. Cost only — never blocks, so no edge can newly disconnect.
+	if t2.Elevation > t1.Elevation &&
+		t1.TerrainType != component.TerrainRamp && t2.TerrainType != component.TerrainRamp {
+		cost += (t2.Elevation - t1.Elevation) * UphillStepCost
+	}
 	return true, cost
 }
+
+// UphillStepCost is the movement-cost surcharge per elevation band climbed in
+// EdgeWalkableFor. K=+1 (ADR-0034): Light pays 3→4 on a Hill step, Heavy 4→5;
+// retune alongside TerrainCosts if assault pacing shifts.
+const UphillStepCost uint8 = 1

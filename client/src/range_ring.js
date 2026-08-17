@@ -16,12 +16,26 @@
 // Go source by regexing the literals.
 export const UNIT_RANGES = [3, 4, 4, 4, 3, 4, 5];
 
-// effectiveRange returns the ring radius in tiles for a selected unit:
-// base range, or base + 1 when standing on ANY raised ground (the server
-// grants a flat +1 tile for any height advantage over the target).
-export function effectiveRange(unitType, attackerElev) {
+// effectiveRange returns the ring radii in tiles for a selected unit.
+// opts:
+//   onRamp — the unit's tile is Ramp terrain (no bonus at all, ADR-0034: a
+//     transition strip, not a fighting platform).
+//   enemies — [{elev}] for enemy units within base+1 tiles of the selected
+//     unit. The +1 is per-TARGET (server grants it only against a LOWER
+//     target), so the outer ring shows only when such a target is actually
+//     in reach. Without enemies in reach there is nothing to outrange and
+//     the cue must not extend (the old target-blind ring made every unit on
+//     raised ground look +1 — "the lower team got attacker range too fast").
+export function effectiveRange(unitType, attackerElev, opts = {}) {
   const base = UNIT_RANGES[unitType] ?? 3;
-  const bonus = (attackerElev | 0) > 0 ? 1 : 0;
+  const elev = attackerElev | 0;
+  let bonus = 0;
+  if (elev > 0 && !opts.onRamp) {
+    const enemies = opts.enemies ?? [];
+    for (const e of enemies) {
+      if ((e.elev | 0) < elev) { bonus = 1; break; }
+    }
+  }
   return { base, max: base + bonus };
 }
 

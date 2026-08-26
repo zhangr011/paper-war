@@ -31,3 +31,4 @@ do-push.sh
 
 # CodeGraph local index (tool artifact)
 .codegraph/
+server/server.log

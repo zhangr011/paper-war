@@ -380,8 +380,10 @@ export class StateManager {
     this.currTick = tick;
 
     // Process each unit update
+    const updated = new Set();
     for (let i = 0; i < unitUpdates.length; i++) {
       const u = unitUpdates[i];
+      updated.add(u.entityID);
       // Issue #51 — resurrect guard: skip updates for entities the
       // client has already seen die and removed.  Without this, a
       // trailing/out-of-order snapshot for a dead entity would hit the
@@ -512,6 +514,27 @@ export class StateManager {
           unit.prevAngle = unit.currAngle;
         }
       }
+    }
+
+    // Units absent from this snapshot are UNCHANGED, not gone — the wire
+    // protocol is a delta feed (server/pkg/network/snapshot.go only emits
+    // units with a field that crossed its change threshold). Shift their
+    // curr → prev so a mid-flight interpolation segment doesn't restart
+    // from its origin when the clock resets to t=0 below. Without this, a
+    // firing unit back-jumped a full movement segment on every shot: the
+    // server freezes it for the swing (BoidComponent.FreezeUntilTick,
+    // combat.go), its position and velocity stop changing, and it drops
+    // out of the delta feed for the whole freeze window (#52 / #76).
+    for (const unit of this.units.values()) {
+      if (updated.has(unit.entityID) || !unit.alive) continue;
+      unit.prevX = unit.currX;
+      unit.prevY = unit.currY;
+      unit.prevVx = unit.currVx;
+      unit.prevVy = unit.currVy;
+      unit.prevAngle = unit.currAngle;
+      unit.prevHP = unit.currHP;
+      unit.prevMorale = unit.currMorale;
+      unit.prevState = unit.currState;
     }
 
     // Record activation time and reset interpolation parameter

@@ -557,12 +557,18 @@ await test('Issue #51: canonical event-death path is unchanged', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Issue #52 — units plant during the attack swing, then resume moving
+// Issue #52 — units plant during the attack swing, then resume moving.
+// Since 0d0359c the freeze is SERVER-authoritative: the server suppresses
+// movement for the swing (BoidComponent.FreezeUntilTick), so the unit's
+// position/velocity stop changing and the delta feed OMITS it entirely for
+// the freeze window. The client contract tested here is that an omitted
+// unit holds still — it must not back-jump to the origin of its stale
+// interpolation segment when the snapshot clock resets (#76).
 // ---------------------------------------------------------------------------
 
 const EVENT_PROJECTILE_52 = 4;
 
-await test('Issue #52: render position freezes for the attack swing then resumes', async () => {
+await test('Issue #52/#76: omitted (frozen) unit plants at its position, then resumes', async () => {
   const sm = new StateManager();
   mockTime = 1000;
   sm.applySnapshot(1, 0, [{
@@ -580,26 +586,43 @@ await test('Issue #52: render position freezes for the attack swing then resumes
   const beforeSwingX = sm.getUnit(60).renderX;
   assert.ok(beforeSwingX > 0, `prerequisite: unit has interpolated forward (got ${beforeSwingX})`);
 
-  // Fire attack event — freeze begins.
+  // Fire attack event — server-side freeze begins. From here the unit is
+  // unchanged every tick, so all further snapshots in the swing window
+  // carry an empty unit list (delta feed, snapshot.go).
   mockTime += 10;
   sm.applySnapshot(3, 2, [], [{ type: EVENT_PROJECTILE_52, entityID: 60, tick: 3 }]);
   sm.update(mockTime);
-  const frozenAt = sm.getUnit(60).renderX;
+  const fireX = sm.getUnit(60).renderX;
 
-  // Time advances WITHIN the swing window. The unit would normally keep
-  // interpolating toward x=1, but the freeze must hold renderX.
+  // Snap3 (empty) activates. The unit is unchanged, so it must settle at
+  // its last known position (x=1) and plant there — NOT back-jump to the
+  // stale segment origin (x=0, the #76 regression).
   mockTime += 100;
   sm.update(mockTime);
-  assert.equal(sm.getUnit(60).renderX, frozenAt,
-    'renderX must not advance during the attack swing');
+  const plantedX = sm.getUnit(60).renderX;
+  assert.ok(plantedX >= fireX && plantedX <= 1,
+    `renderX must settle onto the frozen position, not jump (fire=${fireX}, got=${plantedX})`);
+  assert.equal(plantedX, 1, 'unit plants at its last known (frozen) position');
 
-  // Past ATTACK_FREEZE_MS — the freeze releases and interpolation
-  // resumes (catching up via the accelerated-correction path).
-  mockTime += Math.ceil(ATTACK_FREEZE_MS) + 200;
-  sm.update(mockTime);
+  // More frames inside the freeze window — the unit stays planted.
+  for (let i = 0; i < 3; i++) {
+    mockTime += 100;
+    sm.update(mockTime);
+    assert.equal(sm.getUnit(60).renderX, plantedX,
+      'renderX must not advance while the unit is frozen (omitted from snapshots)');
+  }
+
+  // The server freeze ends and movement resumes: the next snapshot again
+  // carries the unit with a new position, and interpolation advances.
+  mockTime += 10;
+  sm.applySnapshot(4, 3, [{
+    entityID: 60, changedMask: CHANGED_POSITION, x: 2, y: 0,
+  }], []);
+  shiftTime(sm, 100); // snap4 activates, t=0
+  shiftTime(sm, 50);  // t=0.5 → renderX = 1.5
   const afterSwingX = sm.getUnit(60).renderX;
-  assert.ok(afterSwingX > frozenAt,
-    `renderX must resume advancing after the swing (frozen=${frozenAt}, after=${afterSwingX})`);
+  assert.ok(afterSwingX > plantedX,
+    `renderX must resume advancing after the freeze (planted=${plantedX}, after=${afterSwingX})`);
 });
 
 // ---------------------------------------------------------------------------

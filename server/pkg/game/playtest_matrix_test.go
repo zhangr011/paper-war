@@ -3,6 +3,8 @@ package game
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -550,6 +552,244 @@ func TestPlaytestMatrixRealistic(t *testing.T) {
 		if r.Stalemates > 0 {
 			t.Logf("  WARN: %d/%d stalemates in %s — squads never closed?",
 				r.Stalemates, runs, c.label)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Issue #75 phase 1 — per-map production-defaults win-rate baseline.
+// Measure first, tune later: everything in this section is LOGGED, not
+// asserted. The table it prints is the before-picture the hills re-grade
+// (phase 2) gets judged against.
+// ---------------------------------------------------------------------------
+
+// mapPlaytestResult aggregates SPAWN-SIDE outcomes across N matches on one
+// map. Top = the mh/2−4 spawn, bottom = mh/2+4 (production geometry: both
+// at center X, 8 tiles apart). Faction win counts ride along as a free
+// engine-bias check — spawn↔faction is randomized per run, so a structural
+// faction skew shows up as B≠R even on a spawn-symmetric map.
+type mapPlaytestResult struct {
+	Label      string
+	Runs       int
+	TopWins    int
+	BottomWins int
+	BlueWins   int
+	RedWins    int
+	Draws      int
+	Stalemates int
+	AvgTicks     float64
+	AvgSurvHPpct float64
+}
+
+func (r mapPlaytestResult) String() string {
+	decided := r.TopWins + r.BottomWins
+	pct := func(n int) int {
+		if decided == 0 {
+			return 0
+		}
+		return n * 100 / decided
+	}
+	return fmt.Sprintf(
+		"%-44s top=%2d(%3d%%) bot=%2d(%3d%%) D=%d S=%d | faction B=%d R=%d | ticks=%.0f survHP=%.0f%%",
+		r.Label, r.TopWins, pct(r.TopWins), r.BottomWins, pct(r.BottomWins),
+		r.Draws, r.Stalemates, r.BlueWins, r.RedWins,
+		r.AvgTicks, r.AvgSurvHPpct,
+	)
+}
+
+// runMapBaselineMatchup plays `runs` matches on one clash map in the exact
+// production configuration (cmd/server/main.go start_clash + the client
+// lobby's 5-unit default, client/src/app.js clashTeam1Size): one squad per
+// side of 1 commander (cmdType) + 5 LI combat units, spawns at (mw/2, mh/2∓4),
+// march orders at the enemy spawn, ±0.3 spawn jitter on non-commanders,
+// elimination objective, 1500-tick cap.
+//
+// Spawn↔faction assignment is randomized per run (same cancellation
+// technique as runRealisticMatchup) so engine/faction bias cancels across
+// the arm; wins are counted by SPAWN SIDE — the map-geometry signal issue
+// #75 tunes against. On hills the top spawn (mh/2−4) sits on the elevation-2
+// plateau and the bottom spawn on elevation 0, so top == hill side.
+func runMapBaselineMatchup(t *testing.T, label, mapName string, cmdType component.CombatUnitType, runs int) mapPlaytestResult {
+	t.Helper()
+	res := mapPlaytestResult{Label: label, Runs: runs}
+
+	const tickCap = uint32(1500)
+	var tickSum, survSum int
+	for i := 0; i < runs; i++ {
+		gs := NewGameSession()
+		clashMap := tilemap.LoadClashMap(mapName)
+		if clashMap == nil {
+			t.Fatalf("LoadClashMap(%q) returned nil — map missing from server/data/clash_maps/", mapName)
+		}
+		gs.ResetWithMap(clashMap)
+		gs.EnableClashMode()
+		gs.Map.Objective.Type = 0
+
+		// Per-run entropy: session RNG for combat rolls + spawn jitter, and
+		// the spawn-swap draw from the same source.
+		rng := rand.New(rand.NewSource(int64(1000 + i)))
+		gs.SetSessionRNG(rng)
+
+		mw, mh := gs.MapSize()
+		cx := fixed.FromFloat(float64(mw) / 2)
+		topY := fixed.FromFloat(float64(mh/2 - 4))
+		botY := fixed.FromFloat(float64(mh/2 + 4))
+
+		blueAtTop := rng.Intn(2) == 0
+		blueY, redY := topY, botY
+		if !blueAtTop {
+			blueY, redY = botY, topY
+		}
+		gs.SpawnSquadWithType(1, 1, cx, blueY, 5, cmdType)
+		gs.SpawnSquadWithType(2, 2, cx, redY, 5, cmdType)
+
+		// Production bias-break from start_clash: ±0.3 jitter on combat
+		// units (commanders excluded — they anchor the squad).
+		posPool := gs.World.Pool(component.PositionComponent{}).(*ecs.ComponentPool[component.PositionComponent])
+		boidPool := gs.World.Pool(component.BoidComponent{}).(*ecs.ComponentPool[component.BoidComponent])
+		boidPool.Each(func(e ecs.Entity, bc *component.BoidComponent) {
+			if bc.Role == component.RoleCommander {
+				return
+			}
+			if pos, ok := posPool.GetPtr(e); ok {
+				pos.X += fixed.FromFloat(rng.Float64()*0.6 - 0.3)
+				pos.Y += fixed.FromFloat(rng.Float64()*0.6 - 0.3)
+			}
+		})
+
+		// March orders at the enemy spawn — an advancing battle, not a
+		// static shootout (same as production and runRealisticMatchup).
+		setSquadPathTarget(gs, 1, cx, redY)
+		setSquadPathTarget(gs, 2, cx, blueY)
+
+		hp := gs.World.Pool(component.HealthComponent{}).(*ecs.ComponentPool[component.HealthComponent])
+		owner := gs.World.Pool(component.OwnerComponent{}).(*ecs.ComponentPool[component.OwnerComponent])
+
+		var startHP [2]int
+		hp.Each(func(e ecs.Entity, c *component.HealthComponent) {
+			if o, ok := owner.Get(e); ok && c.HP > 0 {
+				startHP[o.Faction] += int(c.HP)
+			}
+		})
+
+		winner := uint8(2) // draw
+		decisiveTick := tickCap
+		for tick := uint32(1); tick <= tickCap; tick++ {
+			gs.Tick()
+			var alive [2]int
+			hp.Each(func(e ecs.Entity, c *component.HealthComponent) {
+				if c.HP <= 0 {
+					return
+				}
+				if o, ok := owner.Get(e); ok {
+					alive[o.Faction]++
+				}
+			})
+			if alive[0] == 0 && alive[1] == 0 {
+				decisiveTick = tick
+				break
+			}
+			if alive[0] == 0 {
+				winner = 1
+				decisiveTick = tick
+				break
+			}
+			if alive[1] == 0 {
+				winner = 0
+				decisiveTick = tick
+				break
+			}
+		}
+		if decisiveTick >= tickCap && winner == 2 {
+			res.Stalemates++
+		}
+
+		tickSum += int(decisiveTick)
+		switch winner {
+		case 0:
+			res.BlueWins++
+			if blueAtTop {
+				res.TopWins++
+			} else {
+				res.BottomWins++
+			}
+		case 1:
+			res.RedWins++
+			if blueAtTop {
+				res.BottomWins++
+			} else {
+				res.TopWins++
+			}
+		case 2:
+			res.Draws++
+		}
+		if winner != 2 {
+			var survHP int
+			hp.Each(func(e ecs.Entity, c *component.HealthComponent) {
+				if c.HP <= 0 {
+					return
+				}
+				if o, ok := owner.Get(e); ok && o.Faction == winner {
+					survHP += int(c.HP)
+				}
+			})
+			if startHP[winner] > 0 {
+				survSum += survHP * 100 / startHP[winner]
+			}
+		}
+	}
+	decided := res.TopWins + res.BottomWins
+	if decided > 0 {
+		res.AvgTicks = float64(tickSum) / float64(decided+res.Draws+res.Stalemates)
+		res.AvgSurvHPpct = float64(survSum) / float64(decided)
+	}
+	return res
+}
+
+// TestPlaytestPerMapBaseline (#75 phase 1) measures win rate by spawn side
+// on every production clash map at production defaults (commander + 5 LI
+// troops per side, 8-tile center spawn gap, march orders). The commander
+// matrix runs as mirror arms — asymmetric pairings measure unit counters,
+// not map geometry, and already have their own harness above.
+//
+// Nothing is asserted (beyond the harness itself running); raise
+// PLAYTEST_MAP_RUNS above the default 20 for tighter confidence intervals,
+// e.g. the 100-run arms the phase-2 acceptance calls for.
+//
+// Reading the table: spawn-side totals on a spawn-symmetric map (plains is
+// the control) quantify the engine's vertical-march directional bias — the
+// floor any phase-2 hills re-grade is measured against, not a map property.
+// Conversely, maps whose rows match plains' exactly are combat-equivalent
+// at this spawn geometry: the 8-tile center gap keeps the engagement inside
+// a corridor their distinguishing terrain never enters.
+func TestPlaytestPerMapBaseline(t *testing.T) {
+	productionMaps := []string{"plains", "forest", "road", "river", "stronghold", "hills"}
+	commanderArms := []struct {
+		name string
+		t    component.CombatUnitType
+	}{
+		{"LI commander (production default)", component.UnitLightInfantry},
+		{"HI commander", component.UnitHeavyInfantry},
+		{"Sniper commander", component.UnitSniper},
+		{"AAI commander", component.UnitAntiArmorInfantry},
+	}
+
+	runs := 20
+	if v := os.Getenv("PLAYTEST_MAP_RUNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			runs = n
+		}
+	}
+
+	for _, mapName := range productionMaps {
+		t.Logf("=== MAP %s — spawn-side win rate (top=mh/2−4, bottom=mh/2+4; on hills top=hill side) ===", mapName)
+		for _, arm := range commanderArms {
+			r := runMapBaselineMatchup(t, mapName+" | "+arm.name, mapName, arm.t, runs)
+			t.Log(r.String())
+			if r.Stalemates > 0 {
+				t.Logf("  WARN: %d/%d stalemates on %s — match never resolved within %d ticks",
+					r.Stalemates, runs, mapName, 1500)
+			}
 		}
 	}
 }

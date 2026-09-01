@@ -35,3 +35,7 @@ Issues filed in this repo follow a consistent shape. Match it on new issues:
 ### Domain docs
 
 Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Client UI work
+
+Read `client/README.md` before any DOM/HUD/CSS change — it is the design-context inventory (tokens-only rule, procedural-art rule, screen/module map, test expectations). Design system details: `docs/design-system.md` (ADR-0021).

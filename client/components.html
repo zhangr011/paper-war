@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper War — Component Gallery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The REAL stylesheet — specimens below are rendered by style.css alone. -->
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Gallery chrome only (.cg-*). No specimen styling lives here. */
+    body { background: var(--paper-bg); padding: 24px 32px 64px; overflow-x: auto; }
+    .cg-header { max-width: 980px; margin: 0 auto 28px; }
+    .cg-header h1 { font-family: var(--font-display); color: var(--text-heading); font-size: 34px; margin: 0; }
+    .cg-header p { color: var(--text-muted); font-size: 13px; max-width: 72ch; }
+    .cg-section { max-width: 980px; margin: 0 auto 36px; }
+    .cg-section > h2 {
+      font-family: var(--font-display); color: var(--text-heading); font-size: 22px;
+      border-bottom: 2px solid var(--border-color); padding-bottom: 4px; margin: 0 0 14px;
+    }
+    .cg-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+    .cg-item { display: flex; flex-direction: column; gap: 6px; }
+    .cg-item > code {
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+      background: var(--paper-light); border: 1px solid var(--border-light);
+      padding: 1px 6px; border-radius: var(--radius-sm); align-self: flex-start;
+    }
+    .cg-frame {
+      position: relative; height: 110px; width: 260px; overflow: hidden;
+      background: var(--map-bg); border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+    }
+    .cg-tokens { display: flex; flex-wrap: wrap; gap: 10px; }
+    .cg-swatch { width: 108px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); overflow: hidden; background: var(--paper-light); }
+    .cg-swatch .chip { height: 40px; }
+    .cg-swatch .meta { padding: 4px 6px; font-family: var(--font-mono); font-size: 9.5px; color: var(--text-dark); line-height: 1.35; }
+    .cg-swatch.missing .chip { background: repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,77,77,.35) 6px, rgba(255,77,77,.35) 12px); }
+    .cg-swatch.missing .meta { color: var(--morale-red); }
+    .cg-spacebar { height: 14px; background: var(--panel-header); border-radius: 2px; }
+    .cg-type-card { padding: 10px 14px; background: var(--paper-light); border: 1px solid var(--border-light); border-radius: var(--radius-sm); min-width: 220px; }
+    .cg-type-card .sample { font-size: 30px; line-height: 1.1; color: var(--text-heading); }
+    .cg-tex { width: 128px; height: 64px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background-repeat: repeat; background-size: auto; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+
+  <div class="cg-header">
+    <h1>Paper War — Component Gallery</h1>
+    <p>
+      Every specimen below is the real <code>style.css</code> rendering the real
+      markup from <code>index.html</code> — this page owns no specimen styles and
+      cannot drift. Token swatches are read live from the CSS variables; a red
+      "missing" chip means the token name no longer exists in
+      <code>style.css</code>. Inventory text: <code>client/README.md</code>.
+    </p>
+  </div>
+
+  <!-- ============================== Buttons ============================== -->
+  <div class="cg-section">
+    <h2>Buttons</h2>
+    <div class="cg-row">
+      <div class="cg-item"><code>.lobby-btn</code><button type="button" class="lobby-btn">Find Match</button></div>
+      <div class="cg-item"><code>.lobby-btn.lobby-btn-solo</code><button type="button" class="lobby-btn lobby-btn-solo">Start Match</button></div>
+      <div class="cg-item"><code>.lobby-btn.lobby-btn-clash</code><button type="button" class="lobby-btn lobby-btn-clash">Clash Test</button></div>
+      <div class="cg-item"><code>.lobby-btn.lobby-btn-cancel</code><button type="button" class="lobby-btn lobby-btn-cancel">Cancel</button></div>
+      <div class="cg-item"><code>.cmd-type-btn / .selected</code>
+        <div class="cmd-type-buttons">
+          <button type="button" class="cmd-type-btn selected" data-cmd-type="0">LI (Gun)</button>
+          <button type="button" class="cmd-type-btn" data-cmd-type="1">HI (Cannon)</button>
+          <button type="button" class="cmd-type-btn" data-cmd-type="2">Sniper</button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.clash-terrain-btn / .selected</code>
+        <div>
+          <button type="button" class="clash-terrain-btn selected" data-terrain="plains">Plains</button>
+          <button type="button" class="clash-terrain-btn" data-terrain="hills">Hills</button>
+        </div>
+      </div>
+    </div>
+    <div class="cg-row" style="margin-top:16px">
+      <div class="cg-item"><code>.action-btn (+.active, tactic-*)</code>
+        <div class="action-buttons">
+          <button type="button" class="action-btn attack-ground-btn" title="Attack Ground [A]">
+            <span class="action-key">A</span><span class="action-name">Atk Ground</span>
+          </button>
+          <button type="button" class="action-btn tactic-charge active" title="Charge [Q]">
+            <span class="action-key">Q</span><span class="action-name">Charge</span>
+          </button>
+          <button type="button" class="action-btn tactic-retreat" title="Retreat [W]">
+            <span class="action-key">W</span><span class="action-name">Retreat</span>
+          </button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.minimap-btn</code>
+        <div class="minimap-controls">
+          <button type="button" class="minimap-btn" title="Zoom in">+</button>
+          <button type="button" class="minimap-btn" title="Zoom out">−</button>
+          <button type="button" class="minimap-btn" title="Center on base">⊙</button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.icon-btn / .muted</code>
+        <div class="cg-row">
+          <button type="button" class="icon-btn" title="Toggle Sound">🔊</button>
+          <button type="button" class="icon-btn muted" title="Muted">🔇</button>
+          <button type="button" class="icon-btn" title="Settings">&#9881;</button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.team-test-move-btn</code>
+        <button type="button" class="team-test-move-btn" title="Move selected team to a random visible position">Test Move</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================== Panels & cards =========================== -->
+  <div class="cg-section">
+    <h2>Panels &amp; cards</h2>
+    <div class="cg-row">
+      <div class="cg-item"><code>.login-card</code>
+        <div class="login-card" style="width:300px">
+          <h1 class="login-title">Paper War</h1>
+          <p class="login-subtitle">Real-Time Strategy</p>
+          <button type="button" class="login-btn">Join</button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.lobby-card</code>
+        <div class="lobby-card" style="width:300px">
+          <h2 class="lobby-title">War Room</h2>
+          <div class="lobby-player">
+            <span class="lobby-player-avatar">P</span>
+            <span class="lobby-player-name">Player</span>
+          </div>
+        </div>
+      </div>
+      <div class="cg-item"><code>.panel (#selection-panel shape)</code>
+        <section class="panel" style="width:280px">
+          <h3 class="panel-title">Selection</h3>
+          <div class="selection-row">
+            <span class="selection-label">Commander:</span>
+            <span class="selection-value">--</span>
+          </div>
+          <div class="selection-row">
+            <span class="selection-label">Units:</span>
+            <span class="selection-value">5</span>
+          </div>
+          <div class="selection-row">
+            <span class="selection-label">Morale:</span>
+            <div class="morale-bar-container">
+              <div class="morale-bar" style="width: 75%"></div>
+            </div>
+            <span class="selection-value">75%</span>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================== Data display ============================ -->
+  <div class="cg-section">
+    <h2>Data display</h2>
+    <div class="cg-row">
+      <div class="cg-item"><code>.resource.card</code>
+        <span class="resource card">
+          <span class="resource-icon">🪙</span>
+          <span class="resource-value">250</span>
+          <span class="resource-label">Gold</span>
+        </span>
+      </div>
+      <div class="cg-item"><code>.timer</code><span class="timer">04:32</span></div>
+      <div class="cg-item"><code>.career-row</code>
+        <div style="width:220px">
+          <div class="career-row"><span class="career-label">Gold Earned</span><span class="career-value">1,240</span></div>
+          <div class="career-row"><span class="career-label">Recruits</span><span class="career-value">18</span></div>
+        </div>
+      </div>
+      <div class="cg-item"><code>.roster-unit-row</code>
+        <div style="width:220px">
+          <div class="roster-unit-row">
+            <span class="roster-unit-icon" style="color:#8BC34A">&#9632;</span>
+            <span class="roster-unit-name">Light Infantry</span>
+          </div>
+        </div>
+      </div>
+      <div class="cg-item"><code>.player-avatar</code><span class="player-avatar">P</span></div>
+      <div class="cg-item"><code>.lobby-spinner &gt; .spinner</code>
+        <div class="lobby-spinner" style="display:block">
+          <div class="spinner"></div>
+        </div>
+      </div>
+      <div class="cg-item"><code>.base-alert-overlay</code>
+        <div class="cg-frame">
+          <div class="base-alert-overlay"></div>
+        </div>
+      </div>
+      <div class="cg-item"><code>.sr-only (invisible by design)</code>
+        <label class="sr-only" for="cg-demo">Player name</label>
+        <input id="cg-demo" placeholder="screen-reader only label">
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== Tokens =============================== -->
+  <div class="cg-section">
+    <h2>Tokens — read live from :root</h2>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:14px 0 8px">Semantic colors (new code uses these)</h3>
+    <div class="cg-tokens" id="tok-semantic"></div>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:18px 0 8px">Literal layer (aliases)</h3>
+    <div class="cg-tokens" id="tok-literal"></div>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:18px 0 8px">Spacing scale</h3>
+    <div class="cg-tokens" id="tok-space"></div>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:18px 0 8px">Radii &amp; shadows</h3>
+    <div class="cg-tokens" id="tok-misc"></div>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:18px 0 8px">Typography</h3>
+    <div class="cg-row" id="tok-type"></div>
+    <h3 style="font-family:var(--font-display);color:var(--text-heading);margin:18px 0 8px">Procedural textures (scripts/gen-textures.py)</h3>
+    <div class="cg-row" id="tok-tex"></div>
+  </div>
+
+  <script>
+    // Token panels are derived from the live CSS — nothing below hard-codes a value.
+    const cs = getComputedStyle(document.documentElement);
+
+    function swatch(name) {
+      const v = cs.getPropertyValue(name).trim();
+      const el = document.createElement('div');
+      el.className = 'cg-swatch' + (v ? '' : ' missing');
+      el.innerHTML = `<div class="chip" style="background:${v || 'transparent'}"></div>
+        <div class="meta">${name}<br>${v || 'MISSING in style.css'}</div>`;
+      return el;
+    }
+
+    const semantic = ['--color-background','--color-surface','--color-surface-dark','--color-primary',
+      '--color-on-primary','--color-foreground','--color-foreground-muted','--color-muted',
+      '--color-border-new','--color-border-light-new','--color-accent','--color-action-bg',
+      '--color-action-hover','--color-success','--color-danger','--color-map-bg'];
+    const literal = ['--paper-bg','--paper-light','--paper-dark','--panel-header','--border-color',
+      '--border-light','--text-dark','--text-heading','--text-muted','--morale-red',
+      '--morale-green','--gold-accent','--map-bg','--action-btn-bg','--action-btn-hover'];
+    semantic.forEach(n => document.getElementById('tok-semantic').appendChild(swatch(n)));
+    literal.forEach(n => document.getElementById('tok-literal').appendChild(swatch(n)));
+
+    // Spacing: bar of the real width, capped for display.
+    ['--space-xs','--space-sm','--space-md','--space-lg','--space-xl','--space-2xl','--space-3xl']
+      .forEach(n => {
+        const v = cs.getPropertyValue(n).trim();
+        const el = swatch(n);
+        el.querySelector('.chip').style.background = 'transparent';
+        el.querySelector('.chip').innerHTML =
+          `<div class="cg-spacebar" style="width:calc(${v || '0px'} * 3);margin:13px 0 0 6px"></div>`;
+        document.getElementById('tok-space').appendChild(el);
+      });
+
+    // Radii + shadows demonstrated on a paper chip.
+    ['--radius-sm','--radius-md','--shadow-xs','--shadow'].forEach(n => {
+      const v = cs.getPropertyValue(n).trim();
+      const isShadow = n.startsWith('--shadow');
+      const el = swatch(n);
+      el.querySelector('.chip').style.background = 'var(--paper-light)';
+      if (isShadow) {
+        el.querySelector('.chip').innerHTML =
+          `<div style="width:44px;height:22px;margin:9px auto;background:var(--paper-light);box-shadow:${v}"></div>`;
+      } else {
+        el.querySelector('.chip').style.borderRadius = v;
+        el.querySelector('.chip').style.border = '1px solid var(--border-color)';
+      }
+      document.getElementById('tok-misc').appendChild(el);
+    });
+
+    // Typography tokens.
+    [['--font-display','Teko 0123'],['--font-body','Inter 0123'],['--font-mono','Mono 0123']]
+      .forEach(([n, sample]) => {
+        const v = cs.getPropertyValue(n).trim();
+        const el = document.createElement('div');
+        el.className = 'cg-type-card';
+        el.style.fontFamily = v;
+        el.innerHTML = `<div class="sample">${sample}</div>
+          <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-muted);margin-top:6px">${n}<br>${v || 'MISSING'}</div>`;
+        document.getElementById('tok-type').appendChild(el);
+      });
+
+    // Texture tiles.
+    ['--tex-parchment','--tex-parchment-warm','--tex-wood-frame','--tex-navy-header',
+     '--tex-gold-cta','--tex-ink-border'].forEach(n => {
+      const v = cs.getPropertyValue(n).trim();
+      const el = document.createElement('div');
+      el.className = 'cg-item';
+      el.innerHTML = `<div class="cg-tex" style="background-image:${v || 'none'};${v ? '' : 'outline:2px dashed var(--morale-red);outline-offset:-2px'}"></div><code>${n}${v ? '' : ' — MISSING'}</code>`;
+      document.getElementById('tok-tex').appendChild(el);
+    });
+  </script>
+</body>
+</html>

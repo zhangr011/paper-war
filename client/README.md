@@ -27,6 +27,11 @@ models without design context hard-code colors and write one-off CSS
 
 ## Layout & screens
 
+Visual reference: open `client/components.html` — every component rendered
+live from `style.css` (specimens use the real markup; token swatches are
+read from `:root` at runtime, so a renamed token shows a red MISSING chip
+instead of a stale value).
+
 `index.html` stacks full-screen `<div class="screen">` sections; exactly one
 carries `.active`. Order: `#login-screen`, `#lobby-screen` (war room: roster,
 commander pick, queue buttons), `#career-screen`, `#leaderboard-screen`,

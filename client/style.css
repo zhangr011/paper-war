@@ -602,23 +602,33 @@ body {
   transition: width 0.3s ease;
 }
 
+/* Primary button, HUD size — the reference sheet's literal "Test Move"
+   gold button: kit-gold fill, kraft border, navy semibold label. */
 .team-test-move-btn {
   align-self: flex-start;
-  height: 24px;
-  padding: 0 8px;
-  background: #FFD700;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-dark);
+  height: 26px;
+  padding: 0 10px;
+  background: var(--kit-gold);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 4px;
+  color: var(--kit-navy);
   font-family: var(--font-body);
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--kit-shadow-sm);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .team-test-move-btn:hover {
-  background: #E6C200;
+  background: #E3BC55;
+  box-shadow: 3px 3px 0 rgba(59, 42, 26, 0.55);
+}
+
+.team-test-move-btn:active {
+  background: #C2932F;
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
 }
 
 /* --- Minimap Panel --- */
@@ -1306,46 +1316,57 @@ body.spectator-mode #gold {
   color: var(--text-muted);
   margin-bottom: 8px;
 }
+/* Button family (design/component.png state matrix): paper tiles with
+   kraft borders and hard offset shadows — hover lifts (bigger offset),
+   active presses (reduced offset + nudge), disabled goes flat gray. */
 .lobby-btn {
   padding: 10px;
-  background: var(--panel-header);
-  color: var(--paper-light);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  background: var(--kit-paper);
+  color: var(--kit-navy);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 4px;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: background 0.15s;
-  box-shadow: var(--shadow-xs);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: var(--kit-shadow-sm);
 }
 .lobby-btn:hover {
-  background: #3A5A7A;
+  background: #FBF9E3;
+  box-shadow: 3px 3px 0 rgba(59, 42, 26, 0.55);
 }
+.lobby-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
+}
+.lobby-btn:disabled {
+  background: #B8B8B0;
+  color: #6E6E66;
+  border-color: #8F8F86;
+  box-shadow: none;
+  cursor: default;
+}
+/* Primary CTA — the reference's gold button: kit-gold fill over the
+   procedural gold texture, navy text, full offset shadow. Still the
+   single primary action per screen. */
 .lobby-btn-solo {
   background:
     var(--tex-gold-cta) repeat-x left center / 96px 100%,
-    var(--gold-accent);
+    var(--kit-gold);
   background-blend-mode: multiply;
-  color: var(--text-dark);
-  text-shadow: 0 1px 0 rgba(255,255,255,0.25);
+  color: var(--kit-navy);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
   margin-bottom: 4px;
-  /* frontend-design skill — primary-action emphasis ("each screen should
-     have only one primary CTA"). The gold Start Match button is the
-     single primary action on the lobby; a soft warm-gold glow lifts it
-     above the equally-saturated red Clash button without dimming that
-     feature, so the hierarchy reads at a glance. Glow uses the existing
-     --gold-accent so no new hue is introduced. */
-  box-shadow:
-    0 0 0 1px rgba(200, 168, 50, 0.4),
-    0 4px 14px -2px rgba(200, 168, 50, 0.45);
+  box-shadow: var(--kit-shadow);
 }
 .lobby-btn-solo:hover {
   background:
     var(--tex-gold-cta) repeat-x left center / 96px 100%,
-    #D4B83A;
+    #E3BC55;
   background-blend-mode: multiply;
+  box-shadow: 4px 4px 0 rgba(59, 42, 26, 0.55);
 }
 .lobby-btn-clash {
   background: #C0392B;

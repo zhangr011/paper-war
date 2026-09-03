@@ -301,22 +301,20 @@ body {
   white-space: nowrap;
 }
 
+/* Stat cards (design/component.png): off-white highlight paper in a thin
+   kraft border with a hard offset shadow — inner cards pinned on the tan
+   top bar. Numbers large navy Teko; labels small uppercase navy. */
 .resource {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
-  background:
-    var(--tex-parchment-warm) repeat center / 64px 64px,
-    var(--paper-light);
-  background-blend-mode: multiply;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  background: var(--kit-paper);
+  border: 1px solid var(--kit-kraft);
+  border-radius: 3px;
+  box-shadow: var(--kit-shadow-sm);
 }
 
-/* Paper UIKit "card" treatment (design/component.png):
-   taller card with a visible caption, Teko numerals, gold-accent icon,
-   subtle elevation, and a left border-stripe for a pinned/index-card feel. */
 .resource.card {
   flex-direction: column;
   align-items: center;
@@ -324,9 +322,6 @@ body {
   gap: 0;
   min-width: 42px;
   padding: 2px 6px 1px;
-  border-left: 3px solid var(--gold-accent);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-xs);
 }
 
 .resource.card .resource-icon {
@@ -340,7 +335,7 @@ body {
   font-size: 20px;
   line-height: 1;
   letter-spacing: 0.5px;
-  color: var(--text-dark);
+  color: var(--kit-navy);
   min-width: 0;
   text-align: center;
 }
@@ -352,7 +347,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: var(--text-muted);
+  color: var(--kit-navy);
   line-height: 1.1;
   margin-left: 0;
 }
@@ -381,16 +376,14 @@ body {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--kit-navy);
   letter-spacing: 1px;
   line-height: 1;
   padding: 2px 8px;
-  background:
-    var(--tex-parchment-warm) repeat center / 64px 64px,
-    var(--paper-light);
-  background-blend-mode: multiply;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  background: var(--kit-paper);
+  border: 1px solid var(--kit-kraft);
+  border-radius: 3px;
+  box-shadow: var(--kit-shadow-sm);
 }
 
 .icon-btn {

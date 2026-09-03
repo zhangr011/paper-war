@@ -565,8 +565,8 @@ body {
   line-height: 1;
 }
 
-/* STATUS TAGS (design/component.png): render sel-status as a filled tag/badge
-   rather than a plain value. Color shifts with content via JS class hooks. */
+/* STATUS TAG (design/component.png): ink-navy chip, white uppercase —
+   2px radius, no shadow. */
 .selection-value#sel-status {
   display: inline-flex;
   align-items: center;
@@ -577,27 +577,32 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.8px;
   line-height: 1.2;
-  color: var(--paper-light);
-  background: var(--panel-header);
+  color: #fff;
+  background: var(--kit-navy);
   border-radius: 2px;
 }
 
+/* Morale bar (design/component.png): highlight-paper track in a kraft
+   border; the fill is the reference's 4-stop alert→success ramp. */
 .morale-bar-container {
   flex: 1;
   max-width: 74px;
   height: 8px;
-  background:
-    var(--tex-parchment-warm) repeat center / 24px 24px,
-    var(--paper-dark);
-  background-blend-mode: multiply;
+  background: var(--kit-paper);
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--kit-kraft);
 }
 
 .morale-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--morale-red), var(--morale-green));
+  background: linear-gradient(
+    90deg,
+    var(--kit-alert),
+    #E08A3C 38%,
+    #E3C13D 68%,
+    var(--kit-success)
+  );
   border-radius: 3px;
   transition: width 0.3s ease;
 }

@@ -652,6 +652,29 @@ body {
   gap: 4px;
 }
 
+/* Push pin (design/component.png paper elements): glossy red pin holding
+   the minimap card to the board. Inside the torn edge (the card clips
+   its children), just above the canvas. */
+#minimap-panel::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 30%,
+    #FF8A93 0%,
+    #E2535F 45%,
+    var(--kit-alert) 70%,
+    #8E2A33 100%
+  );
+  box-shadow: 1px 2px 2px rgba(30, 20, 10, 0.35);
+  z-index: 3;
+}
+
 /* Minimap controls (issue #42: zoom in/out + center, per design/main.png) */
 .minimap-controls {
   display: flex;
@@ -1060,19 +1083,25 @@ body.spectator-mode #gold {
   width: min(100vw, 520px);
   margin: 0 auto;
 }
+/* Paper Card (kit): torn tan paper + kraft border + offset shadow — the
+   reference sheet's panel recipe, scaled up for the login card. */
 .login-card {
   background:
-    var(--tex-parchment) repeat center / 192px 192px,
-    var(--paper-bg);
+    var(--tex-parchment-warm) repeat center / 96px 96px,
+    var(--kit-tan);
   background-blend-mode: multiply;
-  /* Use a wider transparent border so the 9-slice wood frame is visible. */
-  border: 8px solid transparent;
-  border-image: var(--tex-wood-frame) var(--frame-slice) var(--frame-slice) var(--frame-slice) var(--frame-slice) stretch;
-  border-radius: var(--radius-md);
-  padding: 40px;
+  border: 2px solid var(--kit-kraft);
+  border-radius: 4px;
+  clip-path: polygon(
+    0.6% 2.4%, 12% 0.6%, 33% 2.1%, 57% 0.3%, 81% 1.8%, 99.2% 0.7%,
+    99% 16%, 99.8% 41%, 98.9% 65%, 99.5% 89%, 98.8% 99.2%,
+    83% 98.6%, 58% 99.7%, 32% 98.5%, 10% 99.5%, 0.5% 98.1%,
+    1% 74%, 0.2% 47%, 0.8% 21%
+  );
+  filter: drop-shadow(4px 4px 0 rgba(59, 42, 26, 0.55));
+  padding: 36px 32px;
   text-align: center;
   min-width: 320px;
-  box-shadow: var(--shadow);
   position: relative;
 }
 .login-card::before {
@@ -1201,29 +1230,40 @@ body.spectator-mode #gold {
 #login-username::placeholder {
   color: var(--border-color);
 }
+/* Login CTA — the gold primary button (kit), same recipe as
+   .lobby-btn-solo. */
 .login-btn {
-  padding: 10px;
+  padding: 10px 22px;
   background:
     var(--tex-gold-cta) repeat-x left center / 96px 100%,
-    var(--gold-accent);
+    var(--kit-gold);
   background-blend-mode: multiply;
-  color: var(--text-dark);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  color: var(--kit-navy);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 4px;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: background 0.15s;
-  box-shadow: var(--shadow-xs);
-  text-shadow: 0 1px 0 rgba(255,255,255,0.25);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: var(--kit-shadow);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .login-btn:hover {
   background:
     var(--tex-gold-cta) repeat-x left center / 96px 100%,
-    #D4B83A;
+    #E3BC55;
   background-blend-mode: multiply;
+  box-shadow: 4px 4px 0 rgba(59, 42, 26, 0.55);
+}
+.login-btn:active {
+  background:
+    var(--tex-gold-cta) repeat-x left center / 96px 100%,
+    #C2932F;
+  background-blend-mode: multiply;
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
 }
 
 /* ============================================
@@ -1244,13 +1284,18 @@ body.spectator-mode #gold {
 }
 .lobby-card {
   background:
-    var(--tex-parchment) repeat center / 192px 192px,
-    var(--paper-bg);
+    var(--tex-parchment-warm) repeat center / 96px 96px,
+    var(--kit-tan);
   background-blend-mode: multiply;
-  /* Use a wider transparent border so the 9-slice wood frame is visible. */
-  border: 8px solid transparent;
-  border-image: var(--tex-wood-frame) var(--frame-slice) var(--frame-slice) var(--frame-slice) var(--frame-slice) stretch;
-  border-radius: var(--radius-md);
+  border: 2px solid var(--kit-kraft);
+  border-radius: 4px;
+  clip-path: polygon(
+    0.5% 2.2%, 13% 0.4%, 35% 2%, 59% 0.2%, 82% 1.7%, 99.3% 0.6%,
+    99.1% 15%, 99.9% 40%, 99% 64%, 99.6% 88%, 98.9% 99.1%,
+    84% 98.7%, 59% 99.8%, 33% 98.6%, 11% 99.6%, 0.4% 98%,
+    1.2% 73%, 0.3% 46%, 1% 20%
+  );
+  filter: drop-shadow(4px 4px 0 rgba(59, 42, 26, 0.55));
   padding: 24px 20px;
   text-align: center;
   /* Fit inside the 520px screen frame with breathing room */
@@ -1258,7 +1303,6 @@ body.spectator-mode #gold {
   max-width: 460px;
   min-width: 0;
   box-sizing: border-box;
-  box-shadow: var(--shadow);
   position: relative;
 }
 .lobby-card::before {

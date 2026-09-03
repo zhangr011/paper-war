@@ -10,8 +10,10 @@ models without design context hard-code colors and write one-off CSS
 ## Hard rules
 
 1. **Tokens only.** No literal colors, radii, shadows, or ad-hoc spacing in
-   new CSS. Prefer the semantic aliases (`--color-*`, `--space-*`) in
-   `style.css:54+`; never re-derive a value the token layer already owns.
+   new CSS. The Paper UI Kit layer (`--kit-*`, from `design/component.png`)
+   owns the component look — tape blue, kraft, tan, off-white, gold, hard
+   offset shadows; the semantic aliases (`--color-*`, `--space-*`) remain
+   for general layout. Never re-derive a value the token layer owns.
    Full system + WCAG verification: `docs/design-system.md` (ADR-0021).
 2. **Art stays procedural.** Unit sprites are drawn by `src/unit_atlas.js`;
    DOM textures (parchment/wood/navy/gold/ink) by `scripts/gen-textures.py`

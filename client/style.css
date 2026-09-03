@@ -44,6 +44,26 @@
   --frame-slice: 14;
 
   /* ===================================================================
+     Paper UI Kit v1.0 reference palette (design/component.png) — the
+     paper-craft collage language the component restyle consumes. Use
+     these; do not hand-copy hexes into rules.
+     =================================================================== */
+  --kit-navy: #1E283A;      /* ink navy — labels, text, status tag */
+  --kit-green: #2E5A2B;     /* army green — minimap fill */
+  --kit-kraft: #7B543A;     /* kraft brown — panel borders */
+  --kit-tape: #1C6AB8;      /* tape blue — header labels, hotkey tabs */
+  --kit-tan: #DBC7AE;       /* aged paper — panel fill */
+  --kit-paper: #F5F4D5;     /* highlight strip — inner cards, tiles */
+  --kit-charcoal: #1A1A1A;  /* icons, hotkey letter ground */
+  --kit-alert: #D1404D;     /* pin red / alert */
+  --kit-success: #2BB873;   /* success accent */
+  --kit-gold: #D9A93C;      /* primary button gold */
+  --kit-page: #F2F0EB;      /* page canvas */
+  /* Hard offset shadows — hand-cut paper depth, never blurred. */
+  --kit-shadow: 3px 3px 0 rgba(59, 42, 26, 0.55);
+  --kit-shadow-sm: 2px 2px 0 rgba(59, 42, 26, 0.45);
+
+  /* ===================================================================
      v1.3 Design System (issue #46) — semantic tokens
      Based on ui-ux-pro-max skill output. Old literal names above are
      aliased here; new code should prefer the semantic names.
@@ -419,7 +439,9 @@ body {
   grid-template-rows: 1fr;
   grid-template-areas:
     "selection actions minimap";
-  gap: 0;
+  /* Paper cards float as separate pieces on the parchment bar. */
+  gap: 8px;
+  padding: 10px 8px 6px;
   background:
     var(--tex-parchment) repeat center / 128px 128px,
     var(--paper-bg);
@@ -450,33 +472,51 @@ body {
 }
 
 /* --- Panel (shared) --- */
+/* Paper Card (design/component.png): aged-tan fill, kraft border, torn
+   edges, hard offset shadow. The shadow is a filter so it follows the
+   torn clip-path silhouette — a box-shadow would be clipped away. */
 .panel {
-  padding: 7px 8px;
+  position: relative;
+  padding: 15px 9px 8px; /* top room for the tape label */
   overflow: hidden;
+  background:
+    var(--tex-parchment-warm) repeat center / 64px 64px,
+    var(--kit-tan);
+  background-blend-mode: multiply;
+  border: 2px solid var(--kit-kraft);
+  border-radius: 4px;
+  clip-path: polygon(
+    0.6% 3%, 14% 0.5%, 38% 2.2%, 62% 0.3%, 85% 1.9%, 99.3% 0.9%,
+    99.1% 18%, 99.9% 42%, 98.9% 66%, 99.6% 90%, 98.9% 99.3%,
+    82% 98.7%, 57% 99.7%, 31% 98.4%, 9% 99.6%, 0.5% 98.2%,
+    1.1% 76%, 0.2% 48%, 0.9% 22%
+  );
+  filter: drop-shadow(3px 3px 0 rgba(59, 42, 26, 0.55));
 }
 
-.panel + .panel {
-  border-left: 1px solid var(--border-color);
-}
-
+/* Tape Label (design/component.png): blue tape strip, white uppercase
+   Teko, slight tilt, torn ends — pinned across the panel's top edge. */
 .panel-title {
-  display: block;
-  margin: -2px -4px 2px;
-  padding: 3px 6px;
+  position: absolute;
+  top: 3px;
+  left: 10px;
+  z-index: 2;
+  display: inline-block;
+  margin: 0;
+  padding: 2px 12px 3px;
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   line-height: 1.1;
-  /* Navy header strip — text reversed to white over the dark band. */
-  background:
-    var(--tex-navy-header) repeat-x left center / 128px 16px,
-    var(--panel-header);
-  color: #F0E6D2;
-  border-radius: 2px;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.4);
-  margin-bottom: 5px;
+  color: #fff;
+  background: var(--kit-tape);
+  border-radius: 1px;
+  transform: rotate(-1.2deg);
+  filter: drop-shadow(1px 1px 0 rgba(30, 40, 58, 0.35));
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+  clip-path: polygon(2% 10%, 50% 0%, 98% 8%, 100% 90%, 50% 100%, 0 92%);
 }
 
 /* --- Selection Panel --- */

@@ -386,27 +386,32 @@ body {
   box-shadow: var(--kit-shadow-sm);
 }
 
+/* Utility button (design/component.png "SETTINGS BUTTON"): square paper
+   tile, charcoal glyph, offset shadow. */
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
-  background:
-    var(--tex-parchment-warm) repeat center / 64px 64px,
-    var(--paper-light);
-  background-blend-mode: multiply;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  background: var(--kit-paper);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 3px;
+  color: var(--kit-charcoal);
   font-size: 18px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: var(--kit-shadow-sm);
 }
 
 .icon-btn:hover {
-  background: var(--action-btn-hover);
-  color: var(--text-dark);
+  background: #FBF9E3;
+  box-shadow: 3px 3px 0 rgba(59, 42, 26, 0.55);
+}
+
+.icon-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
 }
 
 /* --- Main Game Viewport --- */
@@ -657,13 +662,10 @@ body {
   width: 22px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background:
-    var(--tex-parchment) repeat center / 24px 24px,
-    var(--paper-light);
-  background-blend-mode: multiply;
-  color: var(--text-heading);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 3px;
+  background: var(--kit-paper);
+  color: var(--kit-navy);
   font-family: var(--font-display);
   font-size: 16px;
   font-weight: 600;
@@ -676,11 +678,12 @@ body {
 }
 
 .minimap-btn:hover {
-  border-color: var(--text-heading);
+  background: #FBF9E3;
+  border-color: var(--kit-navy);
 }
 
 .minimap-btn:active {
-  transform: scale(0.92);
+  transform: translate(1px, 1px);
 }
 
 .minimap-btn-icon {
@@ -1466,25 +1469,27 @@ body.spectator-mode #gold {
   background: #5A7B9A;
   color: #fff;
 }
+/* Terrain picker (design/component.png): paper-tile chips; selected is
+   the tape-blue chip. */
 .clash-terrain-btn {
   padding: 2px 10px;
   font-size: 11px;
-  border: 1px solid #6B8A6B;
+  font-weight: 600;
+  border: 1.5px solid var(--kit-kraft);
   border-radius: 3px;
-  background:
-    var(--tex-parchment-warm) repeat center / 32px 32px,
-    var(--paper-light);
-  background-blend-mode: multiply;
+  background: var(--kit-paper);
+  color: var(--kit-navy);
   cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(59, 42, 26, 0.35);
 }
 .clash-terrain-btn.selected {
-  background: #4A7A4A;
+  background: var(--kit-tape);
   color: #fff;
-  border-color: #4A7A4A;
+  border-color: var(--kit-navy);
 }
 .clash-terrain-btn:hover {
-  background: #5A8A5A;
-  color: #fff;
+  background: #FBF9E3;
+  border-color: var(--kit-navy);
 }
 
 .lobby-btn-cancel {
@@ -1631,15 +1636,19 @@ body.spectator-mode #gold {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* Commander-type toggle (design/component.png): paper tile; selected
+   state is the tape-blue fill with white text (4.9:1 AA). */
 .cmd-type-btn {
   padding: 8px 16px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: rgba(255,255,255,0.05);
-  color: var(--text-primary);
-  border-radius: 6px;
+  border: 1.5px solid var(--kit-kraft);
+  background: var(--kit-paper);
+  color: var(--kit-navy);
+  border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 600;
   transition: all 0.15s;
+  box-shadow: 2px 2px 0 rgba(59, 42, 26, 0.35);
 }
 .icon-btn.muted {
   opacity: 0.5;
@@ -1650,19 +1659,17 @@ body.spectator-mode #gold {
   padding: 4px 6px;
 }
 .cmd-type-btn:hover {
-  border-color: rgba(255,255,255,0.3);
-  background: rgba(255,255,255,0.1);
+  background: #FBF9E3;
+  border-color: var(--kit-navy);
 }
 .cmd-type-btn.selected {
-  /* Selected commander-type button. Was gold text (#FFD700) on a 15%
-     gold tint over parchment — ~1.5:1 contrast, effectively invisible.
-     ui-ux-pro-max color-contrast rule + the design-system note that
-     --color-accent fails AA as text on light: pair the gold accent
-     background with --color-primary (navy) text for 5.4:1. */
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  color: var(--color-primary);
+  /* Tape-blue selected chip — white on #1C6AB8 is 4.9:1 (AA); the old
+     gold-on-gold was ~1.5:1 and effectively invisible. */
+  border-color: var(--kit-navy);
+  background: var(--kit-tape);
+  color: #fff;
   font-weight: 600;
+  box-shadow: var(--kit-shadow-sm);
 }
 
 /* v1.1: Career UI ---------------------------------------------------------- */

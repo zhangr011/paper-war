@@ -830,22 +830,23 @@ body.spectator-mode #gold {
   display: none !important;
 }
 
+/* Group labels (Commands / Tactics) — mini tape strips, same language as
+   .panel-title (design/component.png "TACTICS" tape). */
 .action-group-label {
   display: inline-block;
-  padding: 2px 6px;
+  padding: 1px 8px 2px;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   line-height: 1.1;
-  /* Navy header strip per the mockup. */
-  background:
-    var(--tex-navy-header) repeat-x left center / 96px 14px,
-    var(--panel-header);
-  color: #F0E6D2;
-  border-radius: 2px;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.4);
+  color: #fff;
+  background: var(--kit-tape);
+  border-radius: 1px;
+  transform: rotate(-1deg);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+  clip-path: polygon(2% 10%, 50% 0%, 98% 8%, 100% 90%, 50% 100%, 0 92%);
 }
 
 .action-buttons {
@@ -854,78 +855,73 @@ body.spectator-mode #gold {
   gap: 3px;
 }
 
+/* Action tiles (design/component.png): cream paper tiles in a kraft
+   border with hard offset shadows, a blue tape tab on the hotkey corner,
+   and ink-navy labels. Selected tactic inverts to navy. */
 .action-btn {
+  position: relative;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 40px;
+  width: 36px;
+  height: 42px;
   flex-shrink: 0;
-  background:
-    var(--tex-parchment-warm) repeat center / 48px 48px,
-    var(--action-btn-bg);
-  background-blend-mode: multiply;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-dark);
+  padding-top: 4px; /* room for the corner tape tab */
+  background: var(--kit-paper);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 3px;
+  color: var(--kit-charcoal);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
   gap: 1px;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--kit-shadow-sm);
 }
 
 .action-btn:hover {
-  background: var(--action-btn-hover);
-  border-color: var(--text-muted);
+  background: #FBF9E3;
+  border-color: var(--kit-navy);
 }
 
 .action-btn:active {
-  background:
-    var(--tex-parchment-warm) repeat center / 48px 48px,
-    var(--paper-dark);
-  background-blend-mode: multiply;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+  background: #EDE9C6;
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
 }
 
 .action-btn.active {
-  background: var(--panel-header);
-  border-color: var(--panel-header);
+  background: var(--kit-navy);
+  border-color: var(--kit-navy);
   color: #fff;
 }
 
-/* Hotkey badge — Paper UIKit "HOTKEY BADGE" component (design/component.png).
-   Filled key-cap with the letter centered. Sits in the top-left corner of
-   the action button, badge-style (not a flat muted label). */
+/* Hotkey tape tab — torn blue strip wrapped over the tile's hotkey corner. */
 .action-key {
+  position: absolute;
+  top: -1px;
+  left: -1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 13px;
-  height: 13px;
-  padding: 0 3px;
+  height: 14px;
+  padding: 0 4px 0 3px;
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.5px;
-  color: var(--paper-light);
-  background: var(--panel-header);
-  border: 1px solid #1c2636;
-  border-radius: 3px;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
-  text-shadow: 0 1px 1px rgba(0,0,0,0.4);
-}
-
-.action-btn:hover .action-key {
   color: #fff;
-  background: #3a4860;
+  background: var(--kit-tape);
+  border-radius: 2px 0 2px 0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+  clip-path: polygon(0 0, 100% 0, 96% 100%, 4% 88%);
+  filter: drop-shadow(1px 1px 0 rgba(30, 40, 58, 0.3));
 }
 
 .action-btn.active .action-key {
-  background: var(--gold-accent);
-  color: var(--text-dark);
-  border-color: #8a7424;
+  background: var(--kit-gold);
+  color: var(--kit-navy);
   text-shadow: none;
 }
 
@@ -934,6 +930,11 @@ body.spectator-mode #gold {
   font-size: var(--text-micro);
   font-weight: 600;
   line-height: 1;
+  color: var(--kit-navy);
+}
+
+.action-btn.active .action-name {
+  color: #fff;
 }
 
 /* --- Responsive --- */

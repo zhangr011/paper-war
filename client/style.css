@@ -1313,13 +1313,10 @@ body.spectator-mode #gold {
 }
 #login-username {
   padding: 10px 14px;
-  background:
-    var(--tex-parchment-warm) repeat center / 64px 64px,
-    var(--paper-light);
-  background-blend-mode: multiply;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-dark);
+  background: var(--kit-paper);
+  border: 1.5px solid var(--kit-kraft);
+  border-radius: 3px;
+  color: var(--kit-navy);
   font-family: var(--font-body);
   font-size: 14px;
   outline: none;

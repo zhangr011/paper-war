@@ -80,7 +80,8 @@
       </div>
     </div>
     <div class="cg-row" style="margin-top:16px">
-      <div class="cg-item"><code>.action-btn (+.active, tactic-*)</code>
+      <div class="cg-item"><code>.action-group-label + .action-btn (+.active, tactic-*)</code>
+        <span class="action-group-label">Commands</span>
         <div class="action-buttons">
           <button type="button" class="action-btn attack-ground-btn" title="Attack Ground [A]">
             <span class="action-key">A</span><span class="action-name">Atk Ground</span>
@@ -90,6 +91,23 @@
           </button>
           <button type="button" class="action-btn tactic-retreat" title="Retreat [W]">
             <span class="action-key">W</span><span class="action-name">Retreat</span>
+          </button>
+        </div>
+      </div>
+      <div class="cg-item"><code>.action-btn.recruit-btn (+.action-cost, .disabled)</code>
+        <span class="action-group-label">Recruit</span>
+        <div class="action-buttons">
+          <button type="button" class="action-btn recruit-btn" title="Light Infantry — fast, cheap, short range. (15g)">
+            <span class="action-key">1</span><span class="action-name">LI</span>
+            <span class="action-cost">15g</span>
+          </button>
+          <button type="button" class="action-btn recruit-btn" title="Sniper — long range, high damage, slow. (50g)">
+            <span class="action-key">3</span><span class="action-name">SNP</span>
+            <span class="action-cost">50g</span>
+          </button>
+          <button type="button" class="action-btn recruit-btn disabled" title="Not enough gold" disabled>
+            <span class="action-key">4</span><span class="action-name">AA</span>
+            <span class="action-cost">30g</span>
           </button>
         </div>
       </div>
@@ -117,10 +135,12 @@
   <div class="cg-section">
     <h2>Panels &amp; cards</h2>
     <div class="cg-row">
-      <div class="cg-item"><code>.login-card</code>
+      <div class="cg-item"><code>.login-card (+ form input)</code>
         <div class="login-card" style="width:300px">
           <h1 class="login-title">Paper War</h1>
           <p class="login-subtitle">Real-Time Strategy</p>
+          <label class="sr-only" for="login-username">Player name</label>
+          <input type="text" id="login-username" name="login-username" placeholder="Enter your name" maxlength="20" autocomplete="username">
           <button type="button" class="login-btn">Join</button>
         </div>
       </div>
@@ -151,6 +171,10 @@
             </div>
             <span class="selection-value">75%</span>
           </div>
+          <div class="selection-row">
+            <span class="selection-label">Status:</span>
+            <span class="selection-value" id="sel-status">Idle</span>
+          </div>
         </section>
       </div>
     </div>
@@ -168,10 +192,11 @@
         </span>
       </div>
       <div class="cg-item"><code>.timer</code><span class="timer">04:32</span></div>
-      <div class="cg-item"><code>.career-row</code>
+      <div class="cg-item"><code>.career-row (+ win/loss variants)</code>
         <div style="width:220px">
           <div class="career-row"><span class="career-label">Gold Earned</span><span class="career-value">1,240</span></div>
-          <div class="career-row"><span class="career-label">Recruits</span><span class="career-value">18</span></div>
+          <div class="career-row"><span class="career-label">Wins</span><span class="career-value career-win">12</span></div>
+          <div class="career-row"><span class="career-label">Losses</span><span class="career-value career-loss">4</span></div>
         </div>
       </div>
       <div class="cg-item"><code>.roster-unit-row</code>

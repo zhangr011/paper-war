@@ -188,24 +188,48 @@ body {
 }
 
 /* --- Top Info Bar --- */
+/* Top bar (design/component.png): full-width tan paper panel with torn
+   top/bottom edges, kraft border, offset shadow, and the red push pin
+   top-right. Side edges stay straight (the bar spans the screen). */
 #top-bar {
   grid-area: topbar;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   background:
-    var(--tex-parchment) repeat center / 128px 128px,
-    var(--paper-bg);
+    var(--tex-parchment-warm) repeat center / 64px 64px,
+    var(--kit-tan);
   background-blend-mode: multiply;
-  /* Use a real border on the game-facing edge so the 9-slice wood frame shows.
-     Keep the chrome-facing edges at 0 so the bar height budget is preserved. */
-  border-bottom: 8px solid transparent;
-  border-image: var(--tex-wood-frame) var(--frame-slice) var(--frame-slice) var(--frame-slice) var(--frame-slice) stretch;
-  box-shadow: var(--shadow);
+  border-bottom: 2px solid var(--kit-kraft);
+  clip-path: polygon(
+    0.3% 8%, 8% 1%, 22% 5%, 41% 0.5%, 63% 4%, 84% 1%, 99.6% 6%,
+    99.8% 30%, 100% 55%, 99.7% 80%, 99.5% 97%, 88% 99.5%, 66% 97%,
+    44% 99.7%, 21% 97.5%, 6% 99%, 0.4% 95%, 0.2% 70%, 0% 42%, 0.5% 18%
+  );
+  filter: drop-shadow(2px 2px 0 rgba(59, 42, 26, 0.45));
   z-index: 10;
   min-width: 0;
+}
+
+#top-bar::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 30%,
+    #FF8A93 0%,
+    #E2535F 45%,
+    var(--kit-alert) 70%,
+    #8E2A33 100%
+  );
+  box-shadow: 1px 2px 2px rgba(30, 20, 10, 0.35);
 }
 
 .top-bar-left,
@@ -472,9 +496,9 @@ body {
     var(--tex-parchment) repeat center / 128px 128px,
     var(--paper-bg);
   background-blend-mode: multiply;
-  /* Use a real border on the game-facing edge so the 9-slice wood frame shows. */
-  border-top: 8px solid transparent;
-  border-image: var(--tex-wood-frame) var(--frame-slice) var(--frame-slice) var(--frame-slice) var(--frame-slice) stretch;
+  /* Paper-card edge (kit): the wood 9-slice gives way to the kraft
+     border — one frame language across both bars (design/component.png). */
+  border-top: 2px solid var(--kit-kraft);
   box-shadow: 0 -2px 4px rgba(0,0,0,0.15);
   z-index: 10;
   min-width: 0;
@@ -551,6 +575,38 @@ body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+/* Ink stain (design/component.png paper elements) — brown blotch
+   bleeding at the card's corner. ::before paints under the content. */
+#selection-panel::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 38px;
+  height: 30px;
+  background:
+    radial-gradient(ellipse 60% 55% at 55% 45%, rgba(94, 64, 38, 0.24), transparent 70%),
+    radial-gradient(ellipse 35% 40% at 28% 72%, rgba(94, 64, 38, 0.2), transparent 75%),
+    radial-gradient(circle 3px at 74% 28%, rgba(94, 64, 38, 0.3), transparent 100%);
+  pointer-events: none;
+}
+
+/* Hexagon emblem stamp (design/component.png) — faint brown mark,
+   top-right of the card. */
+#selection-panel::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 24px;
+  background:
+    linear-gradient(45deg, transparent 40%, rgba(94, 64, 38, 0.22) 40% 60%, transparent 60%),
+    rgba(94, 64, 38, 0.13);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  pointer-events: none;
 }
 
 .selection-info {
@@ -1004,6 +1060,23 @@ body.spectator-mode #gold {
 
 .action-btn.active .action-name {
   color: #fff;
+}
+
+/* Tactics empty slot (design/component.png TACTICS row): dashed kraft
+   chip awaiting assignment — the unfilled counterpart of an action tile. */
+.tactic-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 42px;
+  border: 2px dashed rgba(123, 84, 58, 0.7);
+  border-radius: 3px;
+  color: rgba(94, 64, 38, 0.55);
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1;
+  background: transparent;
 }
 
 /* --- Responsive --- */

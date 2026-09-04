@@ -1079,6 +1079,48 @@ body.spectator-mode #gold {
   background: transparent;
 }
 
+/* --- Kit icon set (design/component.png pictograms) ---------------------
+   Hand-drawn inline SVGs, one chunky style (solid fills / 2.2 round
+   strokes), colored via currentColor. Replaces emoji/unicode glyphs —
+   ui-ux-pro-max anti-pattern "emoji as icons"; set stays consistent and
+   every icon is paired with its label or aria-label. */
+.kit-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+  fill: currentColor;
+}
+
+/* Stat-card icons take the reference's per-card colors. */
+#gold .resource-icon { color: var(--kit-gold); }
+#unit-count .resource-icon { color: var(--kit-alert); }
+#bases .resource-icon { color: var(--kit-success); }
+#score .resource-icon { color: var(--kit-tape); }
+
+/* Mute toggle: both speaker glyphs live in the button; the .muted class
+   (toggled by updateMuteButton) swaps them — no textContent writes. */
+.icon-btn .icon-on, .icon-btn .icon-off { display: none; }
+.icon-btn:not(.muted) .icon-on { display: block; }
+.icon-btn.muted .icon-off { display: block; }
+
+/* Tactic glyphs: charcoal on paper tiles, white on the selected tile. */
+.action-glyph {
+  display: flex;
+  color: var(--kit-charcoal);
+  font-size: 14px;
+  line-height: 1;
+}
+.action-btn.active .action-glyph {
+  color: #fff;
+}
+
+/* Collage imperfection (design/component.png: panels sit at ±0.5-1°):
+   tiny alternating rotations on the three HUD cards. */
+#selection-panel { transform: rotate(-0.35deg); }
+#action-panel { transform: rotate(0.3deg); }
+#minimap-panel { transform: rotate(-0.25deg); }
+
 /* --- Responsive --- */
 @media (min-width: 700px) {
   body {

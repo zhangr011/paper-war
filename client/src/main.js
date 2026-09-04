@@ -1033,7 +1033,8 @@ export class Game {
   updateMuteButton() {
     const btn = document.getElementById('mute-btn');
     if (btn) {
-      btn.textContent = this.audioEngine.muted ? '🔇' : '🔊';
+      // Icon swap is CSS-driven (.muted toggles the two inline SVG glyphs);
+      // textContent writes would wipe them.
       btn.classList.toggle('muted', this.audioEngine.muted);
     }
   }

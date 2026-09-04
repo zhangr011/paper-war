@@ -62,6 +62,7 @@
   /* Hard offset shadows — hand-cut paper depth, never blurred. */
   --kit-shadow: 3px 3px 0 rgba(59, 42, 26, 0.55);
   --kit-shadow-sm: 2px 2px 0 rgba(59, 42, 26, 0.45);
+  --kit-ink-soft: #3E3122;  /* AA muted text on tan (4.6:1) and paper (10:1) */
 
   /* ===================================================================
      v1.3 Design System (issue #46) — semantic tokens
@@ -389,6 +390,7 @@ body {
 /* Utility button (design/component.png "SETTINGS BUTTON"): square paper
    tile, charcoal glyph, offset shadow. */
 .icon-btn {
+  position: relative; /* anchors the hit-area ::after */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -412,6 +414,32 @@ body {
 .icon-btn:active {
   transform: translate(1px, 1px);
   box-shadow: 1px 1px 0 rgba(59, 42, 26, 0.45);
+}
+
+/* Touch targets (ux rule: 44×44 minimum — tablet is a target platform).
+   Invisible ::after expansion grows the hit area without changing the
+   visual tile size. 32px tiles → 44px; minimap 22px tiles → 34px (the
+   72px panel column caps them — documented residual gap). */
+.icon-btn::after,
+.minimap-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.minimap-btn {
+  position: relative;
+}
+
+.action-btn::after,
+.clash-terrain-btn::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+
+.clash-terrain-btn {
+  position: relative;
 }
 
 /* --- Main Game Viewport --- */
@@ -546,7 +574,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: var(--text-muted);
+  color: var(--kit-ink-soft);
   min-width: 48px;
 }
 
@@ -1721,7 +1749,7 @@ body.spectator-mode #gold {
   margin-top: 12px;
   padding: 8px 10px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--kit-ink-soft);
   border-top: 1px solid var(--border-color);
   text-align: center;
 }
@@ -1731,34 +1759,34 @@ body.spectator-mode #gold {
   gap: 6px;
   margin: 16px 0;
 }
+/* Career rows (kit): paper chips on the tan card — the old dark plate
+   put cream values at ~2:1. Navy numerals on kit-paper are 12:1. */
 .career-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   padding: 6px 10px;
-  background: rgba(0,0,0,0.18);
+  background: var(--kit-paper);
   border-radius: var(--radius-sm);
-  border-left: 3px solid var(--border-color);
+  border-left: 3px solid var(--kit-kraft);
 }
 .career-label {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--kit-ink-soft);
   font-family: var(--font-display);
 }
 .career-value {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 600;
-  color: var(--paper-light);
+  color: var(--kit-navy);
   /* frontend-design skill — hierarchy via detail, not color alone.
      tabular-nums keeps the stat column stable as values change post-
-     match (no digit-width jitter); a faint warm shadow reads as
-     numerals stamped into the dossier row. */
+     match (no digit-width jitter). */
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
-.career-value.career-win { color: #66BB6A; }
-.career-value.career-loss { color: #EF5350; }
+.career-value.career-win { color: #2E7D32; }   /* 4.5:1 on kit-paper */
+.career-value.career-loss { color: #B0342C; }  /* 5.3:1 on kit-paper */
 
 /* v1.2: Leaderboard UI ----------------------------------------------------- */
 .leaderboard-table {

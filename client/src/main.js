@@ -2358,8 +2358,8 @@ export class Game {
     const mw = this.minimapCanvas.width;
     const mh = this.minimapCanvas.height;
 
-    // Clear
-    ctx.fillStyle = '#0a0a0a';
+    // Clear — army-green field per the Paper Kit minimap (design/component.png)
+    ctx.fillStyle = '#2E5A2B';
     ctx.fillRect(0, 0, mw, mh);
 
     // Map drawing area
@@ -2387,9 +2387,28 @@ export class Game {
       ctx.fillRect(mapX, mapY, mapDrawW, mapDrawH);
     }
 
-    ctx.strokeStyle = '#333';
+    // Frame (design/component.png): cream inner border with gold corner
+    // accents bracketing the map field.
+    ctx.strokeStyle = '#F5F4D5';
     ctx.lineWidth = 1;
     ctx.strokeRect(mapX, mapY, mapDrawW, mapDrawH);
+
+    ctx.strokeStyle = '#D9A93C';
+    ctx.lineWidth = 2;
+    const cornerL = Math.min(7, mapDrawW, mapDrawH) * 0.35;
+    const frameCorners = [
+      [mapX, mapY, 1, 1],
+      [mapX + mapDrawW, mapY, -1, 1],
+      [mapX, mapY + mapDrawH, 1, -1],
+      [mapX + mapDrawW, mapY + mapDrawH, -1, -1],
+    ];
+    ctx.beginPath();
+    for (const [cx, cy, dx, dy] of frameCorners) {
+      ctx.moveTo(cx + dx * 1.5, cy + dy * (cornerL + 1.5));
+      ctx.lineTo(cx + dx * 1.5, cy + dy * 1.5);
+      ctx.lineTo(cx + dx * (cornerL + 1.5), cy + dy * 1.5);
+    }
+    ctx.stroke();
 
     // Draw stronghold markers (#54): faction-colored, sized by level.
     for (const sh of (this.strongholds || [])) {

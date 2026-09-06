@@ -2,20 +2,20 @@
 // Bootstrap and game loop entry point for Paper War RTS client.
 // Wires together: Renderer, Camera, StateManager, Connection, InputHandler.
 
-import { Renderer } from './gl.js?v=v8';
-import { Camera } from './camera.js?v=v8';
-import { StateManager } from './state.js?v=v8';
-import { Connection } from './connection.js?v=v8';
-import { InputHandler } from './input.js?v=v8';
-import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v8';
-import { AudioEngine } from './audio/audioengine.js?v=v8';
-import { SFX } from './audio/sfx.js?v=v8';
-import { Ambient } from './audio/ambient.js?v=v8';
-import { Music } from './audio/music.js?v=v8';
-import { ParticleSystem } from './particles.js?v=v8';
-import { UNIT_RANGES, effectiveRange, elevationAt, ringTriangles } from './range_ring.js?v=v9';
-import { TacticLoadout } from './tactic_loadout.js?v=v8';
-import { formatMatchResultHeading } from './match_result.js?v=v8';
+import { Renderer } from './gl.js?v=v10';
+import { Camera } from './camera.js?v=v10';
+import { StateManager } from './state.js?v=v10';
+import { Connection } from './connection.js?v=v10';
+import { InputHandler } from './input.js?v=v10';
+import { TILE_WIDTH, TILE_HEIGHT } from './iso.js?v=v10';
+import { AudioEngine } from './audio/audioengine.js?v=v10';
+import { SFX } from './audio/sfx.js?v=v10';
+import { Ambient } from './audio/ambient.js?v=v10';
+import { Music } from './audio/music.js?v=v10';
+import { ParticleSystem } from './particles.js?v=v10';
+import { UNIT_RANGES, effectiveRange, elevationAt, ringTriangles } from './range_ring.js?v=v10';
+import { TacticLoadout } from './tactic_loadout.js?v=v10';
+import { formatMatchResultHeading } from './match_result.js?v=v10';
 import {
   generateUnitAtlas,
   loadUnitAtlasImage,
@@ -37,7 +37,7 @@ import {
   DIR_N,
   DIR_W,
   FRAMES_PER_STATE,
-} from './unit_atlas.js?v=v8';
+} from './unit_atlas.js?v=v10';
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -73,3 +73,28 @@ Design variants → `/design-shotgun`; review pass → `/design-review`;
 visual QA loop → `/qa` or `/browse` (DOM/HUD only, see rule 4); landing
 gate → `/review` + green suite. Full rationale:
 `docs/research/ai-ui-workflow-2026.md`.
+
+### UI change runbook — the loop, as executed
+
+One component per commit, verified at every step:
+
+1. Read this file, `design/component.png` (the look), and open
+   `client/components.html` in a browser.
+2. Make the change using `--kit-*` tokens; no raw hex, no new visual
+   primitives (compose the existing ones).
+3. `node scripts/ui-verify/shot-gallery.cjs` → screenshot in
+   `$TMPDIR/paper-war-ui/`. Must report zero console errors and zero
+   MISSING tokens.
+4. `node scripts/ui-verify/verify-contrast.cjs` → all WCAG pairs pass.
+5. If the change touches canvas/HUD JS:
+   `node scripts/ui-verify/shot-live-hud.cjs` (server must be on :9091)
+   → captures the REAL in-game HUD + minimap; must report zero page
+   errors. This step catches module-level breakage the gallery cannot.
+6. `for f in client/src/*_test.mjs; do node "$f"; done` → 14/14 green.
+7. Unify and bump every `?v=vN` in `client/index.html` and the `src/`
+   module imports — browsers otherwise serve stale modules.
+8. If components changed shape, update this inventory and the gallery
+   specimens to match (they mirror real markup; missing = drift).
+
+Browser override: `PLAYWRIGHT_CHROMIUM=/path/to/chrome` if the default
+cached build is absent.

@@ -2,8 +2,8 @@
 // Manages UI screens, server communication for login/matchmaking,
 // and delegates to Game when a match is found.
 
-import { Connection } from './connection.js?v=v8';
-import { Game } from './main.js?v=v8';
+import { Connection } from './connection.js?v=v10';
+import { Game } from './main.js?v=v10';
 
 const LAST_USERNAME_KEY = 'paper-war:last-username';
 // v1.1: opaque player token persisted across sessions. Generated on first

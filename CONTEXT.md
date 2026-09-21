@@ -24,6 +24,10 @@ _Avoid_: composition, loadout, build
 A non-Commander entity in a Squad. Has a CombatUnitType that determines weapon, armor, stats, cost, and collision radius. Types are permanent — never convert. The total cost of fielded units cannot exceed the Commander's Leading Skill. Has a Level (max 6) that grows through kill points (exponential: 2, 4, 8, 16, 32, 64 cumulative). Persistent across matches — death is permanent (Permadeath).
 _Avoid_: soldier, unit (ambiguous), troop
 
+**Execution Fidelity**:
+The standard for implementing UI reference art (design/component.png): the built component must be indistinguishable from the source at a glance — matching its physicality (visible torn edges, overhanging folded tape, weighted layered shadows, dimensional objects, dense overlapping composition), not just its palette. Extracting correct tokens into restrained web components is the failure mode this term names ("implemented it like an app, not the source file"). Verified by side-by-side comparison with a crop of the reference, not by checklist.
+_Avoid_: token fidelity, "faithful to the design system", style-matching
+
 **Collision**:
 Friendly CombatUnits are physical bodies that do not overlap — overlapping units are pushed apart each tick by a positional correction (not a repulsion force). Garrisoned units are excluded (they stack inside a Stronghold by design); attack-frozen units are immovable obstacles. Enemy units do not collide — combat is ranged. See ADR-0030.
 _Avoid_: separation (the removed force-based version), repulsion, physics body

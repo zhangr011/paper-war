@@ -522,51 +522,107 @@ body {
 }
 
 /* --- Panel (shared) --- */
-/* Paper Card (design/component.png): aged-tan fill, kraft border, torn
-   edges, hard offset shadow. The shadow is a filter so it follows the
-   torn clip-path silhouette — a box-shadow would be clipped away. */
+/* Paper Card (design/component.png, ADR-0035 execution fidelity): the
+   card is a ::below layer — torn edges with visible rip amplitude, kraft
+   border, LAYERED hard offset shadows, ink stain + corner aging baked
+   into the paper. The wrapper stays unclipped so the tape label and the
+   stamp can physically overhang the torn edge. */
 .panel {
   position: relative;
-  padding: 15px 9px 8px; /* top room for the tape label */
-  overflow: hidden;
+  padding: 20px 10px 10px; /* tape overhang zone above the torn edge */
+  overflow: visible;
+  /* paint lives on ::before */
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   background:
+    /* ink stain, bleeding past the bottom-right corner */
+    radial-gradient(ellipse 46px 34px at 92% 98%, rgba(74, 46, 22, 0.52), rgba(74, 46, 22, 0.28) 55%, transparent 78%),
+    radial-gradient(ellipse 18px 13px at 78% 90%, rgba(74, 46, 22, 0.42), transparent 80%),
+    radial-gradient(ellipse 10px 8px at 98% 84%, rgba(74, 46, 22, 0.46), transparent 85%),
+    radial-gradient(circle 4px at 70% 96%, rgba(74, 46, 22, 0.5), transparent 100%),
+    /* aging: darker rim + warm pooling */
+    radial-gradient(ellipse at 50% -30%, rgba(59, 42, 26, 0.05), transparent 55%),
+    radial-gradient(ellipse at 50% 135%, rgba(59, 42, 26, 0.14), transparent 60%),
+    linear-gradient(rgba(176, 132, 78, 0.16), rgba(176, 132, 78, 0.16)),
     var(--tex-parchment-warm) repeat center / 64px 64px,
     var(--kit-tan);
   background-blend-mode: multiply;
-  border: 2px solid var(--kit-kraft);
+  border: 2.5px solid #6B4527;
   border-radius: 4px;
   clip-path: polygon(
-    0.6% 3%, 14% 0.5%, 38% 2.2%, 62% 0.3%, 85% 1.9%, 99.3% 0.9%,
-    99.1% 18%, 99.9% 42%, 98.9% 66%, 99.6% 90%, 98.9% 99.3%,
-    82% 98.7%, 57% 99.7%, 31% 98.4%, 9% 99.6%, 0.5% 98.2%,
-    1.1% 76%, 0.2% 48%, 0.9% 22%
+    0.8% 4.5%, 7% 1%, 13% 4%, 21% 0.6%, 30% 3.5%, 38% 0.4%, 46% 4%,
+    55% 0.8%, 63% 3.8%, 72% 0.5%, 80% 4.2%, 88% 1%, 95% 3.6%, 99.2% 1.2%,
+    98.8% 12%, 99.8% 26%, 98.6% 41%, 99.9% 58%, 98.7% 74%, 99.7% 89%,
+    98.8% 98.6%, 90% 96.8%, 82% 99.8%, 71% 97.2%, 60% 99.9%, 49% 97%,
+    38% 99.7%, 27% 97.4%, 16% 99.8%, 7% 97%, 0.6% 99%,
+    1.4% 84%, 0.2% 66%, 1.6% 49%, 0.3% 31%, 1.2% 15%
   );
-  filter: drop-shadow(3px 3px 0 rgba(59, 42, 26, 0.55));
+  /* layered hard drops — hand-cut paper depth, never blurred */
+  box-shadow: inset 0 0 16px rgba(59, 42, 26, 0.2);
+  filter:
+    drop-shadow(5px 5px 0 rgba(46, 30, 16, 0.52))
+    drop-shadow(9px 10px 0 rgba(46, 30, 16, 0.26));
 }
 
-/* Tape Label (design/component.png): blue tape strip, white uppercase
-   Teko, slight tilt, torn ends — pinned across the panel's top edge. */
+.panel > *:not(.panel-title) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Tape Label (design/component.png, execution fidelity): translucent
+   tape strip with a sheen, torn zigzag left end, folded-back right end,
+   tilted ~2°, OVERHANGING the torn panel edge and casting its own
+   shadow onto the paper. */
 .panel-title {
   position: absolute;
-  top: 3px;
-  left: 10px;
-  z-index: 2;
+  top: -11px;
+  left: 12px;
+  z-index: 3;
   display: inline-block;
   margin: 0;
-  padding: 2px 12px 3px;
+  padding: 5px 20px 6px;
   font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   line-height: 1.1;
   color: #fff;
-  background: var(--kit-tape);
-  border-radius: 1px;
-  transform: rotate(-1.2deg);
-  filter: drop-shadow(1px 1px 0 rgba(30, 40, 58, 0.35));
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
-  clip-path: polygon(2% 10%, 50% 0%, 98% 8%, 100% 90%, 50% 100%, 0 92%);
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.22),
+      rgba(255, 255, 255, 0.02) 34%,
+      rgba(0, 0, 0, 0.02) 72%,
+      rgba(0, 0, 0, 0.1)),
+    rgba(28, 106, 184, 0.9);
+  transform: rotate(-2.2deg);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.32);
+  /* torn zigzag ends */
+  clip-path: polygon(
+    3% 0, 8% 8%, 3% 18%, 9% 30%, 4% 44%, 10% 58%, 3% 72%, 9% 86%, 4% 100%,
+    96% 100%, 92% 88%, 97% 76%, 91% 62%, 96% 48%, 92% 34%, 97% 20%, 93% 8%, 97% 0
+  );
+  /* shadow the tape casts onto the paper beneath it */
+  filter: drop-shadow(1px 2px 1.5px rgba(30, 40, 58, 0.45));
+}
+
+/* Folded-back tape end: darker underside wrapping off the right edge. */
+.panel-title::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  width: 7px;
+  background: linear-gradient(90deg, rgba(16, 62, 108, 0.85), rgba(16, 62, 108, 0.6));
+  transform: skewY(3deg);
+  clip-path: polygon(0 0, 100% 10%, 100% 96%, 0 100%);
+  filter: drop-shadow(1px 2px 1px rgba(30, 40, 58, 0.4));
 }
 
 /* --- Selection Panel --- */
@@ -577,33 +633,29 @@ body {
   gap: 5px;
 }
 
-/* Ink stain (design/component.png paper elements) — brown blotch
-   bleeding at the card's corner. ::before paints under the content. */
-#selection-panel::before {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 38px;
-  height: 30px;
-  background:
-    radial-gradient(ellipse 60% 55% at 55% 45%, rgba(94, 64, 38, 0.24), transparent 70%),
-    radial-gradient(ellipse 35% 40% at 28% 72%, rgba(94, 64, 38, 0.2), transparent 75%),
-    radial-gradient(circle 3px at 74% 28%, rgba(94, 64, 38, 0.3), transparent 100%);
-  pointer-events: none;
+/* Dashed row separators (design/component.png): rows read as ruled
+   entries on the dossier card. */
+#selection-panel .selection-row + .selection-row {
+  border-top: 1px dashed rgba(123, 84, 58, 0.35);
+  padding-top: 3px;
 }
 
-/* Hexagon emblem stamp (design/component.png): star-in-hexagon in brown
-   ink, top-right of the card — code-drawn SVG data-URI, no asset file. */
+/* Hexagon emblem stamp (design/component.png, execution fidelity):
+   star-in-hexagon in rough ink — feTurbulence displacement gives the
+   edges genuine stamp roughness — rotated, OVERHANGING the torn top
+   edge, multiplied into the paper. */
 #selection-panel::after {
   content: '';
   position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 22px;
-  height: 24px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 24'%3E%3Cpath d='M11 1.2L20.5 6.6v10.8L11 22.8 1.5 17.4V6.6z' fill='none' stroke='%235E4026' stroke-opacity='0.45' stroke-width='1.4'/%3E%3Cpath d='M11 6.4l1.5 3.06 3.37.49-2.44 2.37.58 3.36L11 14.14l-3.01 1.54.58-3.36-2.44-2.37 3.37-.49z' fill='%235E4026' fill-opacity='0.38'/%3E%3C/svg%3E") center / contain no-repeat;
+  top: -4px;
+  right: -5px;
+  width: 30px;
+  height: 32px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 24'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='1.8'/%3E%3C/filter%3E%3Cg filter='url(%23r)'%3E%3Cpath d='M11 1.2L20.5 6.6v10.8L11 22.8 1.5 17.4V6.6z' fill='none' stroke='%235E4026' stroke-opacity='0.5' stroke-width='1.3'/%3E%3Cpath d='M11 6.4l1.5 3.06 3.37.49-2.44 2.37.58 3.36L11 14.14l-3.01 1.54.58-3.36-2.44-2.37 3.37-.49z' fill='%235E4026' fill-opacity='0.42'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  transform: rotate(7deg);
+  mix-blend-mode: multiply;
   pointer-events: none;
+  z-index: 2;
 }
 
 /* Paperclip (design/component.png paper elements) clipped to the action
@@ -746,28 +798,28 @@ body {
   justify-content: center;
   padding: 6px;
   gap: 4px;
+  overflow: hidden; /* canvas stays inside the torn card */
 }
 
-/* Push pin (design/component.png paper elements): glossy red pin holding
-   the minimap card to the board. Inside the torn edge (the card clips
-   its children), just above the canvas. */
+/* Push pin (design/component.png, execution fidelity): glossy sphere
+   with highlight, dark rim, needle, and the shadow it casts — pinned
+   OVER the torn top edge (wrapper is unclipped). */
 #minimap-panel::after {
   content: '';
   position: absolute;
-  top: 1px;
+  top: -4px;
   left: 50%;
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   transform: translateX(-50%);
   border-radius: 50%;
-  background: radial-gradient(
-    circle at 32% 30%,
-    #FF8A93 0%,
-    #E2535F 45%,
-    var(--kit-alert) 70%,
-    #8E2A33 100%
-  );
-  box-shadow: 1px 2px 2px rgba(30, 20, 10, 0.35);
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0) 22%),
+    radial-gradient(circle at 36% 32%, #FF8A93 0%, #E2535F 40%, var(--kit-alert) 68%, #8E2A33 100%);
+  box-shadow:
+    inset -1px -2px 2px rgba(94, 20, 28, 0.6),
+    1px 3px 3px rgba(30, 20, 10, 0.4),
+    0 5px 0 -4px rgba(30, 20, 10, 0.5); /* needle hint below */
   z-index: 3;
 }
 
@@ -1245,7 +1297,7 @@ body.spectator-mode #gold {
     var(--tex-parchment-warm) repeat center / 96px 96px,
     var(--kit-tan);
   background-blend-mode: multiply;
-  border: 2px solid var(--kit-kraft);
+  border: 2.5px solid #6B4527;
   border-radius: 4px;
   clip-path: polygon(
     0.6% 2.4%, 12% 0.6%, 33% 2.1%, 57% 0.3%, 81% 1.8%, 99.2% 0.7%,
@@ -1439,7 +1491,7 @@ body.spectator-mode #gold {
     var(--tex-parchment-warm) repeat center / 96px 96px,
     var(--kit-tan);
   background-blend-mode: multiply;
-  border: 2px solid var(--kit-kraft);
+  border: 2.5px solid #6B4527;
   border-radius: 4px;
   clip-path: polygon(
     0.5% 2.2%, 13% 0.4%, 35% 2%, 59% 0.2%, 82% 1.7%, 99.3% 0.6%,

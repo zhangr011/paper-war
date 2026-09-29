@@ -9,13 +9,14 @@ models without design context hard-code colors and write one-off CSS
 
 ## Hard rules
 
-0. **Execution fidelity (ADR-0035).** `design/component.png` is authoritative
-   at execution level, not palette level: a component is done when it is
-   indistinguishable from a crop of the reference at a glance — torn edges
-   that look torn, tape that overhangs and folds, weighted layered shadows,
-   dimensional objects, overlapping composition. Extracting correct tokens
-   into restrained components is the named failure mode. Acceptance is a
-   side-by-side screenshot against the reference crop.
+0. **Execution fidelity (ADR-0035).** A component is done when it is
+   indistinguishable at a glance from the adopted design source — torn
+   edges that look torn, tape that overhangs and folds, weighted layered
+   shadows, dimensional objects, overlapping composition. Extracting
+   correct tokens into restrained components is the named failure mode.
+   **Design source: the Figma file** (user-authored; see ADR-0035) —
+   implement from its exact values via Figma MCP. `design/component.png`
+   is an AI-generated moodboard, NOT a spec.
 1. **Tokens only.** No literal colors, radii, shadows, or ad-hoc spacing in
    new CSS. The Paper UI Kit layer (`--kit-*`, from `design/component.png`)
    owns the component look — tape blue, kraft, tan, off-white, gold, hard

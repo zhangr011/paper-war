@@ -36,3 +36,17 @@ it would bake image-gen artifacts into the codebase). Execution
 fidelity therefore applies to whatever design source is ADOPTED, not
 to this PNG. The open question becomes: where does a game-grade
 design source come from, given no designer and no source file?
+
+## Decision (2026-09-29): Figma becomes the design source
+
+Grill resolved. The user authors the design source in Figma (option A):
+rebuild the kit surfaces using the AI concept PNG as a moodboard, not a
+spec. Implementation transport is **Figma MCP** — exact fills, strokes,
+effects, and geometry, closing the interpretation gap that failed the
+PNG trial. Acceptance stays the side-by-side execution-fidelity bar.
+
+Rollout protocol: ONE panel first (Selection) — user authors (~an
+hour), agent implements from the file's exact node values, same bar.
+Pass → roll across the kit and this ADR reaches its final form. Fail →
+the transport hypothesis is falsified too, and the remaining options
+are human-authored CSS by the user or commissioning art.

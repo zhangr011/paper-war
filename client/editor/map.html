@@ -145,19 +145,25 @@
     <button id="tool-terrain" class="active" title="T">Terrain</button>
     <button id="tool-elevation" title="E — paints the tier on any terrain">Elevation</button>
     <button id="tool-ramp" title="A — drag along a cliff edge; elevation auto-grades">Ramp</button>
+    <button id="tool-stamp" title="P — stamp the copied terrain pattern (S + drag a region, then ⌘C)">Stamp</button>
     <label style="margin-left:12px">Mode:</label>
     <button id="mode-paint" class="active" title="B — drag to paint">Paint</button>
     <button id="mode-rect" title="R — drag a rectangle, commit on release">Rect</button>
     <button id="mode-fill" title="F — click to flood the connected region">Fill</button>
     <button id="mode-eyedropper" title="I — click to pick terrain+elevation (or alt-click anytime)">Pick</button>
+    <button id="mode-select" title="S — drag to select a region; ⌘C copy, ⌘X cut, Esc clear">Select</button>
     <label style="margin-left:12px">Brush:</label>
-    <select id="brush-size" title="[ and ] to cycle">
-      <option value="1">1×1</option>
-      <option value="2">2×2</option>
-      <option value="3">3×3</option>
-      <option value="5">5×5</option>
+    <select id="brush-w" title="width — [ and ] cycle W and H together">
+      <option value="1">W 1</option><option value="2">2</option><option value="3">3</option>
+      <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+      <option value="7">7</option><option value="8">8</option>
     </select>
-    <select id="brush-shape">
+    <select id="brush-h" title="height">
+      <option value="1">H 1</option><option value="2">2</option><option value="3">3</option>
+      <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+      <option value="7">7</option><option value="8">8</option>
+    </select>
+    <select id="brush-shape" title="circle applies only when W = H">
       <option value="square">square</option>
       <option value="circle">circle</option>
     </select>
@@ -166,12 +172,20 @@
     <button id="zoom-in-btn" title="+ — zoom in (wheel works too)">Zoom +</button>
     <button id="zoom-out-btn" title="− — zoom out">Zoom −</button>
     <button id="grid-btn" class="active" title="G — toggle tile grid">Grid</button>
+    <button id="cliffs-btn" title="V — highlight impassable Δ2 cliff borders (no Ramp on either end)">Cliffs</button>
+    <button id="elev-ovl-btn" title="H — elevation contours + tier digits (makes 0-vs-1 legible on any terrain)">Elev</button>
+    <button id="cost-btn" title="C — movement-cost tint for the selected profile">Cost</button>
+    <select id="cost-profile" class="hidden" title="Profile for the cost overlay">
+      <option value="Light" selected>Light</option>
+      <option value="Heavy">Heavy</option>
+    </select>
     <button id="art-btn" title="Tab — toggle the game's WebGL shader preview over the flat edit view">Art</button>
     <span class="info" style="margin-left:12px">
       Spawn markers (forced at runtime): <span style="color:#6fa3d6">●</span> team1 (16,12)
       <span style="color:#d6a36f">●</span> team2 (16,20)
     </span>
     <span id="conn-status" class="info" style="margin-left:12px"></span>
+    <span id="cursor-pos" class="info" style="margin-left:12px"></span>
   </div>
 
   <div class="columns">
@@ -200,12 +214,21 @@
         tile auto-grades to one tier below its highest neighbour, turning a
         2-tier cliff into two walkable 1-tier steps. Brush size applies.
       </p>
+      <p class="info hidden" id="stamp-info">
+        <b>Stamp</b>: paints the copied terrain+elevation pattern with its
+        top-left at the cursor; drag to stamp along the path. Copy a region
+        with <b>Select</b> (S) + drag, then ⌘C — or ⌘X to also clear the
+        region to Plain. With Mirror on, a column-flipped copy lands on the
+        mirrored side.
+      </p>
 
       <h2>Minimap</h2>
       <canvas id="minimap" width="128" height="128" title="Click or drag to pan"></canvas>
       <p class="info">
         Wheel = zoom at cursor · space/middle/right-drag = pan · +/- zoom ·
-        G grid · [ ] brush size · B/R/F/I modes · alt-click pick.
+        G grid · V cliffs · H elev · C cost · S select + ⌘C/⌘X copy/cut ·
+        P stamp · [ ] brush W×H · B/R/F/I modes · alt-click pick ·
+        ctrl-drag live pick. Edits autosave to this browser.
       </p>
     </div>
   </div>

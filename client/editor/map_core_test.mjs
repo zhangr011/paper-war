@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import {
   GRID, RESERVED_TERRAIN, PROFILE_COSTS, RUNTIME_SPAWNS, RAMP_TERRAIN,
-  brushOffsets, rectIndices, floodFill, isConnected, rampElevationAt,
+  brushOffsets, brushOffsetsWH, rectIndices, floodFill, isConnected,
+  rampElevationAt, cliffEdges, extractPattern, stampPattern, flipPatternX,
   ZOOM_LEVELS, MIN_ZOOM, MAX_ZOOM,
   screenToTile, tileToScreen, zoomAround, clampPan,
 } from './map_core.mjs';
@@ -298,6 +299,168 @@ test('isConnected: Δ1 steps are always walkable', () => {
   elevation[15 * GRID + 16] = 2;
   const [a, b] = RUNTIME_SPAWNS;
   assert.ok(isConnected(terrain, elevation, a, b, PROFILE_COSTS.Light));
+});
+
+// --- cliff-edge enumeration (validation overlays, issue #77) -----------------------
+// Border coordinates are tile-fractions: the vertical border between (0,0)
+// and (1,0) is the segment {ax:1, ay:0, bx:1, by:1}. A lone elevated tile
+// borders three Δ2 neighbours (right, down-right pairs), so small fixtures
+// assert the COMPLETE emission — which also pins enumeration order (a tile's
+// right border before its down border).
+
+test('cliffEdges: lone peak emits exactly its three Δ2 borders', () => {
+  const { terrain, elevation } = blankTE();
+  elevation[1] = 2; // (1,0) peak; everything else 0
+  assert.deepEqual(cliffEdges(terrain, elevation), [
+    { ax: 1, ay: 0, bx: 1, by: 1 }, // vertical: (0,0)|(1,0)
+    { ax: 2, ay: 0, bx: 2, by: 1 }, // vertical: (1,0)|(2,0)
+    { ax: 1, ay: 1, bx: 2, by: 1 }, // horizontal: (1,0)/(1,1)
+  ]);
+});
+
+test('cliffEdges: Δ2 down-neighbour emits a horizontal border', () => {
+  const { terrain, elevation } = blankTE();
+  elevation[0] = 2; // (0,0) peak
+  assert.deepEqual(cliffEdges(terrain, elevation), [
+    { ax: 1, ay: 0, bx: 1, by: 1 }, // vertical: (0,0)|(1,0)
+    { ax: 0, ay: 1, bx: 1, by: 1 }, // horizontal: (0,0)/(0,1)
+  ]);
+});
+
+test('cliffEdges: Δ1 steps are not cliffs', () => {
+  const { terrain, elevation } = blankTE();
+  elevation[0] = 0; elevation[1] = 1;
+  assert.deepEqual(cliffEdges(terrain, elevation), []);
+});
+
+test('cliffEdges: a Ramp on either end suppresses the shared border', () => {
+  const ctrl = blankTE();
+  ctrl.elevation[1] = 2;
+  const shared = (es) => es.filter((e) => e.ax === 1 && e.ay === 0 && e.bx === 1 && e.by === 1);
+  assert.equal(shared(cliffEdges(ctrl.terrain, ctrl.elevation)).length, 1);
+
+  const lowRamp = blankTE();
+  lowRamp.elevation[1] = 2; lowRamp.terrain[0] = RAMP_TERRAIN;
+  assert.equal(shared(cliffEdges(lowRamp.terrain, lowRamp.elevation)).length, 0);
+
+  const highRamp = blankTE();
+  highRamp.elevation[1] = 2; highRamp.terrain[1] = RAMP_TERRAIN;
+  assert.equal(shared(cliffEdges(highRamp.terrain, highRamp.elevation)).length, 0);
+});
+
+test('cliffEdges: full-width peak row yields both horizontal borders, no duplicates', () => {
+  const { terrain, elevation } = blankTE();
+  for (let x = 0; x < GRID; x++) elevation[16 * GRID + x] = 2;
+  const edges = cliffEdges(terrain, elevation);
+  // Cliffs run the full width along y=16 (border above the row) and y=17
+  // (below it) — 32 segments each; no vertical borders anywhere (the row is
+  // level, so no right-neighbour pair differs).
+  assert.equal(edges.length, 64);
+  assert.equal(edges.filter((e) => e.ay === 16 && e.by === 16).length, 32);
+  assert.equal(edges.filter((e) => e.ay === 17 && e.by === 17).length, 32);
+  assert.equal(edges.filter((e) => e.ax === e.bx).length, 0); // no verticals
+});
+
+// --- pattern stamp (copy/cut/paste brush, issue #77 Phase 2) -----------------------
+
+function stampedTE() {
+  const terrain = new Uint8Array(GRID * GRID);
+  const elevation = new Uint8Array(GRID * GRID);
+  // Source pattern area (5,7)-(7,9): terrain x%3, elevation y%3 — every cell
+  // unique-ish so extraction and stamping are distinguishable per cell.
+  for (let y = 7; y <= 9; y++) {
+    for (let x = 5; x <= 7; x++) {
+      terrain[y * GRID + x] = x % 3;
+      elevation[y * GRID + x] = y % 3;
+    }
+  }
+  return { terrain, elevation };
+}
+
+test('extractPattern: copies w×h terrain+elevation cells', () => {
+  const { terrain, elevation } = stampedTE();
+  const p = extractPattern(terrain, elevation, 5, 7, 7, 9);
+  assert.equal(p.w, 3);
+  assert.equal(p.h, 3);
+  // pattern-local (0,0) = source (5,7): terrain 5%3=2, elevation 7%3=1
+  assert.equal(p.terrain[0], 2);
+  assert.equal(p.elevation[0], 1);
+  // pattern-local (2,2) = source (7,9)
+  assert.equal(p.terrain[2 * 3 + 2], 7 % 3);
+  assert.equal(p.elevation[2 * 3 + 2], 9 % 3);
+});
+
+test('extractPattern: accepts either drag direction and clamps to the map', () => {
+  const { terrain, elevation } = stampedTE();
+  const a = extractPattern(terrain, elevation, 7, 9, 5, 7); // reversed corners
+  const b = extractPattern(terrain, elevation, 5, 7, 7, 9);
+  assert.deepEqual(Array.from(a.terrain), Array.from(b.terrain));
+  const c = extractPattern(terrain, elevation, -4, -2, 2, 2); // clamps to 0,0
+  assert.equal(c.w, 3);
+  assert.equal(c.h, 3);
+});
+
+test('stampPattern: writes terrain+elevation, counts changed cells, idempotent', () => {
+  const src = stampedTE();
+  const p = extractPattern(src.terrain, src.elevation, 5, 7, 7, 9);
+  const dst = blankTE();
+  const changed = stampPattern(dst.terrain, dst.elevation, p, 20, 20);
+  // 8, not 9: pattern-local (1,2) is terrain 0 + elevation 0 — identical to
+  // the blank cell, so it correctly counts as unchanged.
+  assert.equal(changed, 8);
+  assert.equal(dst.terrain[20 * GRID + 20], p.terrain[0]);
+  assert.equal(dst.elevation[20 * GRID + 20], p.elevation[0]);
+  // Re-stamping the identical pattern is a no-op.
+  assert.equal(stampPattern(dst.terrain, dst.elevation, p, 20, 20), 0);
+});
+
+test('stampPattern: clips at the right/bottom map edges', () => {
+  const src = stampedTE();
+  const p = extractPattern(src.terrain, src.elevation, 5, 7, 7, 9);
+  const dst = blankTE();
+  // Top-left at (30,30) on the 32×32 map: of the 3×3 pattern only the 2×2
+  // block (30..31, 30..31) fits — column 32 and row 32 are clipped.
+  const changed = stampPattern(dst.terrain, dst.elevation, p, 30, 30);
+  assert.equal(changed, 4);
+  assert.equal(dst.terrain[30 * GRID + 30], p.terrain[0]); // pattern (0,0)
+  assert.equal(dst.terrain[30 * GRID + 31], p.terrain[1]); // pattern (1,0)
+  assert.equal(dst.terrain[31 * GRID + 30], p.terrain[3]); // pattern (0,1)
+  assert.equal(dst.terrain[31 * GRID + 31], p.terrain[4]); // pattern (1,1)
+});
+
+test('flipPatternX: mirrors columns, preserves elevation pairing', () => {
+  const src = stampedTE();
+  const p = extractPattern(src.terrain, src.elevation, 5, 7, 7, 9);
+  const f = flipPatternX(p);
+  assert.equal(f.w, 3);
+  assert.equal(f.h, 3);
+  for (let y = 0; y < 3; y++) {
+    for (let x = 0; x < 3; x++) {
+      const dstI = y * 3 + (2 - x), srcI = y * 3 + x;
+      assert.equal(f.terrain[dstI], p.terrain[srcI]);
+      assert.equal(f.elevation[dstI], p.elevation[srcI]);
+    }
+  }
+});
+
+// --- rectangular W×H brush (issue #77 Phase 3) --------------------------------------
+
+test('brushOffsetsWH: 3×2 rect is 6 cells centered on the anchor', () => {
+  const offs = brushOffsetsWH(3, 2);
+  assert.equal(offs.length, 6);
+  assert.deepEqual(offs[0], { dx: -1, dy: 0 });
+  assert.deepEqual(offs[5], { dx: 1, dy: 1 });
+});
+
+test('brushOffsetsWH: circle delegates to brushOffsets when w === h', () => {
+  assert.deepEqual(
+    brushOffsetsWH(3, 3, 'circle'),
+    brushOffsets(3, 'circle'),
+  );
+});
+
+test('brushOffsetsWH: non-square ignores the circle shape', () => {
+  assert.equal(brushOffsetsWH(3, 2, 'circle').length, 6); // full rectangle
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

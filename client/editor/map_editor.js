@@ -20,7 +20,8 @@
 import {
   GRID, TERRAIN_NAMES, RESERVED_TERRAIN, TERRAIN_COLORS,
   hillShadeRGB, RUNTIME_SPAWNS, PROFILE_COSTS, RAMP_TERRAIN,
-  brushOffsets, rectIndices, floodFill, isConnected, rampElevationAt,
+  brushOffsetsWH, rectIndices, floodFill, isConnected, rampElevationAt,
+  cliffEdges, extractPattern, stampPattern, flipPatternX,
   ZOOM_LEVELS, screenToTile, tileToScreen, zoomAround, clampPan,
 } from './map_core.mjs';
 import { Renderer } from '../src/gl.js';
@@ -34,18 +35,30 @@ const N = GRID * GRID;
 let terrain = new Uint8Array(N);   // all 0 (Plain)
 let elevation = new Uint8Array(N); // all 0
 
-let tool = 'terrain';        // WHAT you paint: 'terrain' | 'elevation' | 'ramp'
-let mode = 'paint';          // HOW you apply it: 'paint' | 'rect' | 'fill' | 'eyedropper'
+let tool = 'terrain';        // WHAT you paint: 'terrain' | 'elevation' | 'ramp' | 'stamp'
+let mode = 'paint';          // HOW you apply it: 'paint' | 'rect' | 'fill' | 'eyedropper' | 'select'
 let lastMode = 'paint';      // eyedropper returns here after a pick
 let brushTerrain = 0;        // active terrain type
 let brushElev = 1;           // active elevation layer
-let brushSize = 1;           // 1 | 2 | 3 | 5
-let brushShape = 'square';   // 'square' | 'circle'
+let brushW = 1;              // brush footprint width, 1..8 ([ / ] cycles both)
+let brushH = 1;              // brush footprint height, 1..8
+let brushShape = 'square';   // 'square' | 'circle' (circle only when W === H)
 let mirror = true;
 let painting = false;        // drag-paint in progress
+let picking = false;         // ctrl-drag live palette pick in progress
+let strokeChanged = false;   // any tile mutated during the current paint stroke
 let rectAnchor = null;       // {x,y} tile anchor while rect-dragging
 let hoverTile = null;        // {x,y} tile under the cursor (overlay)
 let showGrid = true;         // tile grid overlay toggle (G)
+let selRect = null;          // select-mode region {x0,y0,x1,y1} (inclusive tiles)
+let stamp = null;            // copied pattern {pattern, flipped} — the stamp tool payload
+
+// Validation overlays (issue #77, Chkdraft-inspired view modes — transient
+// reads over the edit view; never affect saved data or the Art preview).
+let showCost = false;        // movement-cost tint toggle (C)
+let costProfile = 'Light';   // PROFILE_COSTS row the cost overlay shades
+let showCliffs = false;      // impassable Δ2 border segments toggle (V)
+let showElevOvl = false;     // elevation contours + tier digits toggle (H)
 
 // View transform — px per tile + map-origin offset in canvas pixels. All
 // screen↔tile conversions go through screenToTile/tileToScreen (map_core).
@@ -106,6 +119,7 @@ function afterEdit() {
   render();
   checkConnectivity();
   updateUndoButtons();
+  scheduleAutosave();
 }
 function updateUndoButtons() {
   document.getElementById('undo-btn').disabled = undoStack.length === 0;
@@ -281,6 +295,54 @@ function render() {
       ctx.fillRect(s.x, s.y, px, px);
     }
   }
+  // Movement-cost overlay (C): per-tile tint by the selected profile's cost
+  // (green cheap → red expensive). Cost-0 (impassable) tiles get a red block
+  // + white diagonal hatch — the stripe, not the tint, is the signal: red
+  // alone goes muddy over dark water (Deep) and gray (Wall).
+  if (showCost) {
+    const costs = PROFILE_COSTS[costProfile];
+    let maxCost = 1;
+    for (const c of costs) if (c > maxCost) maxCost = c;
+    const blocked = [];
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        const c = costs[terrain[y * GRID + x]];
+        const s = tileToScreen(x, y, view);
+        if (c === 0) {
+          ctx.fillStyle = 'rgba(200,80,60,0.6)';
+          blocked.push(s);
+        } else {
+          const t = (c - 1) / (maxCost - 1); // 0..1 across cost 1..max
+          ctx.fillStyle = `rgba(${Math.round(80 + 140 * t)},${Math.round(200 - 150 * t)},60,0.30)`;
+        }
+        ctx.fillRect(s.x, s.y, px, px);
+      }
+    }
+    if (blocked.length) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const s of blocked) {
+        ctx.moveTo(s.x, s.y + px);
+        ctx.lineTo(s.x + px, s.y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Cliff overlay (V): one red segment per impassable Δ2 non-Ramp border —
+  // WHERE connectivity breaks, not just the spawn-to-spawn verdict.
+  if (showCliffs) {
+    ctx.strokeStyle = '#ff5340';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const e of cliffEdges(terrain, elevation)) {
+      ctx.moveTo(view.ox + e.ax * px, view.oy + e.ay * px);
+      ctx.lineTo(view.ox + e.bx * px, view.oy + e.by * px);
+    }
+    ctx.stroke();
+  }
+
   // Faint grid lines so individual tiles are legible while painting. Skipped
   // below 8px/tile where it would read as noise.
   if (showGrid && px >= 8) {
@@ -297,6 +359,49 @@ function render() {
       }
     }
   }
+  // Elevation overlay (H): contour segments wherever 4-neighbours differ in
+  // elevation, plus a tier digit on every elev≠0 tile. Together they make
+  // 0-vs-1 legible on non-Hill terrain, where hillShadeRGB's layer 1 is the
+  // identity (and tileColor's elev>0 gate hides layer 0 entirely).
+  if (showElevOvl) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        const e0 = elevation[y * GRID + x];
+        if (x < GRID - 1 && elevation[y * GRID + x + 1] !== e0) {
+          ctx.moveTo(view.ox + (x + 1) * px + 0.5, view.oy + y * px);
+          ctx.lineTo(view.ox + (x + 1) * px + 0.5, view.oy + (y + 1) * px);
+        }
+        if (y < GRID - 1 && elevation[(y + 1) * GRID + x] !== e0) {
+          ctx.moveTo(view.ox + x * px, view.oy + (y + 1) * px + 0.5);
+          ctx.lineTo(view.ox + (x + 1) * px, view.oy + (y + 1) * px + 0.5);
+        }
+      }
+    }
+    ctx.stroke();
+    // Tier digits — skipped below 16px/tile where the badge would be noise.
+    if (px >= 16) {
+      const r = Math.max(4, px * 0.2);
+      ctx.font = `bold ${Math.max(9, Math.round(px * 0.4))}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let y = 0; y < GRID; y++) {
+        for (let x = 0; x < GRID; x++) {
+          const e = elevation[y * GRID + x];
+          if (e === 0) continue;
+          const s = tileToScreen(x, y, view);
+          const cx = s.x + r + 2, cy = s.y + r + 2;
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(String(e), cx, cy);
+        }
+      }
+    }
+  }
+
   // Runtime spawn markers — squads appear here regardless of authored terrain.
   // Ringed red when a movement profile can't connect them (stranded spawn).
   const stranded = !(connState.Light && connState.Heavy);
@@ -339,12 +444,31 @@ function renderMinimap() {
   mctx.strokeRect(vx + 0.5, vy + 0.5, vw, vh);
 }
 
-// Overlay: brush cursor footprint + rect-drag ghost. Redrawn on hover/mode
-// change; separate canvas so the map itself never flickers.
+// Overlay: brush cursor footprint + rect-drag ghost + select dashed rect +
+// stamp ghost. Redrawn on hover/mode change; separate canvas so the map
+// itself never flickers.
 function renderOverlay() {
   octx.clearRect(0, 0, overlay.width, overlay.height);
   if (!hoverTile) return;
   const px = view.px;
+  if (mode === 'select') {
+    // Dashed accent rect while dragging; the committed selRect persists
+    // until copy/cut/Esc so its bounds stay visible.
+    const x0 = rectAnchor ? Math.min(rectAnchor.x, hoverTile.x) : (selRect ? selRect.x0 : null);
+    if (x0 === null) return;
+    const x1 = rectAnchor ? Math.max(rectAnchor.x, hoverTile.x) : selRect.x1;
+    const y0 = rectAnchor ? Math.min(rectAnchor.y, hoverTile.y) : selRect.y0;
+    const y1 = rectAnchor ? Math.max(rectAnchor.y, hoverTile.y) : selRect.y1;
+    const a = tileToScreen(x0, y0, view);
+    octx.fillStyle = 'rgba(200,168,50,0.12)';
+    octx.fillRect(a.x, a.y, (x1 - x0 + 1) * px, (y1 - y0 + 1) * px);
+    octx.strokeStyle = '#c8a832'; // accent — reads as "selection", not a paint ghost
+    octx.lineWidth = 1;
+    octx.setLineDash([4, 3]);
+    octx.strokeRect(a.x + 0.5, a.y + 0.5, (x1 - x0 + 1) * px - 1, (y1 - y0 + 1) * px - 1);
+    octx.setLineDash([]);
+    return;
+  }
   if (mode === 'rect' && rectAnchor) {
     const xs = Math.min(rectAnchor.x, hoverTile.x), xe = Math.max(rectAnchor.x, hoverTile.x);
     const ys = Math.min(rectAnchor.y, hoverTile.y), ye = Math.max(rectAnchor.y, hoverTile.y);
@@ -357,18 +481,50 @@ function renderOverlay() {
     return;
   }
   if (mode !== 'paint') return;
+  // Stamp ghost: the pattern itself at 45% — what a click will write, plus
+  // the flipped copy on the mirrored side when Mirror is on.
+  if (tool === 'stamp' && stamp) {
+    drawStampGhost(hoverTile.x, hoverTile.y, stamp.pattern);
+    if (mirror) drawStampGhost(mirrorX(hoverTile.x) - stamp.pattern.w + 1, hoverTile.y, stamp.flipped);
+    return;
+  }
   // Brush footprint. Even sizes anchor at the footprint's top-left, so the
   // preview uses the same offsets the brush does.
   octx.fillStyle = 'rgba(255,255,255,0.18)';
   octx.strokeStyle = 'rgba(255,255,255,0.7)';
   octx.lineWidth = 1;
-  for (const { dx, dy } of brushOffsets(brushSize, brushShape)) {
+  for (const { dx, dy } of brushOffsetsWH(brushW, brushH, brushShape)) {
     const x = hoverTile.x + dx, y = hoverTile.y + dy;
     if (x < 0 || x >= GRID || y < 0 || y >= GRID) continue;
     const s = tileToScreen(x, y, view);
     octx.fillRect(s.x, s.y, px, px);
     octx.strokeRect(s.x + 0.5, s.y + 0.5, px - 1, px - 1);
   }
+}
+
+// drawStampGhost paints the pattern semi-transparently, top-left anchored at
+// (gx, gy), outlined across its in-bounds cells.
+function drawStampGhost(gx, gy, pattern) {
+  const px = view.px;
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  octx.globalAlpha = 0.45;
+  for (let dy = 0; dy < pattern.h; dy++) {
+    for (let dx = 0; dx < pattern.w; dx++) {
+      const x = gx + dx, y = gy + dy;
+      if (x < 0 || x >= GRID || y < 0 || y >= GRID) continue;
+      const s = tileToScreen(x, y, view);
+      octx.fillStyle = toCss(tileColor(pattern.terrain[dy * pattern.w + dx], pattern.elevation[dy * pattern.w + dx]));
+      octx.fillRect(s.x, s.y, px, px);
+      bx0 = Math.min(bx0, x); by0 = Math.min(by0, y);
+      bx1 = Math.max(bx1, x); by1 = Math.max(by1, y);
+    }
+  }
+  octx.globalAlpha = 1;
+  if (bx1 < bx0) return; // fully off-map
+  const a = tileToScreen(bx0, by0, view);
+  octx.strokeStyle = 'rgba(255,255,255,0.8)';
+  octx.lineWidth = 1;
+  octx.strokeRect(a.x + 0.5, a.y + 0.5, (bx1 - bx0 + 1) * px - 1, (by1 - by0 + 1) * px - 1);
 }
 
 // --- Painting --------------------------------------------------------------
@@ -381,6 +537,9 @@ function applyPayload(i) {
     if (terrain[i] === brushTerrain) return false;
     terrain[i] = brushTerrain;
     return true;
+  }
+  if (tool === 'stamp') {
+    return false; // never reached — paintStroke routes the stamp tool to applyStampAt
   }
   if (tool === 'ramp') {
     // Ramp tiles carry auto-graded elevation: one tier below the highest
@@ -403,17 +562,37 @@ function applyPayload(i) {
 }
 
 function applyBrushAt(x, y) {
-  for (const { dx, dy } of brushOffsets(brushSize, brushShape)) {
+  let changed = false;
+  for (const { dx, dy } of brushOffsetsWH(brushW, brushH, brushShape)) {
     const bx = x + dx, by = y + dy;
     if (bx < 0 || bx >= GRID || by < 0 || by >= GRID) continue;
-    applyPayload(by * GRID + bx);
+    if (applyPayload(by * GRID + bx)) changed = true;
   }
+  return changed;
 }
 
-// paintStroke applies one brush stamp (+mirror) and refreshes.
+// applyStampAt writes the copied pattern with its top-left at (x, y) (+ a
+// column-flipped copy mirrored when Mirror is on, so the result is a true
+// mirror image). Returns whether anything changed.
+function applyStampAt(x, y) {
+  let changed = stampPattern(terrain, elevation, stamp.pattern, x, y) > 0;
+  if (mirror) {
+    const fx = mirrorX(x) - stamp.pattern.w + 1; // mirrored region's top-left
+    changed = stampPattern(terrain, elevation, stamp.flipped, fx, y) > 0 || changed;
+  }
+  return changed;
+}
+
+// paintStroke applies one brush/pattern stamp and refreshes.
 function paintStroke(x, y) {
-  applyBrushAt(x, y);
-  if (mirror) applyBrushAt(mirrorX(x), y);
+  let changed;
+  if (tool === 'stamp') {
+    changed = applyStampAt(x, y);
+  } else {
+    changed = applyBrushAt(x, y);
+    if (mirror) changed = applyBrushAt(mirrorX(x), y) || changed;
+  }
+  if (changed) strokeChanged = true;
   render();
   checkConnectivity();
 }
@@ -456,6 +635,7 @@ function eyedrop(x, y) {
 function edited() {
   render();
   checkConnectivity();
+  scheduleAutosave();
   if (artMode) { uploadMapTextures(); renderGL(); }
 }
 
@@ -464,6 +644,11 @@ function edited() {
 function gestureDown(x, y, altKey) {
   if (x < 0 || x >= GRID || y < 0 || y >= GRID) return;
   if (altKey || mode === 'eyedropper') { eyedrop(x, y); return; }
+  if (mode === 'select') {
+    rectAnchor = { x, y };
+    renderOverlay();
+    return; // selection committed on up
+  }
   if (mode === 'fill') {
     const s = snapshot();
     const n = fillClick(x, y);
@@ -477,14 +662,18 @@ function gestureDown(x, y, altKey) {
     return; // committed on up
   }
   // paint
+  if (tool === 'stamp' && !stamp) { setStatus('No pattern — Select (S) + drag, then ⌘C.'); return; }
   pushHistory();            // one undo step per stroke (down→up)
   painting = true;
+  strokeChanged = false;
   paintStroke(x, y);
 }
 function gestureMove(x, y) {
   hoverTile = (x >= 0 && x < GRID && y >= 0 && y < GRID) ? { x, y } : null;
+  if (picking && hoverTile) pickAt(hoverTile.x, hoverTile.y);
   if (painting) paintStroke(x, y);
   renderOverlay();
+  updateCursorReadout();
 }
 function gestureUp() {
   painting = false;
@@ -494,7 +683,61 @@ function gestureUp() {
     rectAnchor = null;
     if (n > 0) { pushSnapshot(s); edited(); setStatus(`Rect: ${n} tiles changed.`); }
     else renderOverlay();
+    return;
   }
+  if (mode === 'select' && rectAnchor && hoverTile) {
+    selRect = {
+      x0: Math.min(rectAnchor.x, hoverTile.x), x1: Math.max(rectAnchor.x, hoverTile.x),
+      y0: Math.min(rectAnchor.y, hoverTile.y), y1: Math.max(rectAnchor.y, hoverTile.y),
+    };
+    rectAnchor = null;
+    renderOverlay();
+    const w = selRect.x1 - selRect.x0 + 1, h = selRect.y1 - selRect.y0 + 1;
+    setStatus(`Selected ${w}×${h} — ⌘C copy, ⌘X cut, Esc clear.`);
+    return;
+  }
+  // Drop the history entry a no-op paint stroke would have pushed (matches
+  // the fill/rect convention: empty gestures leave undo alone).
+  if (!strokeChanged && undoStack.length) {
+    undoStack.pop();
+    updateUndoButtons();
+  }
+}
+
+// pickAt is the ctrl-drag live picker (Chkdraft-style): the palettes follow
+// the tile under the cursor without leaving the active tool/mode.
+function pickAt(x, y) {
+  const i = y * GRID + x;
+  brushTerrain = terrain[i];
+  brushElev = elevation[i];
+  buildTerrainPalette();
+  buildElevPalette();
+}
+
+// doCopy copies the select-mode region into the stamp clipboard and switches
+// to the stamp tool. With cut=true the region is also cleared to Plain/elev 0
+// (one undo entry). The clipboard survives undo — it is settings, not grid.
+function doCopy(cut) {
+  if (!selRect) { setStatus('Select a region first (S, then drag).', true); return; }
+  const p = extractPattern(terrain, elevation, selRect.x0, selRect.y0, selRect.x1, selRect.y1);
+  stamp = { pattern: p, flipped: flipPatternX(p) };
+  document.getElementById('tool-stamp').textContent = `Stamp ${p.w}×${p.h}`;
+  if (cut) {
+    pushHistory();
+    for (let y = selRect.y0; y <= selRect.y1; y++) {
+      for (let x = selRect.x0; x <= selRect.x1; x++) {
+        const i = y * GRID + x;
+        terrain[i] = 0;
+        elevation[i] = 0;
+      }
+    }
+    edited();
+  }
+  selRect = null;
+  setActiveTool('stamp'); // auto-switch to the payload just loaded
+  setMode('paint');
+  setStatus(`Copied ${p.w}×${p.h} pattern${cut ? ' (region cleared to Plain)' : ''} — click/drag to stamp.`);
+  renderOverlay();
 }
 
 function eventTile(e) {
@@ -523,10 +766,23 @@ canvas.addEventListener('mousedown', (e) => {
     e.preventDefault();
     return;
   }
+  // Ctrl+click/drag = live palette pick (Chkdraft-style): the terrain +
+  // elevation palettes follow the cursor; no grid mutation, no mode switch.
+  if (e.ctrlKey && e.button === 0) {
+    picking = true;
+    const { x, y } = eventTile(e);
+    if (x >= 0 && x < GRID && y >= 0 && y < GRID) {
+      pickAt(x, y);
+      setStatus(`Picked ${TERRAIN_NAMES[brushTerrain]} (elev ${brushElev}).`);
+    }
+    e.preventDefault();
+    return;
+  }
   const { x, y } = eventTile(e);
   gestureDown(x, y, e.altKey);
 });
 window.addEventListener('mouseup', (e) => {
+  picking = false;
   if (panning) { panning = false; return; }
   gestureUp();
 });
@@ -540,7 +796,7 @@ canvas.addEventListener('mousemove', (e) => {
   const t = eventTile(e);
   gestureMove(t.x, t.y);
 });
-canvas.addEventListener('mouseleave', () => { hoverTile = null; renderOverlay(); });
+canvas.addEventListener('mouseleave', () => { hoverTile = null; renderOverlay(); updateCursorReadout(); });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const dir = e.deltaY < 0 ? 1 : -1;
@@ -643,20 +899,23 @@ function setActiveTool(t) {
   document.getElementById('tool-terrain').classList.toggle('active', t === 'terrain');
   document.getElementById('tool-elevation').classList.toggle('active', t === 'elevation');
   document.getElementById('tool-ramp').classList.toggle('active', t === 'ramp');
+  document.getElementById('tool-stamp').classList.toggle('active', t === 'stamp');
   const terrainOn = t === 'terrain';
   const rampOn = t === 'ramp';
+  const stampOn = t === 'stamp';
   document.getElementById('terrain-palette').classList.toggle('hidden', !terrainOn);
-  document.getElementById('elev-palette').classList.toggle('hidden', terrainOn || rampOn);
-  document.getElementById('elev-info').classList.toggle('hidden', terrainOn || rampOn);
+  document.getElementById('elev-palette').classList.toggle('hidden', terrainOn || rampOn || stampOn);
+  document.getElementById('elev-info').classList.toggle('hidden', terrainOn || rampOn || stampOn);
   document.getElementById('ramp-info').classList.toggle('hidden', !rampOn);
+  document.getElementById('stamp-info').classList.toggle('hidden', !stampOn);
   document.getElementById('palette-title').textContent =
-    terrainOn ? 'Terrain palette' : rampOn ? 'Ramp' : 'Elevation (layers, any terrain)';
+    terrainOn ? 'Terrain palette' : rampOn ? 'Ramp' : stampOn ? 'Stamp pattern' : 'Elevation (layers, any terrain)';
 }
 
 function setMode(m) {
   if (m !== 'eyedropper') lastMode = m;
   mode = m;
-  for (const k of ['paint', 'rect', 'fill', 'eyedropper']) {
+  for (const k of ['paint', 'rect', 'fill', 'eyedropper', 'select']) {
     document.getElementById(`mode-${k}`).classList.toggle('active', m === k);
   }
   canvas.style.cursor = m === 'eyedropper' ? 'copy' : 'crosshair';
@@ -667,23 +926,35 @@ function setMode(m) {
 document.getElementById('tool-terrain').onclick = () => setActiveTool('terrain');
 document.getElementById('tool-elevation').onclick = () => setActiveTool('elevation');
 document.getElementById('tool-ramp').onclick = () => { setActiveTool('ramp'); setMode('paint'); };
-for (const k of ['paint', 'rect', 'fill', 'eyedropper']) {
+document.getElementById('tool-stamp').onclick = () => {
+  if (!stamp) { setStatus('No pattern — Select (S) + drag a region, then ⌘C.'); return; }
+  setActiveTool('stamp');
+  setMode('paint');
+};
+for (const k of ['paint', 'rect', 'fill', 'eyedropper', 'select']) {
   document.getElementById(`mode-${k}`).onclick = () => setMode(k);
 }
 
-// Brush size / shape selectors.
+// Brush W/H / shape selectors. [ / ] cycles both dims together through the
+// SC-style size steps; the selects allow independent W×H (Chkdraft-style).
 function cycleBrushSize(dir) {
-  const idx = BRUSH_SIZES.indexOf(brushSize);
+  const idx = BRUSH_SIZES.indexOf(brushW);
   const next = BRUSH_SIZES[Math.min(BRUSH_SIZES.length - 1, Math.max(0, idx + dir))];
-  setBrushSize(next);
+  setBrushDims(next, next);
 }
-function setBrushSize(s) {
-  brushSize = s;
-  document.getElementById('brush-size').value = String(s);
+function setBrushDims(w, h) {
+  brushW = w;
+  brushH = h;
+  document.getElementById('brush-w').value = String(w);
+  document.getElementById('brush-h').value = String(h);
   renderOverlay();
 }
-document.getElementById('brush-size').onchange = (e) => {
-  brushSize = parseInt(e.target.value, 10);
+document.getElementById('brush-w').onchange = (e) => {
+  brushW = parseInt(e.target.value, 10);
+  renderOverlay();
+};
+document.getElementById('brush-h').onchange = (e) => {
+  brushH = parseInt(e.target.value, 10);
   renderOverlay();
 };
 document.getElementById('brush-shape').onchange = (e) => {
@@ -711,9 +982,26 @@ window.addEventListener('keydown', (e) => {
     if (e.shiftKey) redo(); else undo();
     return;
   }
+  if (mod && e.key.toLowerCase() === 'c') {
+    e.preventDefault();
+    doCopy(false);
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'x') {
+    e.preventDefault();
+    doCopy(true);
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (selRect) { selRect = null; renderOverlay(); setStatus('Selection cleared.'); }
+    return;
+  }
   if (e.key === '[') { e.preventDefault(); cycleBrushSize(-1); return; }
   if (e.key === ']') { e.preventDefault(); cycleBrushSize(1); return; }
   if (e.key.toLowerCase() === 'g' && !mod) { showGrid = !showGrid; render(); return; }
+  if (e.key.toLowerCase() === 'c' && !mod) { setCostOverlay(!showCost); return; }
+  if (e.key.toLowerCase() === 'v' && !mod) { setCliffOverlay(!showCliffs); return; }
+  if (e.key.toLowerCase() === 'h' && !mod) { setElevOverlay(!showElevOvl); return; }
   if ((e.key === '+' || e.key === '=') && !mod) { cycleZoom(1); return; }
   if (e.key === '-' && !mod) { cycleZoom(-1); return; }
   if (e.key === 'Tab') {
@@ -721,12 +1009,16 @@ window.addEventListener('keydown', (e) => {
     setArt(!artMode);
     return;
   }
-  const modeKeys = { b: 'paint', r: 'rect', f: 'fill', i: 'eyedropper' };
+  const modeKeys = { b: 'paint', r: 'rect', f: 'fill', i: 'eyedropper', s: 'select' };
   const mk = modeKeys[e.key.toLowerCase()];
   if (mk && !mod) { setMode(mk); return; }
-  const toolKeys = { t: 'terrain', e: 'elevation', a: 'ramp' };
+  const toolKeys = { t: 'terrain', e: 'elevation', a: 'ramp', p: 'stamp' };
   const tk = toolKeys[e.key.toLowerCase()];
   if (tk && !mod) {
+    if (tk === 'stamp') {
+      if (!stamp) { setStatus('No pattern — Select (S) + drag a region, then ⌘C.'); return; }
+      setMode('paint');
+    }
     setActiveTool(tk);
     if (tk === 'ramp') setMode('paint');
   }
@@ -742,6 +1034,32 @@ if (gridBtn) gridBtn.onclick = (e) => {
   showGrid = !showGrid;
   e.target.classList.toggle('active', showGrid);
   render();
+};
+
+// Validation overlays (issue #77) — view-only toggles, orthogonal to
+// tools/modes. The cost-profile select is shown only while Cost is on.
+function setCostOverlay(on) {
+  showCost = on;
+  document.getElementById('cost-btn').classList.toggle('active', on);
+  document.getElementById('cost-profile').classList.toggle('hidden', !on);
+  render();
+}
+function setCliffOverlay(on) {
+  showCliffs = on;
+  document.getElementById('cliffs-btn').classList.toggle('active', on);
+  render();
+}
+function setElevOverlay(on) {
+  showElevOvl = on;
+  document.getElementById('elev-ovl-btn').classList.toggle('active', on);
+  render();
+}
+document.getElementById('cost-btn').onclick = () => setCostOverlay(!showCost);
+document.getElementById('cliffs-btn').onclick = () => setCliffOverlay(!showCliffs);
+document.getElementById('elev-ovl-btn').onclick = () => setElevOverlay(!showElevOvl);
+document.getElementById('cost-profile').onchange = (e) => {
+  costProfile = e.target.value;
+  if (showCost) render();
 };
 
 document.getElementById('clear-btn').onclick = () => {
@@ -859,6 +1177,47 @@ function setStatus(msg, bad = false) {
   statusEl.className = 'info' + (bad ? ' warn' : '');
 }
 
+// --- Autosave + cursor readout (issue #77 Phase 4) ---------------------------
+// Debounced localStorage snapshot after every edit (paint strokes commit via
+// edited(); undo/redo restores via afterEdit()). Restored on open so a tab
+// close / crash never loses unsaved authoring (Chkdraft auto-backup analog).
+const AUTOSAVE_KEY = 'pw-map-editor-autosave';
+let autosaveTimer = 0;
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+        name: document.getElementById('map-name').value,
+        terrain: Array.from(terrain),
+        elevation: Array.from(elevation),
+        ts: Date.now(),
+      }));
+    } catch { /* storage unavailable/blocked — autosave silently off */ }
+  }, 1200);
+}
+function restoreAutosave() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || 'null'); } catch { return; }
+  if (!s || !Array.isArray(s.terrain)) return;
+  for (let i = 0; i < N && i < s.terrain.length; i++) {
+    terrain[i] = s.terrain[i];
+    elevation[i] = (s.elevation && s.elevation[i]) || 0;
+  }
+  if (s.name) document.getElementById('map-name').value = s.name;
+  setStatus('Restored autosave — Save to persist, Clear to discard.');
+}
+
+// updateCursorReadout mirrors the hovered tile into the toolbar (Chkdraft
+// status-bar tracking): coords + terrain name + elevation tier.
+function updateCursorReadout() {
+  const el = document.getElementById('cursor-pos');
+  if (!el) return;
+  if (!hoverTile) { el.textContent = ''; return; }
+  const i = hoverTile.y * GRID + hoverTile.x;
+  el.textContent = `(${hoverTile.x}, ${hoverTile.y}) ${TERRAIN_NAMES[terrain[i]]} · elev ${elevation[i]}`;
+}
+
 // Gate save when connectivity is failing — confirm before shipping a map
 // whose runtime spawns can't reach each other (one side would be unwinnable).
 // "Save anyway" is offered because there are legitimate reasons to save a
@@ -890,6 +1249,7 @@ setActiveTool('terrain');
 setMode('paint');
 if (renderer) { renderer.resize(); uploadMapTextures(); }
 setArt(false); // initialize the Art button state (disabled without WebGL2)
+restoreAutosave();
 viewApply();
 checkConnectivity();
 updateUndoButtons();

@@ -275,3 +275,118 @@ export function isConnected(terrain, elevation, start, end, costs) {
   }
   return false;
 }
+
+// --- Pattern stamp (copy/cut/paste brush, issue #77 Phase 2) -------------------
+
+// extractPattern copies the terrain+elevation cells of the inclusive tile rect
+// (x0,y0)-(x1,y1), clamped to the map, into a self-contained stamp pattern
+// {w, h, terrain, elevation} — the payload the stamp tool re-applies. Either
+// drag direction accepted (matches rectIndices).
+export function extractPattern(terrain, elevation, x0, y0, x1, y1) {
+  const xa = Math.max(0, Math.min(x0, x1)), xb = Math.min(GRID - 1, Math.max(x0, x1));
+  const ya = Math.max(0, Math.min(y0, y1)), yb = Math.min(GRID - 1, Math.max(y0, y1));
+  const w = xb - xa + 1, h = yb - ya + 1;
+  const pt = new Uint8Array(w * h), pe = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const src = (ya + y) * GRID + xa + x;
+      pt[y * w + x] = terrain[src];
+      pe[y * w + x] = elevation[src];
+    }
+  }
+  return { w, h, terrain: pt, elevation: pe };
+}
+
+// stampPattern writes the pattern with its TOP-LEFT tile at (x, y), clipping
+// at the map bounds. Returns the number of cells whose terrain or elevation
+// actually changed (0 ⇒ a no-op click — callers skip the undo entry).
+export function stampPattern(terrain, elevation, pattern, x, y) {
+  let changed = 0;
+  for (let dy = 0; dy < pattern.h; dy++) {
+    const gy = y + dy;
+    if (gy < 0 || gy >= GRID) continue;
+    for (let dx = 0; dx < pattern.w; dx++) {
+      const gx = x + dx;
+      if (gx < 0 || gx >= GRID) continue;
+      const g = gy * GRID + gx, s = dy * pattern.w + dx;
+      if (terrain[g] !== pattern.terrain[s] || elevation[g] !== pattern.elevation[s]) {
+        terrain[g] = pattern.terrain[s];
+        elevation[g] = pattern.elevation[s];
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
+// flipPatternX returns the pattern with its columns mirrored — what a
+// mirror-aware stamp paints on the mirrored side, so the result is a true
+// mirror image rather than an untranslated copy.
+export function flipPatternX(pattern) {
+  const pt = new Uint8Array(pattern.w * pattern.h), pe = new Uint8Array(pattern.w * pattern.h);
+  for (let y = 0; y < pattern.h; y++) {
+    for (let x = 0; x < pattern.w; x++) {
+      const dst = y * pattern.w + (pattern.w - 1 - x), src = y * pattern.w + x;
+      pt[dst] = pattern.terrain[src];
+      pe[dst] = pattern.elevation[src];
+    }
+  }
+  return { w: pattern.w, h: pattern.h, terrain: pt, elevation: pe };
+}
+
+// --- Rectangular brush W×H (issue #77 Phase 3) ----------------------------------
+
+// brushOffsetsWH generalizes brushOffsets to independent width/height
+// (Chkdraft-style W×H brushes). A circle shape only applies when w === h (it
+// delegates to brushOffsets); non-square always paints the full rectangle.
+// Even dimensions anchor at the footprint's top-left, like brushOffsets.
+const _whOffsetCache = new Map();
+export function brushOffsetsWH(w, h = w, shape = 'square') {
+  if (shape === 'circle' && w === h) return brushOffsets(w, 'circle');
+  const key = `${w}:${h}`;
+  if (_whOffsetCache.has(key)) return _whOffsetCache.get(key);
+  const cx = Math.floor((w - 1) / 2), cy = Math.floor((h - 1) / 2);
+  const out = [];
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      out.push({ dx: dx - cx, dy: dy - cy });
+    }
+  }
+  _whOffsetCache.set(key, out);
+  return out;
+}
+
+// --- Cliff-edge enumeration (validation overlays, issue #77) -------------------
+
+// cliffEdges enumerates the map's impassable elevation borders as line
+// segments in tile-fraction coordinates: {ax, ay, bx, by} with (0,0) at the
+// map's top-left and 1.0 spanning one tile, ready to map onto the canvas via
+// view.ox + ax*view.px. A segment is emitted for each 4-neighbour pair with
+// |Δelevation| ≥ 2 where NEITHER tile is a Ramp — the same cliff predicate as
+// edgeWalkable above (server EdgeWalkableFor). Cost-0 terrain with a small Δ
+// is impassable but is NOT a cliff; the cost overlay covers that case. Each
+// border is reported once: pairs are enumerated right and down only, so
+// callers draw one segment per border without dedup.
+export function cliffEdges(terrain, elevation) {
+  const out = [];
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const i = y * GRID + x;
+      if (x < GRID - 1) {
+        const j = i + 1;
+        if (Math.abs(elevation[i] - elevation[j]) >= 2 &&
+            terrain[i] !== RAMP_TERRAIN && terrain[j] !== RAMP_TERRAIN) {
+          out.push({ ax: x + 1, ay: y, bx: x + 1, by: y + 1 }); // vertical border
+        }
+      }
+      if (y < GRID - 1) {
+        const j = i + GRID;
+        if (Math.abs(elevation[i] - elevation[j]) >= 2 &&
+            terrain[i] !== RAMP_TERRAIN && terrain[j] !== RAMP_TERRAIN) {
+          out.push({ ax: x, ay: y + 1, bx: x + 1, by: y + 1 }); // horizontal border
+        }
+      }
+    }
+  }
+  return out;
+}
